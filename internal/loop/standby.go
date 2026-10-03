@@ -47,10 +47,12 @@ type standbys struct {
 	// reserved is the host an attach is being prepared for: its standby
 	// stays, though the home stops offering one there once prepared.
 	reserved string
+	// spawn starts a standby's session (relay.Start; tests replace it).
+	spawn func(argv, env []string, modes relay.Modes, rows, cols int) (*relay.Session, error)
 }
 
 func newStandbys(l *attachLoop) *standbys {
-	return &standbys{l: l, kickC: make(chan struct{}, 1), byHost: map[string]*standby{}, backoff: map[string]*hostBackoff{}}
+	return &standbys{l: l, kickC: make(chan struct{}, 1), byHost: map[string]*standby{}, backoff: map[string]*hostBackoff{}, spawn: relay.Start}
 }
 
 // kick asks for a refresh soon: a standby was used or died, or the
@@ -95,9 +97,21 @@ func (s *standbys) refresh(ctx context.Context) {
 	if d == nil {
 		return // the hosts' names come with the first view
 	}
+	s.apply(offers, &d.View)
+}
+
+// apply drops the standbys whose key is no longer offered and starts those
+// missing. Sessions start (a pty, ssh's fork and exec) outside the lock,
+// so a hand-off taking a standby never waits on them.
+func (s *standbys) apply(offers []proto.Offer, v *proto.View) {
+	type start struct {
+		o    proto.Offer
+		name string
+	}
+	var starts []start
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return
 	}
 	for host, sb := range s.byHost {
@@ -115,26 +129,36 @@ func (s *standbys) refresh(ctx context.Context) {
 		if b := s.backoff[o.Host]; b != nil && time.Now().Before(b.until) {
 			continue
 		}
-		h := d.View.HostByID(o.Host)
+		h := v.HostByID(o.Host)
 		if h == nil {
 			continue // not in the view yet
 		}
-		s.startLocked(o, h.Name)
+		starts = append(starts, start{o, h.Name})
 	}
-}
-
-func (s *standbys) startLocked(o proto.Offer, name string) {
+	s.mu.Unlock()
 	rows, cols := s.l.size()
-	config.Mark("standby: start " + name)
-	env := os.Environ()
-	sess, err := relay.Start(o.Argv, env, s.l.orig, rows, cols)
-	if err != nil {
-		s.backOffLocked(o.Host)
-		return
+	for _, st := range starts {
+		config.Mark("standby: start " + st.name)
+		env := os.Environ()
+		sess, err := s.spawn(st.o.Argv, env, s.l.orig, rows, cols)
+		s.mu.Lock()
+		switch {
+		case err != nil:
+			s.backOffLocked(st.o.Host)
+			s.mu.Unlock()
+		case s.closed || s.byHost[st.o.Host] != nil:
+			s.mu.Unlock()
+			go func() {
+				sess.Kill()
+				sess.Close()
+			}()
+		default:
+			sb := &standby{host: st.o.Host, name: st.name, key: st.o.Key, sess: sess, env: towerless(env), modes: s.l.orig}
+			s.byHost[st.o.Host] = sb
+			s.mu.Unlock()
+			go s.watch(sb)
+		}
 	}
-	sb := &standby{host: o.Host, name: name, key: o.Key, sess: sess, env: towerless(env), modes: s.l.orig}
-	s.byHost[o.Host] = sb
-	go s.watch(sb)
 }
 
 // watch waits for the standby's ready marker, then for its end: one that

@@ -2,6 +2,7 @@ package loop
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"slices"
 	"testing"
@@ -75,6 +76,34 @@ func TestWatchCtrlC(t *testing.T) {
 	case <-hit:
 		t.Fatal("a stopped watch reported ctrl-c")
 	default:
+	}
+}
+
+// TestStandbyStartOutsideLock: a hand-off taking a standby does not wait
+// for the refresh starting another (a pty, ssh's fork and exec).
+func TestStandbyStartOutsideLock(t *testing.T) {
+	s := newStandbys(&attachLoop{tty: -1})
+	started := make(chan struct{})
+	s.spawn = func(argv, env []string, m relay.Modes, rows, cols int) (*relay.Session, error) {
+		close(started)
+		time.Sleep(300 * time.Millisecond)
+		return nil, errors.New("no session in this test")
+	}
+	v := &proto.View{Hosts: []proto.Host{{ID: "h1", Name: "B"}}}
+	done := make(chan struct{})
+	go func() {
+		s.apply([]proto.Offer{{Host: "h1", Key: "k", Argv: []string{"ssh"}}}, v)
+		close(done)
+	}()
+	<-started
+	start := time.Now()
+	s.take("h2", "k")
+	if d := time.Since(start); d > 50*time.Millisecond {
+		t.Fatalf("take waited %v for a standby starting", d)
+	}
+	<-done
+	if s.backoff["h1"] == nil {
+		t.Fatal("a failed start did not back its host off")
 	}
 }
 
