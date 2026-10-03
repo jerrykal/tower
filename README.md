@@ -6,8 +6,7 @@ server.
 
 ## Install
 
-With mise (the repository is private, so mise needs a GitHub token; with
-`github.credential_command = "gh auth token"` it uses gh's):
+With mise:
 
 ```fish
 mise use -g github:jerrykal/tower
