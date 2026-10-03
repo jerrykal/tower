@@ -7,6 +7,8 @@ CGO_ENABLED = "0"
 [tasks.build]
 description = "Build tower for this machine into .dev/bin"
 run = """
+#!/usr/bin/env bash
+set -euo pipefail
 v=$(scripts/version.sh)
 go build -trimpath -ldflags "-s -w -X github.com/jerrykal/tower/internal/version.Version=$v" -o .dev/bin/tower ./cmd/tower
 echo "built tower $v"
@@ -19,6 +21,7 @@ run = ["go vet ./...", "go test ./..."]
 [tasks.dist]
 description = "Cross-compile release archives into dist/"
 run = """
+#!/usr/bin/env bash
 set -euo pipefail
 v=$(scripts/version.sh)
 rm -rf dist && mkdir -p dist
