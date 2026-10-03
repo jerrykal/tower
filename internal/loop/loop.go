@@ -308,12 +308,20 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 			continue
 		}
 		if res.gaveUp != "" {
-			// Back where the terminal was, saying why; or the picker.
+			// A hand-off goes back where the terminal was, saying why.
 			if handoff && !from.IsZero() && !from.SameSession(target) {
 				target, note, handoff, retry = from, res.gaveUp, false, false
 				continue
 			}
-			note, st, retry = res.gaveUp, stepPicker, false
+			// Otherwise the loop tries that target again, as after a
+			// lost connection, until the host is back (ctrl-c: the
+			// picker).
+			retry = true
+			l.release()
+			if l.pause(ctx, target, min(max(backoff, backoffFirst), prepareRetry), "tower: "+res.gaveUp) {
+				st = stepPicker
+			}
+			backoff = nextBackoff(backoff)
 			continue
 		}
 		from = p.Target

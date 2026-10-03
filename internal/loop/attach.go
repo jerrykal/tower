@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"strconv"
@@ -259,17 +260,19 @@ func (l *attachLoop) startChild(argv []string, local bool) (*running, error) {
 		r.restore = func(int, bool) {}
 	} else {
 		r.end = func() { cmd.Process.Signal(syscall.SIGTERM) }
-		r.restore = l.remoteRestore
+		r.restore = l.remoteRestore(nil)
 	}
 	return r, nil
 }
 
 // remoteRestore writes a remote client's terminal restore when its own
 // never came: the loop hung it up for a switch, or the connection was
-// lost.
-func (l *attachLoop) remoteRestore(code int, ended bool) {
-	if ended || code == 255 {
-		l.term.RestoreClient()
+// lost; not for a session that drew nothing (drawn nil: unknown).
+func (l *attachLoop) remoteRestore(drawn func() bool) func(int, bool) {
+	return func(code int, ended bool) {
+		if (ended || code == 255) && (drawn == nil || drawn()) {
+			l.term.RestoreClient()
+		}
 	}
 }
 
@@ -334,18 +337,40 @@ func (l *attachLoop) startRelayed(p *proto.Prepared, note string) (*running, err
 		}
 	}
 	l.rawModes()
-	r := &running{done: make(chan int, 1), end: s.Terminate, kill: s.Kill, restore: l.remoteRestore}
+	// Ending the client for a switch hangs ssh up and stops relaying at
+	// once: the next client need not wait for ssh to go.
+	end := func() {
+		s.Terminate()
+		s.Abandon()
+	}
+	drawn := func() bool { return s.Relayed() > 0 }
+	r := &running{done: make(chan int, 1), end: end, kill: s.Kill, restore: l.remoteRestore(drawn)}
 	go func() {
 		code, err := s.Relay(l.term)
-		if err != nil {
+		switch {
+		case errors.Is(err, relay.ErrAbandoned):
+			go reap(s)
+		case err != nil:
 			// The terminal is gone: so is the attach.
 			s.Kill()
 			code = 255
+			s.Close()
+		default:
+			s.Close()
 		}
-		s.Close()
 		r.done <- code
 	}()
 	return r, nil
+}
+
+// reap waits for an abandoned session's ssh to exit, a few seconds at
+// most, then releases it.
+func reap(s *relay.Session) {
+	select {
+	case <-s.Done():
+	case <-time.After(5 * time.Second):
+	}
+	s.Close()
 }
 
 // withNoteArgv adds the note to an attach command: the shim's own argv
