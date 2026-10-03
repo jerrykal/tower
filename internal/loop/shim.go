@@ -39,6 +39,7 @@ type Shim struct {
 	Window  string
 	Standby bool
 	Version string
+	Note    string // shown in the new client's status line as it attaches
 }
 
 // RunShim registers the attach with the towerd here and execs the tmux
@@ -51,13 +52,16 @@ func RunShim(s Shim, tty *os.File) error {
 		if err != nil {
 			return err
 		}
-		g, err := waitGo(tty)
+		g, err := waitGo(tty, os.Stdout)
 		if err != nil {
 			return err
 		}
 		s.Loop, s.Gen, s.Home, s.Inst, s.Session, s.Window = g.Loop, g.Gen, g.Home, g.Inst, g.Session, g.Window
 		if g.MKey != "" {
 			s.MKey = g.MKey
+		}
+		if g.Note != "" {
+			s.Note = g.Note
 		}
 		config.Mark("standby: taken")
 		return attach(c, s)
@@ -140,25 +144,33 @@ func attach(c *client.Client, s Shim) error {
 	tmux.UseBin(reg.TmuxBin)
 	bin := tmux.Bin()
 	argv := append([]string{bin}, c.Env.Tmux...)
-	argv = append(argv, AttachCommand(s.Session, s.Window, s.Inst)...)
+	argv = append(argv, AttachCommand(s.Session, s.Window, s.Inst, s.Note)...)
 	config.Mark("shim: exec tmux")
 	env := os.Environ()
 	env = filterEnv(env, "TOWER_CLIENT", "TOWER_MKEY")
 	return syscall.Exec(bin, argv, env)
 }
 
+// noteTime is how long an attach's note stays in the client's status
+// line (ms).
+const noteTime = "4000"
+
 // AttachCommand is the tmux command list of an attach: by id, so a
 // session killed meanwhile fails visibly; the instance check right
 // after, since tmux skips the rest of a list after a failing command (a
-// restarted server that reused the id detaches at once with exit 43); and
-// the window selected by id, so base-index never matters.
-func AttachCommand(session, window, inst string) []string {
+// restarted server that reused the id detaches at once with exit 43); the
+// window selected by id, so base-index never matters; and the loop's
+// note, if any, in the new client's status line.
+func AttachCommand(session, window, inst, note string) []string {
 	a := []string{"attach-session", "-t", session}
 	if inst != "" {
 		a = append(a, ";", "if-shell", "-F", "#{!=:#{pid}:#{start_time},"+inst+"}", "detach-client -E 'exit 43'")
 	}
 	if window != "" {
 		a = append(a, ";", "select-window", "-t", window)
+	}
+	if note != "" {
+		a = append(a, ";", "display-message", "-d", noteTime, tmux.Literal(note))
 	}
 	return a
 }
@@ -180,10 +192,11 @@ func filterEnv(env []string, drop ...string) []string {
 	return out
 }
 
-// waitGo turns the pty's echo and line editing off, says it is ready,
+// waitGo turns the pty's echo and line editing off, says it is ready
+// on out (where the attach's output goes: the pty, through ssh),
 // reads the go line a byte at a time (nothing typed after it is taken
 // from tmux), restores the modes and answers.
-func waitGo(tty *os.File) (*proto.GoLine, error) {
+func waitGo(tty *os.File, out io.Writer) (*proto.GoLine, error) {
 	fd := int(tty.Fd())
 	old, err := getTermios(fd)
 	if err != nil {
@@ -195,7 +208,7 @@ func waitGo(tty *os.File) (*proto.GoLine, error) {
 		return nil, fmt.Errorf("standby: %w", err)
 	}
 	restore := func() { setTermios(fd, old) }
-	io.WriteString(tty, relay.MarkerReady)
+	io.WriteString(out, relay.MarkerReady)
 	config.Mark("standby: waiting")
 	timer := time.AfterFunc(standbyLife, func() {
 		restore()
@@ -211,7 +224,7 @@ func waitGo(tty *os.File) (*proto.GoLine, error) {
 	if err := json.Unmarshal(line, &g); err != nil {
 		return nil, fmt.Errorf("standby: bad go line: %w", err)
 	}
-	io.WriteString(tty, relay.MarkerGo)
+	io.WriteString(out, relay.MarkerGo)
 	return &g, nil
 }
 

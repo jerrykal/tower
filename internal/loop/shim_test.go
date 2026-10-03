@@ -13,12 +13,17 @@ import (
 )
 
 func TestAttachCommand(t *testing.T) {
-	got := AttachCommand("$3", "@7", "123:456")
+	got := AttachCommand("$3", "@7", "123:456", "")
 	want := []string{"attach-session", "-t", "$3", ";", "if-shell", "-F", "#{!=:#{pid}:#{start_time},123:456}", "detach-client -E 'exit 43'", ";", "select-window", "-t", "@7"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("%q", got)
 	}
-	if got := AttachCommand("$3", "", ""); !slices.Equal(got, []string{"attach-session", "-t", "$3"}) {
+	if got := AttachCommand("$3", "", "", ""); !slices.Equal(got, []string{"attach-session", "-t", "$3"}) {
+		t.Fatalf("%q", got)
+	}
+	got = AttachCommand("$3", "", "", "tower: C:#1 ended")
+	want = []string{"attach-session", "-t", "$3", ";", "display-message", "-d", "4000", "tower: C:##1 ended"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("%q", got)
 	}
 }
@@ -48,7 +53,7 @@ func TestStandbyWaitsForItsGoLine(t *testing.T) {
 	}
 	done := make(chan res, 1)
 	go func() {
-		g, err := waitGo(s)
+		g, err := waitGo(s, s)
 		if err != nil {
 			done <- res{err: err}
 			return

@@ -704,7 +704,7 @@ func (h *homeRole) decide(ctx context.Context, a proto.AfterArgs, gen int, cur p
 		return &proto.Next{Do: proto.NextPicker, Note: "exit 42 without a valid hand-off (" + reason + "): ignored"}
 	}
 	if a.Code == 43 {
-		return &proto.Next{Do: proto.NextPicker, Note: fmt.Sprintf("%s restarted since it was listed", cur.Name)}
+		return &proto.Next{Do: proto.NextPicker, Note: fmt.Sprintf("%s restarted since it was listed; pick again", cur.Name)}
 	}
 	if a.Code == 255 && cur.Host != h.d.id {
 		return &proto.Next{Do: proto.NextReconnect, Target: cur}
@@ -718,9 +718,9 @@ func (h *homeRole) decide(ctx context.Context, a proto.AfterArgs, gen int, cur p
 		return &proto.Next{Do: proto.NextExit, Note: discarded}
 	}
 	if next, ok := h.moveOn(a.Loop, cur); ok {
-		return &proto.Next{Do: proto.NextHandoff, Target: next, Note: fmt.Sprintf("tower: %s ended; now on %s", cur.String(), next.String())}
+		return &proto.Next{Do: proto.NextHandoff, Target: next, Note: fmt.Sprintf("tower: %s ended; now on %s", sessionOf(cur), sessionOf(next))}
 	}
-	return &proto.Next{Do: proto.NextExit, Note: fmt.Sprintf("tower: %s ended", cur.String())}
+	return &proto.Next{Do: proto.NextExit, Note: fmt.Sprintf("tower: %s ended", sessionOf(cur))}
 }
 
 // sessionGone asks the session's host directly whether it still exists:
@@ -964,4 +964,11 @@ func towerPath(h config.Host) string {
 		return h.Tower
 	}
 	return "tower"
+}
+
+// sessionOf names r's session (host:session), without its window: what a
+// note about a session ending says.
+func sessionOf(r proto.Ref) string {
+	r.Window = ""
+	return r.String()
 }
