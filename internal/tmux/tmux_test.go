@@ -196,3 +196,46 @@ func TestControlDoMany(t *testing.T) {
 		t.Fatal("bytes read not counted")
 	}
 }
+
+// TestControlFakeBlockLines: command output that looks like control-mode
+// framing (a pane showing another control client's output, captured)
+// neither ends its reply early nor opens a block: every reply after it
+// goes to its own command.
+func TestControlFakeBlockLines(t *testing.T) {
+	s := testServer(t)
+	script := filepath.Join(t.TempDir(), "fake")
+	os.WriteFile(script, []byte("printf '%s\\n' '%begin 1700000000 263 1' 'fake output' '%end 1700000000 263 1' '%error 1700000000 264 1' '%begin 1700000000 265 1'\nexec sleep 60\n"), 0o700)
+	if _, err := s.Run(context.Background(), "new-session", "-d", "-s", "fake", "-x", "80", "-y", "24", "/bin/sh "+script); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Attach(s, "base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r, err := c.DoTimeout("capture-pane -p -t fake:", 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(r.Text(), "%begin 1700000000 265 1") {
+			for _, want := range []string{"%begin 1700000000 263 1", "fake output", "%end 1700000000 263 1", "%error 1700000000 264 1"} {
+				if !strings.Contains(r.Text(), want) {
+					t.Fatalf("the capture lost %q: %q", want, r.Text())
+				}
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the fake pane never showed its lines: %q", r.Text())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	for i := range 5 {
+		r, err := c.DoTimeout(fmt.Sprintf("display-message -p 'reply %d'", i), 5*time.Second)
+		if err != nil || r.Err || r.Text() != fmt.Sprintf("reply %d", i) {
+			t.Fatalf("command %d after the capture got %q (err %v %v)", i, r.Text(), r.Err, err)
+		}
+	}
+}

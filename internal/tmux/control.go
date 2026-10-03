@@ -206,6 +206,7 @@ func (c *Control) read(out io.Reader) {
 	br := bufio.NewReaderSize(out, 64<<10)
 	var block *Reply // inside a %begin block
 	var ours bool
+	var guard string // the block's "<time> <number> <flags>"
 	for {
 		line, err := br.ReadString('\n')
 		c.bytes.Add(int64(len(line)))
@@ -214,8 +215,10 @@ func (c *Control) read(out io.Reader) {
 		}
 		line = strings.TrimSuffix(line, "\n")
 		if block != nil {
-			if isEnd(line) {
-				block.Err = strings.HasPrefix(line, "%error")
+			// tmux does not escape command output: a pane's text can hold
+			// "%end …" lines. Only the guard of this block's %begin ends it.
+			if end, isErr := endOf(line, guard); end {
+				block.Err = isErr
 				if ours {
 					c.deliver(*block)
 				}
@@ -225,10 +228,11 @@ func (c *Control) read(out io.Reader) {
 			block.Lines = append(block.Lines, line)
 			continue
 		}
-		if strings.HasPrefix(line, "%begin ") {
+		if rest, ok := strings.CutPrefix(line, "%begin "); ok {
 			block = &Reply{}
-			f := strings.Fields(line)
-			ours = len(f) >= 4 && f[3] != "0"
+			guard = rest
+			f := strings.Fields(rest)
+			ours = len(f) >= 3 && f[2] != "0"
 			continue
 		}
 		if strings.HasPrefix(line, "%") {
@@ -248,8 +252,16 @@ func (c *Control) read(out io.Reader) {
 	close(c.notes)
 }
 
-func isEnd(line string) bool {
-	return strings.HasPrefix(line, "%end ") || strings.HasPrefix(line, "%error ") || line == "%end" || line == "%error"
+// endOf reports whether line ends the block whose %begin carried guard
+// ("<time> <number> <flags>"), and whether it ended in an error.
+func endOf(line, guard string) (end, isErr bool) {
+	switch line {
+	case "%end " + guard:
+		return true, false
+	case "%error " + guard:
+		return true, true
+	}
+	return false, false
 }
 
 func (c *Control) deliver(r Reply) {
