@@ -109,10 +109,16 @@ a scenario measures what a user would see.
 | LS03 | Wake, network change, towerd killed, stall: each replaces the standby; one made for an earlier link is never used | loop, towerd | todo |
 | LS04 | `TOWER_STANDBY=0`, `standby = false`, a remote upgrade, a reload: standbys follow | loop, towerd | todo |
 | LS05 | Job control the same through a standby, a new relayed session and ssh given the terminal | loop, relay | todo |
-| LS06 | The relay is byte-exact both ways; frame writes land between sequences | relay | todo |
-| LS07 | The relay adds microseconds to a keystroke's echo | relay | todo |
-| LS08 | The relay under load: throughput, keys into a flood, backpressure, flat memory | relay | todo |
+| LS06 | The relay is byte-exact both ways; frame writes land between sequences | relay | pass |
+| LS07 | The relay adds microseconds to a keystroke's echo | relay | pass |
+| LS08 | The relay under load: throughput, keys into a flood, backpressure, flat memory | relay | pass |
 | LS09 | Every remote attach relayed: exits 255, 43, 42, hand-offs, a stall, `prefix d` the same as with ssh given the terminal | loop, relay | todo |
+
+LS06 and LS07 are tests of `internal/relay` (`go test ./internal/relay`):
+they need no host. LS08 is there too against a command given the terminal
+(`mise run test:full` for its 200 MiB runs), and in this suite through the
+fake ssh to a host with a pty, relayed against the fake ssh given the
+terminal (`ls08_test.go`).
 
 ## Real hosts
 

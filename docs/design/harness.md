@@ -14,6 +14,7 @@
 | `teardown_test.go` | ends everything and fails the test if a tmux server outlives its sessions |
 | `fakenet/` | the knobs contract between the harness and the fake ssh |
 | `fakessh/` | the fake ssh |
+| `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
 | `s*_test.go` … | the scenarios, one file per family |
 
 ## Hosts
