@@ -16,15 +16,13 @@ import (
 	"github.com/jerrykal/tower/internal/client"
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/relay"
 	"github.com/jerrykal/tower/internal/tmux"
 )
 
-// Markers a standby shim writes on its pty: ready for the go line, and
-// the go line taken. The loop strips both.
-const (
-	ReadyMarker  = "\x1b]7193;ready\x1b\\"
-	AnswerMarker = "\x1b]7193;go\x1b\\"
-)
+// The markers a standby shim writes on its pty are the relay's: ready
+// for the go line (relay.MarkerReady), and the go line taken
+// (relay.MarkerGo). The loop strips both.
 
 // standbyLife is how long a standby nobody used waits before it exits.
 const standbyLife = 12 * time.Hour
@@ -197,7 +195,7 @@ func waitGo(tty *os.File) (*proto.GoLine, error) {
 		return nil, fmt.Errorf("standby: %w", err)
 	}
 	restore := func() { setTermios(fd, old) }
-	io.WriteString(tty, ReadyMarker)
+	io.WriteString(tty, relay.MarkerReady)
 	config.Mark("standby: waiting")
 	timer := time.AfterFunc(standbyLife, func() {
 		restore()
@@ -213,7 +211,7 @@ func waitGo(tty *os.File) (*proto.GoLine, error) {
 	if err := json.Unmarshal(line, &g); err != nil {
 		return nil, fmt.Errorf("standby: bad go line: %w", err)
 	}
-	io.WriteString(tty, AnswerMarker)
+	io.WriteString(tty, relay.MarkerGo)
 	return &g, nil
 }
 

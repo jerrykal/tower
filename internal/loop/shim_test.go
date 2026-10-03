@@ -2,6 +2,7 @@ package loop
 
 import (
 	"bytes"
+	"github.com/jerrykal/tower/internal/relay"
 	"io"
 	"slices"
 	"strings"
@@ -58,12 +59,12 @@ func TestStandbyWaitsForItsGoLine(t *testing.T) {
 	buf := make([]byte, 0, 64)
 	tmp := make([]byte, 64)
 	deadline := time.Now().Add(3 * time.Second)
-	for !strings.Contains(string(buf), ReadyMarker) && time.Now().Before(deadline) {
+	for !strings.Contains(string(buf), relay.MarkerReady) && time.Now().Before(deadline) {
 		m.SetReadDeadline(time.Now().Add(time.Second))
 		n, _ := m.Read(tmp)
 		buf = append(buf, tmp[:n]...)
 	}
-	if !strings.Contains(string(buf), ReadyMarker) {
+	if !strings.Contains(string(buf), relay.MarkerReady) {
 		t.Fatalf("no ready marker: %q", buf)
 	}
 	io.WriteString(m, `{"loop":"L1","gen":2,"home":"h","inst":"1:2","s":"$3","w":"@7"}`+"\nleft for tmux")
@@ -77,7 +78,7 @@ func TestStandbyWaitsForItsGoLine(t *testing.T) {
 	}
 	m.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	n, _ := m.Read(tmp)
-	if got := string(tmp[:n]); got != AnswerMarker {
+	if got := string(tmp[:n]); got != relay.MarkerGo {
 		t.Fatalf("after the go line the pty shows %q", got)
 	}
 	// Nothing after the line was taken: tmux, taking the pty raw, reads it.
