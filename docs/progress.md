@@ -27,17 +27,16 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 - [x] relay (LS06, LS07 and LS08 as package tests; LS08 also through the
   fake ssh, which now uses the relay's pty and mode helpers)
 - [x] picker (Bubble Tea; `docs/design/ui.md`): the popup, `ui.Pick` for the loop, `tower _ui`
-- [ ] the attach loop (`tower`, `tower dash`), standbys
-- [ ] scenarios (see scenarios.md for the per-scenario status)
+- [x] the attach loop (`tower`, `tower dash`), standbys
+  (`internal/loop`, docs/design/loop.md)
+- [ ] scenarios (see scenarios.md for the per-scenario status): the
+  loop's pass; the UI-centred ones remain
 
-## Scenarios waiting for the loop and the dashboard
+## Scenarios waiting for the dashboard
 
-Every towerd scenario passes on its own side. Their loop and UI parts are
-marked `// loop part:` in the tests and listed as `pass (towerd part)` in
-scenarios.md: S05, S13, S17, V02, V03, V04, V07, V08, LH01, LH02, LV01,
-LC02, LC03. The towerd ops the loop and dashboard need are built and
-unit-tested: `loop`, `loop-bye`, `prepare`, `after`, `wait-switch`,
-`held`, `standby`, `last`, `view`, `watch`, `act` (with `switch`).
+The loop's scenarios and the loop parts of towerd's pass (scenarios.md).
+The UI-centred ones remain: S09, S11, S19, LV04, LD01, LD03, and the UI
+parts of S17, V04, V06 and LV01 (still `pass (towerd part)` or `todo`).
 
 ## Blocked
 
@@ -45,8 +44,5 @@ Nothing.
 
 ## Next
 
-The attach loop (`internal/loop`, docs/design/loop.md) on the towerd ops
-and the relay, with standbys and `ui.Pick`; then the loop and UI parts of
-the scenarios listed above and the loop scenarios (S00, S04, S06–S12,
-S19, S24–S27, D01, LH03, LV04, LC01, LC04, LC06, LC08, LD01, LD03, LS01–
-LS05, LS09).
+The UI-centred scenarios above (S09, S11, S19, LV04, LD01, LD03, the UI
+parts of S17, V04, V06, LV01), then step 3, install on connect.

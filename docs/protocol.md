@@ -353,7 +353,7 @@ and the exit code. The home takes the stored switch (read once):
 | --- | --- | --- |
 | 42, or the loop ended the attach for a stored switch | a stored switch for this loop and generation, under 30s old | hand off to its target (prepare it) |
 | 42 | anything else | picker, with the reason; never trust 42 alone (S06, S07) |
-| 43 | – | picker: "restarted since it was listed" |
+| 43 | – | picker: "<host> restarted since it was listed; pick again" |
 | 255 | remote | reconnect to the current target at once (prepare waits for the link), then with backoff 1s → 30s while it keeps failing; a failed prepare pauses at most 4s; more than 10s attached starts the backoff afresh; a new link to that host ends the pause; `ctrl-c` gives the picker (S13, LC01, LC02, LC04) |
 | other | the session still exists (`prefix d`, the client closed) | exit, as tmux does; a pending switch is discarded and said so (S07, S10) |
 | other | the session is gone, and tmux could not move the client on that server | the loop's previous session if nobody is on it, else the most recently used session nobody is on, on any reachable host, with a status-line note (S25) |
