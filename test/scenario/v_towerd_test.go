@@ -30,9 +30,7 @@ func TestV02(t *testing.T) {
 	b := w.Host("B", []string{"bravo"})
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "B", "bravo"), b)
-	alpha := w.Ref(a, "A", "alpha")
+	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	old := a.TowerdPid()
 	start := time.Now()
 	out, err := a.TowerBin(tower2, "_ensure")
@@ -54,8 +52,8 @@ func TestV02(t *testing.T) {
 	if len(cl) != 1 {
 		t.Fatalf("clients on bravo: %v", cl)
 	}
-	// A switch from the old dashboard binary's towerd, to the new home.
-	l.Handoff(b, "bravo", alpha, a)
+	// A switch from the old dashboard binary on B, to the new home.
+	term.DashTo("alpha")
 	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 	out, err = a.Tower("_ensure")
 	if err != nil {
@@ -81,9 +79,7 @@ func TestV03(t *testing.T) {
 	r.Tower = link
 	w.Home(a, r)
 	w.WaitUp(a, "B")
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "B", "bravo"), b)
-	alpha := w.Ref(a, "A", "alpha")
+	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	old := b.TowerdPid()
 	os.Remove(link)
 	os.Symlink(tower2, link)
@@ -109,7 +105,7 @@ func TestV03(t *testing.T) {
 	start = time.Now()
 	w.Eventually(5*time.Second, "B holds the view", func() bool { return HasSession(&b.View(cl).View, "A", "alpha") })
 	t.Logf("B's dashboard has the view %v after the upgrade", time.Since(start).Round(time.Millisecond))
-	l.Handoff(b, "bravo", alpha, a)
+	term.DashTo("alpha")
 	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 }
 
@@ -232,8 +228,7 @@ func TestV07(t *testing.T) {
 	b := w.Host("B", []string{"bravo", "berry"})
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "B", "bravo"), b)
+	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	alpha := w.Ref(a, "A", "alpha")
 	cl := b.ClientIDs("bravo")[0]
 	ctl := a.Status().Detail.Watch.CtlPid
@@ -251,14 +246,19 @@ func TestV07(t *testing.T) {
 	if got := b.Clients(); !slices.Equal(got, []string{"bravo"}) {
 		t.Fatalf("B's clients: %v", got)
 	}
+	if out, err := b.UI(cl, nil, "goto", "A", "alpha"); err == nil || !strings.Contains(out, "home not connected") {
+		t.Fatalf("the dashboard's ⏎ on A with the home gone: %v %s", err, out)
+	}
 	// The dashboard's ⏎ on berry, on the client's own server.
-	b.MustTmux("switch-client", "-c", ClientName(cl), "-t", "berry")
+	if out, err := b.UI(cl, nil, "goto", "B", "berry"); err != nil {
+		t.Fatalf("goto B berry: %v %s", err, out)
+	}
 	w.Eventually(3*time.Second, "the client on berry", func() bool { return slices.Equal(b.Clients(), []string{"berry"}) })
 	w.StartTowerd(a)
 	w.WaitUp(a, "B")
 	w.WaitLoop(a, "^B:berry", 10*time.Second)
 	time.Sleep(500 * time.Millisecond)
-	l.Handoff(b, "berry", alpha, a)
+	term.DashTo("alpha")
 	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 }
 
@@ -317,26 +317,12 @@ func TestV08(t *testing.T) {
 	plain.Keys("C-b", "d")
 
 	// A tower terminal: prefix L on A goes back to K:k1, through the home.
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "K", "k1"), k)
-	lt := l.Attach(w.Ref(a, "A", "alpha"), a)
+	lt := w.LoopTo("t", a, nil, "k1", "^K:k1")
+	lt.DashTo("alpha")
+	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 	time.Sleep(400 * time.Millisecond)
 	lt.Keys("C-b", "L")
-	w.Eventually(3*time.Second, "a switch to K:k1 stored", func() bool {
-		for _, p := range a.Status().Detail.Pending {
-			if p.Loop == l.ID && p.Target.Label == "k1" {
-				return true
-			}
-		}
-		return false
-	})
-	if next := l.After(42, false); next.Do != proto.NextHandoff || next.Target.Label != "k1" {
-		t.Fatalf("after prefix L: %+v", next)
-	} else {
-		l.Attach(next.Target, k)
-	}
 	w.WaitLoop(a, "^K:k1", 8*time.Second)
-	// loop part: the loop itself ending the client and holding the frame.
 
 	if out, err := a.Tower("host", "off", "K"); err != nil {
 		t.Fatal(err, out)

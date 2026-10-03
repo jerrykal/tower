@@ -29,7 +29,7 @@ func slowKnobs(k *fakenet.Knobs) { k.DelayMs, k.JitterMs, k.BwKBps = 250, 80, 51
 type lhWorld struct {
 	w          *World
 	a, f, s, z *Host
-	loop       *FakeLoop
+	term       *Term
 	times      map[string][]time.Duration
 }
 
@@ -51,9 +51,25 @@ func newLH(t *testing.T, id string, sk, zk func(*fakenet.Knobs)) *lhWorld {
 	for _, n := range []string{"F", "S", "Z"} {
 		w.WaitLink(x.a, n, "up", 10*time.Second)
 	}
-	x.loop = w.FakeLoop(x.a)
-	x.loop.Attach(w.Ref(x.a, "F", "fox"), x.f)
+	x.term = w.LoopTo("t", x.a, nil, "fox", "^F:fox")
 	return x
+}
+
+// onSession reports whether h has a client on session s.
+func onSession(h *Host, s string) bool { return slices.Contains(h.Clients(), s) }
+
+// dashTo is the dashboard's ⏎ on query in the loop's terminal; it waits
+// until to has a client on session.
+func (x *lhWorld) dashTo(t *testing.T, query string, to *Host, session string) time.Duration {
+	t.Helper()
+	start := time.Now()
+	x.term.Keys("M-o")
+	x.term.Wait(Prompt, 8*time.Second)
+	x.term.Type(query)
+	time.Sleep(300 * time.Millisecond)
+	x.term.Keys("Enter")
+	x.w.Eventually(15*time.Second, "a client on "+to.Name+":"+session, func() bool { return onSession(to, session) })
+	return time.Since(start)
 }
 
 func (x *lhWorld) note(key string, d time.Duration) { x.times[key] = append(x.times[key], d) }
@@ -77,10 +93,11 @@ func (x *lhWorld) report(t *testing.T) {
 func (x *lhWorld) round(t *testing.T, n int) {
 	w, a, f := x.w, x.a, x.f
 	cl := func(h *Host, s string) string {
-		ids := h.ClientIDs(s)
-		if len(ids) == 0 {
-			t.Fatalf("no client on %s:%s", h.Name, s)
-		}
+		var ids []string
+		w.Eventually(5*time.Second, "a client on "+h.Name+":"+s, func() bool {
+			ids = h.ClientIDs(s)
+			return len(ids) > 0
+		})
 		return ids[0]
 	}
 	// Freshness.
@@ -93,13 +110,20 @@ func (x *lhWorld) round(t *testing.T, n int) {
 		return HasSession(&f.View(fc).View, "A", pa) && HasSession(&a.View("").View, "F", pf)
 	})
 	x.note("freshness", time.Since(start))
-	// The rows a dashboard on F reads (loop part: the popup itself).
-	start = time.Now()
-	v := f.View(fc)
-	if !HasSession(&v.View, "A", "alpha") || !HasSession(&v.View, "S", "sun") {
-		t.Fatal("F's rows lack A or S")
+	// The dashboard opens on F, twice.
+	for range 2 {
+		start := time.Now()
+		x.term.Keys("M-o")
+		x.term.Wait(Prompt, 8*time.Second)
+		x.w.Eventually(8*time.Second, "the popup's rows", func() bool {
+			sc := x.term.Screen()
+			return strings.Contains(sc, "alpha") && strings.Contains(sc, "sun")
+		})
+		x.note("dashboard on F", time.Since(start))
+		x.term.Keys("Escape")
+		x.w.Eventually(5*time.Second, "the popup closed", func() bool { return !strings.Contains(x.term.Screen(), Prompt) })
+		time.Sleep(200 * time.Millisecond)
 	}
-	x.note("rows on F", time.Since(start))
 	// Requests, twice: the home on F, and F's dashboard on A.
 	for range 2 {
 		for _, step := range []struct {
@@ -119,27 +143,24 @@ func (x *lhWorld) round(t *testing.T, n int) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	// Switches through the home, each landing a client on its target.
-	// loop part: the dashboard's ⏎, the local A → A switch and prefix L.
-	cur := f
-	for _, hop := range []struct {
-		to   *Host
-		sess string
-	}{{a, "alpha"}, {x.s, "sun"}, {a, "alpha"}, {f, "fox"}} {
+	// Switches from the dashboard, each landing a client on its target.
+	x.note("switch F → A", x.dashTo(t, "alpha", a, "alpha"))
+	time.Sleep(500 * time.Millisecond)
+	x.note("switch A → A", x.dashTo(t, "apple", a, "apple"))
+	time.Sleep(500 * time.Millisecond)
+	for _, s := range []string{"alpha", "apple"} {
 		start := time.Now()
-		ack, _ := cur.Act(cl(cur, x.loop.cur.Label), proto.Request{Op: proto.OpSwitch, Target: w.Ref(a, hop.to.Name, hop.sess)}, 0)
-		if !ack.OK {
-			t.Fatalf("switch to %s:%s: %+v", hop.to.Name, hop.sess, ack)
-		}
-		next := x.loop.After(42, false)
-		if next.Do != proto.NextHandoff {
-			t.Fatalf("after: %+v", next)
-		}
-		x.loop.Attach(next.Target, hop.to)
-		x.note("switch → "+hop.to.Name, time.Since(start))
-		cur = hop.to
-		time.Sleep(500 * time.Millisecond)
+		x.term.Keys("M-l")
+		w.Eventually(6*time.Second, "prefix L to A:"+s, func() bool { return onSession(a, s) })
+		x.note("prefix L", time.Since(start))
+		time.Sleep(400 * time.Millisecond)
 	}
+	x.note("switch A → S", x.dashTo(t, "sun", x.s, "sun"))
+	time.Sleep(800 * time.Millisecond)
+	x.note("switch S → A", x.dashTo(t, "alpha", a, "alpha"))
+	time.Sleep(500 * time.Millisecond)
+	x.note("switch A → F", x.dashTo(t, "fox", f, "fox"))
+	time.Sleep(500 * time.Millisecond)
 }
 
 // LH01: baseline round trips with a slow host and a stalled host in the
@@ -173,6 +194,93 @@ func TestLH02(t *testing.T) {
 	}
 	x.report(t)
 	x.w.ResetKnobs("Z")
+}
+
+// lhTold is the dashboard's or the status line's word that Z is stalled.
+var lhTold = regexp.MustCompile(`(?i)(Z|zed)[^\n]*(not responding|stalled|unreachable|lost|down|did not answer|timed out)`)
+
+// bottomLines are the last n non-empty lines of a screen: the status
+// lines, the popup's above tmux's own.
+func bottomLines(screen string, n int) string {
+	var out []string
+	lines := strings.Split(screen, "\n")
+	for i := len(lines) - 1; i >= 0 && len(out) < n; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			out = append(out, lines[i])
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// LH03: a switch to a host that stalls: refused fast once it is marked,
+// given up fast when it stalls as it is switched to; the terminal back
+// where it was, told why; the host usable again once it recovers.
+func TestLH03(t *testing.T) {
+	x := newLH(t, "lh03", nil, func(k *fakenet.Knobs) { k.WindowKB = 32 })
+	w, a, f, z := x.w, x.a, x.f, x.z
+	zed := w.Ref(a, "Z", "zed")
+	for _, after := range []time.Duration{4 * time.Second, 4 * time.Second, 300 * time.Millisecond, 300 * time.Millisecond} {
+		w.Knobs("Z", func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env, Drop: k.Drop, WindowKB: 32} })
+		w.WaitLink(a, "Z", "up", 30*time.Second)
+		time.Sleep(1500 * time.Millisecond)
+		w.Eventually(10*time.Second, "the screen no longer telling", func() bool { return !lhTold.MatchString(x.term.Screen()) })
+		x.term.Keys("M-o")
+		x.term.Wait(Prompt, 8*time.Second)
+		x.term.Type("zed")
+		w.Knobs("Z", func(k *fakenet.Knobs) { k.Stall = true })
+		stalled := time.Now()
+		if after > time.Second {
+			time.Sleep(300 * time.Millisecond)
+			ack, took := a.Act("", proto.Request{Op: proto.OpRename, Target: zed, Name: "zed2"}, 0)
+			if ack.OK || took > 5*time.Second {
+				t.Fatalf("a rename on the stalled Z: %+v in %v", ack, took)
+			}
+			x.note("refused (rename)", took)
+			x.term.Keys("BSpace")
+			time.Sleep(time.Until(stalled.Add(after - 300*time.Millisecond)))
+			x.term.Type("d")
+		}
+		time.Sleep(time.Until(stalled.Add(after)))
+		x.term.Keys("Enter")
+		pressed := time.Now()
+		if _, ok := x.term.WaitOK(`(?s).`, 0); ok {
+			told := time.Now().Add(30 * time.Second)
+			for !lhTold.MatchString(bottomLines(x.term.Screen(), 2)) {
+				if time.Now().After(told) {
+					t.Fatalf("not told that Z does not answer (⏎ %v after the stall); screen:\n%s", after, x.term.Screen())
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		x.note(fmt.Sprintf("told (⏎ %v after the stall)", after), time.Since(pressed))
+		w.Eventually(10*time.Second, "back on F:fox", func() bool { return onSession(f, "fox") })
+		// Recovery.
+		w.Knobs("Z", func(k *fakenet.Knobs) { k.Stall = false })
+		w.Eventually(40*time.Second, "Z usable again", func() bool {
+			ack, _ := a.Act("", proto.Request{Op: proto.OpHas, Target: zed}, 0)
+			return ack.OK
+		})
+		if !onSession(f, "fox") {
+			w.Eventually(30*time.Second, "on Z, on F or at the picker", func() bool {
+				return onSession(z, "zed") || onSession(f, "fox") || strings.Contains(x.term.Screen(), Prompt)
+			})
+			switch {
+			case strings.Contains(x.term.Screen(), Prompt):
+				x.term.Pick("fox")
+			case onSession(z, "zed"):
+				time.Sleep(500 * time.Millisecond)
+				x.dashTo(t, "fox", f, "fox")
+			}
+		}
+		w.Eventually(15*time.Second, "on F:fox", func() bool { return onSession(f, "fox") })
+		if strings.Contains(x.term.Screen(), Prompt) {
+			// The popup that refused the switch is still open.
+			x.term.Keys("Escape")
+			w.Eventually(5*time.Second, "the popup closed", func() bool { return !strings.Contains(x.term.Screen(), Prompt) })
+		}
+		time.Sleep(time.Second)
+	}
+	x.report(t)
 }
 
 // LH04: two homes on one remote, one home's link stalled: the other

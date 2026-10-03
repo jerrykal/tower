@@ -167,10 +167,7 @@ func TestS05(t *testing.T) {
 		}
 	}
 	// A hand-off between two servers of the machine.
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "W", "work1"), wk)
-	w.WaitLoop(a, "^W:work1", 6*time.Second)
-	l.Handoff(wk, "work1", w.Ref(a, "P", "play1"), p)
+	term := w.LoopTo("t", a, nil, "work1", "^W:work1")
+	term.DashTo("play1")
 	w.WaitLoop(a, "^P:play1", 8*time.Second)
-	// loop part: the dashboard's ⏎ itself.
 }

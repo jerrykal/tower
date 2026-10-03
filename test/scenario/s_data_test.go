@@ -25,8 +25,7 @@ func TestS13(t *testing.T) {
 	b := w.Host("B", []string{"bravo"})
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "B", "bravo"), b)
+	w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	attempts := w.Link(a, "B").Attempts
 	ctl := b.Status().Detail.Watch.CtlPid
 
@@ -51,15 +50,9 @@ func TestS13(t *testing.T) {
 	if got := b.Status().Detail.Watch.CtlPid; got != ctl {
 		t.Fatalf("B's control client changed: %d → %d", ctl, got)
 	}
-	// The attach's ssh ended with the drop: the loop is told to reconnect
-	// to where it was, and is back.
-	next := l.After(255, false)
-	if next.Do != proto.NextReconnect || next.Target.Label != "bravo" {
-		t.Fatalf("after the drop: %+v", next)
-	}
-	l.Attach(next.Target, b)
+	// The attach's ssh ended with the drop: the loop reconnects to where
+	// it was.
 	w.Eventually(10*time.Second, "B's client on bravo", func() bool { return slices.Equal(b.Clients(), []string{"bravo"}) })
-	// loop part: the loop's own reconnect timing.
 	gen := w.Link(a, "B").Link
 	if err := a.Call(proto.CallWake, nil, nil); err != nil {
 		t.Fatal(err)
