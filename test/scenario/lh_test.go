@@ -317,6 +317,12 @@ func TestLH06(t *testing.T) {
 		return ls.Status == "up" && ls.Link > gen0
 	})
 	back := time.Since(start)
+	// Let the view poller catch the same moment.
+	w.Eventually(time.Second, "the poller sees B up", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(seq) > 0 && seq[len(seq)-1] == "up"
+	})
 	close(stop)
 	<-done
 	t.Logf("B stalled after %v, given up after %v, back after %v; states %v", stalled.Round(100*time.Millisecond), down.Round(100*time.Millisecond), back.Round(100*time.Millisecond), seq)

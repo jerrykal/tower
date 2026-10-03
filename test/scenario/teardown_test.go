@@ -79,6 +79,12 @@ func (w *World) teardown() {
 	if len(wedged) > 0 {
 		t.Errorf("teardown: tmux servers outlived their sessions: %v", wedged)
 	}
+	if reports, _ := filepath.Glob(filepath.Join(w.Dir, "race", "report.*")); len(reports) > 0 {
+		for _, r := range reports {
+			b, _ := os.ReadFile(r)
+			t.Errorf("race detected (%s):\n%s", filepath.Base(r), b)
+		}
+	}
 	if !t.Failed() {
 		os.RemoveAll(w.Dir)
 	}

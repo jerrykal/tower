@@ -20,6 +20,9 @@ const (
 	Version2 = "0.0.2-test"
 )
 
+// raceBuild (TOWER_RACE=1) builds tower with the race detector.
+var raceBuild = os.Getenv("TOWER_RACE") == "1"
+
 var (
 	root     string // TOWER_TEST_DIR
 	towerBin string
@@ -72,8 +75,15 @@ func setup() error {
 		if b.version != "" {
 			args = append(args, "-ldflags", "-X github.com/jerrykal/tower/internal/version.Version="+b.version)
 		}
+		cgo := "CGO_ENABLED=0"
+		if raceBuild && b.version != "" {
+			// tower with the race detector; reports land in each world's
+			// directory and fail the scenario at teardown.
+			args = append(args, "-race")
+			cgo = "CGO_ENABLED=1"
+		}
 		cmd := exec.Command("go", append(args, b.pkg)...)
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		cmd.Env = append(os.Environ(), cgo)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("build %s: %v\n%s", b.pkg, err, out)
 		}

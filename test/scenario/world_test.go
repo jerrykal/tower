@@ -73,7 +73,7 @@ func NewWorld(t *testing.T, id string) *World {
 	w.Fake = filepath.Join(w.Dir, "fake")
 	w.UserHome = filepath.Join(w.Dir, "userhome")
 	w.Marks = filepath.Join(w.Dir, "marks")
-	for _, d := range []string{w.Fake, filepath.Join(w.Fake, "hosts"), w.UserHome} {
+	for _, d := range []string{w.Fake, filepath.Join(w.Fake, "hosts"), w.UserHome, filepath.Join(w.Dir, "race")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -185,6 +185,9 @@ func (h *Host) EnvMap() map[string]string {
 	m["TOWER_FAKE_DIR"] = h.w.Fake
 	m["TOWER_TEST_TIMING"] = h.w.Marks
 	m["TOWER_TEST_NAME"] = h.Name
+	if raceBuild {
+		m["GORACE"] = "log_path=" + filepath.Join(h.w.Dir, "race", "report")
+	}
 	maps.Copy(m, h.w.timings)
 	for _, k := range []string{"TOWER_STANDBY", "TOWER_RELAY"} {
 		if v := os.Getenv(k); v != "" {

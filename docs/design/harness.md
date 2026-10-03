@@ -8,7 +8,7 @@
 
 | File | Holds |
 | --- | --- |
-| `main_test.go` | builds `tower` at `0.0.1-test`, `tower-v2` at `0.0.2-test` and the fake ssh into `$TOWER_TEST_DIR/bin` |
+| `main_test.go` | builds `tower` at `0.0.1-test`, `tower-v2` at `0.0.2-test` and the fake ssh into `$TOWER_TEST_DIR/bin`; with `TOWER_RACE=1` tower is built with the race detector, every process writes its reports under the world's `race/`, and a report fails the scenario at teardown |
 | `world_test.go` | `World` (one scenario), `Host` (one simulated machine and tmux server), homes, waits on links and loops, timing marks |
 | `term_test.go` | `Term`: a terminal running the attach loop, driven with `send-keys`, read with `capture-pane` |
 | `teardown_test.go` | ends everything and fails the test if a tmux server outlives its sessions |
