@@ -240,16 +240,22 @@ func (s *Session) signal(sig syscall.Signal) {
 
 // Close kills the command if it still runs, waits for it, and releases
 // the session's descriptors. Not while relaying.
+//
+// The pty's master closes before the wait: a process exiting closes its
+// controlling terminal, which on macOS waits for the terminal's output to
+// be read, and outside a relay nobody reads it.
 func (s *Session) Close() {
 	s.closeOnce.Do(func() {
 		select {
 		case <-s.done:
+			unix.Close(s.master)
 		default:
 			s.Kill()
+			unix.Close(s.master)
 			<-s.done
 		}
 		s.stopOnce.Do(func() { unix.Close(s.stopW) })
-		for _, fd := range []int{s.master, s.out, s.exitR, s.stopR} {
+		for _, fd := range []int{s.out, s.exitR, s.stopR} {
 			unix.Close(fd)
 		}
 	})
