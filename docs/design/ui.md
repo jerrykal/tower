@@ -102,6 +102,28 @@ type Model struct {
 - **Same server**: `switch-client -c <client> -t <id>` (and `select-window`
   for a window), then quit.
 
+## The loop's side
+
+```go
+// Pick runs the picker on the loop's terminal and returns what ⏎ chose.
+func Pick(ctx context.Context, c *client.Client, o PickOptions) (Choice, error)
+
+type PickOptions struct {
+    Loop string // the loop's id: its view marks current and previous
+    Note string // why the picker is up ("B restarted since it was listed; pick again")
+    Dash bool   // tower dash: esc means "attach to the last target"
+}
+
+type Choice struct {
+    Target proto.Ref
+    Last   bool // esc in tower dash: the loop attaches to its last target
+}
+```
+
+`Pick` returns `ErrQuit` on `esc` (or `Last` in `tower dash`); the loop then
+exits or attaches. In the picker `⏎` on any host is a target for the loop,
+which prepares it; no switch is stored.
+
 ## Scripted entry points
 
 Hidden subcommands run the dashboard's own code paths without the TUI, for
