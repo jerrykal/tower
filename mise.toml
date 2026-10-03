@@ -1,0 +1,52 @@
+[tools]
+go = "1.27"
+
+[env]
+CGO_ENABLED = "0"
+
+[tasks.build]
+description = "Build tower for this machine into .dev/bin"
+run = """
+v=$(scripts/version.sh)
+go build -trimpath -ldflags "-s -w -X github.com/jerrykal/tower/internal/version.Version=$v" -o .dev/bin/tower ./cmd/tower
+echo "built tower $v"
+"""
+
+[tasks.test]
+description = "Vet and test"
+run = ["go vet ./...", "go test ./..."]
+
+[tasks.dist]
+description = "Cross-compile release archives into dist/"
+run = """
+set -euo pipefail
+v=$(scripts/version.sh)
+rm -rf dist && mkdir -p dist
+for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+  os=${target%/*} arch=${target#*/}
+  dir="dist/tower_${v}_${os}_${arch}"
+  mkdir -p "$dir"
+  GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X github.com/jerrykal/tower/internal/version.Version=$v" -o "$dir/tower" ./cmd/tower
+  tar -C "$dir" -czf "$dir.tar.gz" tower
+  rm -rf "$dir"
+done
+(cd dist && shasum -a 256 *.tar.gz > checksums.txt)
+ls dist
+"""
+
+[tasks.dev]
+description = "Make this checkout's build the tower mise runs on this machine"
+depends = ["build"]
+run = """
+mise link --force github:jerrykal/tower@dev "$PWD/.dev"
+mise use --path ~/.config/mise/config.local.toml github:jerrykal/tower@dev
+echo "tower is now $(mise which tower): mise run build updates it in place"
+"""
+
+[tasks."dev:off"]
+description = "Go back to the released tower"
+run = """
+mise use --path ~/.config/mise/config.local.toml --remove github:jerrykal/tower
+mise uninstall github:jerrykal/tower@dev 2>/dev/null || true
+echo "tower is now $(mise which tower 2>/dev/null || echo 'not installed')"
+"""
