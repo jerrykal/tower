@@ -98,6 +98,7 @@ type LinkStatus struct {
 type HomeStatus struct {
 	ID   string `json:"id"`
 	As   string `json:"as"`
+	Name string `json:"name,omitempty"` // the home's own label
 	Live bool   `json:"live"`
 	Age  int64  `json:"age_ms,omitempty"` // since it disconnected
 }

@@ -109,7 +109,7 @@ demos): `$TOWER_HOME/config` and `$TOWER_HOME/state`.
   never finishes a control client whose reader is gone while output is
   queued, that client no longer shows in `list-clients`, and either keeps
   the server alive after the last session. So `_tower`'s one pane runs
-  `tower _keep <towerd pid> <state dir>`: every second it checks that
+  `tower _keep <towerd pid> <state dir>`: every 250ms it checks that
   towerd is alive; once it is gone it kills the control client in `ctl.pid`
   (unless its parent is the towerd now in `towerd.pid`) and exits, which
   ends `_tower` (`remain-on-exit off`). A towerd started meanwhile is

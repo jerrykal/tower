@@ -131,6 +131,7 @@ type View struct {
 	Home  string `json:"home"` // towerd id of the home
 	Hosts []Host `json:"hosts"`
 	Loops []Loop `json:"loops,omitempty"`
+	Pad   string `json:"pad,omitempty"` // test padding (TOWER_TEST_PAD)
 }
 
 // HostByID returns the host with towerd id id, or nil.
@@ -166,4 +167,5 @@ type State struct {
 	NoServer bool      `json:"nosrv,omitempty"`
 	Sessions []Session `json:"sessions,omitempty"`
 	Clients  []Client  `json:"clients,omitempty"` // only the receiving home's loops
+	Pad      string    `json:"pad,omitempty"`     // test padding (TOWER_TEST_PAD)
 }

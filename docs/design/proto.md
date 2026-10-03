@@ -77,6 +77,7 @@ type View struct {
     Home  string // towerd id of the home
     Hosts []Host
     Loops []Loop
+    Pad   string // TOWER_TEST_PAD only
 }
 
 type State struct {
@@ -85,6 +86,7 @@ type State struct {
     NoServer bool
     Sessions []Session
     Clients  []Client // only clients of the receiving home's loops
+    Pad      string   // TOWER_TEST_PAD only
 }
 ```
 
@@ -173,22 +175,23 @@ type Reply struct {
 
 | Op | Args → Result | Who calls |
 | --- | --- | --- |
-| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes, loops and clients) | ensure, `tower status` |
+| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes (id, name, as, live), loops, pending switches, clients and the watch) | ensure, `tower status` |
 | `stop` | `{IfOlderThan}` → `{}` | `tower stop`, an upgrading caller |
 | `stream` | – → the connection becomes a stream | the bridge |
 | `register` | `{Pid, Loop, Gen, Home, Inst}` → `{MKey, TmuxBin}` | the attach shim |
 | `view` | `{Client}` → `Dash` (the view to show, the host it runs on, the client's loop and its home, notes) | dashboards |
 | `watch` | `{Gen}` → `{Gen}` | dashboards, loops |
 | `act` | `Request` → `Ack` | dashboards, `tower last` |
-| `loop` | `LoopBeat{ID, Gen, Cur, Prev, Host}` → `{}` (also activates the home role) | the loop, every 5s |
+| `loop` | `LoopBeat{ID, Gen, Cur, Prev}` → `LoopAck{Last}` (also activates the home role) | the loop, every 5s |
 | `loop-bye` | `{ID}` → `{}` | the loop on exit |
 | `prepare` | `{Loop, Target}` → `Prepared{Gen, Local, Argv, Go, Key, Host}` | the loop |
 | `after` | `{Loop, Gen, Code, Ended}` → `Next{Do, Target, Note}` with `Do` one of `handoff`, `picker`, `reconnect`, `exit` | the loop |
 | `wait-switch` | `{Loop, Gen}` → `{Switch}` | the loop, while attached |
 | `held` | `{Loop, Gen}` → `{End}` | the loop |
 | `standby` | `{Loop}` → `[]Offer{Host, Key, Argv}` | the loop |
-| `last` | `{Client}` → `{Local, Target}` | `tower last` |
-| `wake`, `netchange`, `reload` | – → `{}` | tests, `tower netchange` |
+| `last` | `{Client}` → `LastResult{Local, Stored, Target, Note}` | `tower last` |
+| `wake`, `netchange`, `reload` | – → `{}` (`reload` also activates the home role) | tests, `tower netchange`, `tower host` |
+| `plant` | `Request{Loop, Gen, Nonce, Target}` → `{}`: a stored switch, only with `TOWER_TEST_HOOKS` | the scenario suite |
 
 ## Quoting
 
