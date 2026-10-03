@@ -60,6 +60,22 @@ func TestRows(t *testing.T) {
 	}
 }
 
+// TestNoQuitWhileEnterInFlight: once ⏎ is on its way (a switch may be
+// stored), neither esc nor ^c ends the dashboard: its outcome does.
+func TestNoQuitWhileEnterInFlight(t *testing.T) {
+	m, _, _ := newTestModel(t, testDash(), false)
+	press(t, m, "b", "r", "a")
+	pressNoRun(m, "enter") // in flight: its command not run yet
+	if !m.busy {
+		t.Fatal("⏎ is not in flight")
+	}
+	press(t, m, "ctrl+c") // clears the query
+	press(t, m, "ctrl+c", "esc")
+	if m.quitted {
+		t.Fatal("the dashboard quit with ⏎ in flight")
+	}
+}
+
 func TestFilter(t *testing.T) {
 	m, _, _ := newTestModel(t, testDash(), false)
 	press(t, m, "b", "a", "n")

@@ -27,6 +27,9 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		if len(m.query) > 0 {
 			return m.setQuery(nil)
 		}
+		if m.busy {
+			return nil // as esc: a ⏎ in flight decides how the dashboard ends
+		}
 		return m.quit()
 	case "up", "ctrl+k", "ctrl+p":
 		return m.move(-1)
