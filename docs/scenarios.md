@@ -93,8 +93,8 @@ a scenario measures what a user would see.
 
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
-| LV01 | A change on one remote reaches another's view in about one round trip; a bell in one round trip (alert hooks) | towerd | todo |
-| LV02 | A burst of 40 switches and 40 new windows costs the home about 17 states | towerd | todo |
+| LV01 | A change on one remote reaches another's view in about one round trip; a bell in one round trip (alert hooks) | towerd | pass (towerd part) |
+| LV02 | A burst of 40 switches and 40 new windows costs the home about 17 states | towerd | pass |
 | LV04 | An open dashboard follows the view within a round trip plus its redraw | ui, towerd | todo |
 | LD01 | Dashboard requests at 150 and 400ms: rows right after every answer; a kill's row gone before the answer; a preview's windows before the capture | ui, towerd | todo |
 | LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | todo |
