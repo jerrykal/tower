@@ -22,14 +22,13 @@ const (
 	// when it exits, for a client the loop hung up, whose own restore
 	// never arrives. In order: the whole screen as the scroll region,
 	// attributes off, G0 to ASCII, cursor keys and keypad back to normal,
-	// clear (the alternate screen, about to be left), the cursor's
-	// default shape, cursor shown, the mouse modes off (X10/normal,
+	// the cursor's default shape, cursor shown, the mouse modes off (X10/normal,
 	// button, any-event, SGR, UTF-8), bracketed paste off, focus events
 	// off, extended keys off, and out of the alternate screen (which
 	// brings the shell's screen and cursor back). It leaves synchronized
 	// output alone: the loop writes it inside a hold.
 	ClientRestore = "\x1b[r" + "\x1b[m" + "\x1b(B" + "\x1b[?1l\x1b>" +
-		"\x1b[H\x1b[2J" + "\x1b[0 q" + "\x1b[?25h" +
+		"\x1b[0 q" + "\x1b[?25h" +
 		"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1005l" +
 		"\x1b[?2004l" + "\x1b[?1004l" + "\x1b[>4m" + "\x1b[?1049l"
 )

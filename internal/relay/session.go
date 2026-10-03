@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,6 +31,8 @@ const (
 var (
 	ErrExited  = errors.New("relay: session exited")
 	ErrTimeout = errors.New("relay: timed out")
+	// ErrAbandoned is a relay ended by Abandon.
+	ErrAbandoned = errors.New("relay: abandoned")
 )
 
 // bufSize is the size of the relay's reads.
@@ -47,14 +50,17 @@ type Session struct {
 	out    int // the read end of the stdout pipe, nonblocking
 	name   string
 
-	pending []byte // output read past a marker, relayed first
+	pending []byte       // output read past a marker, relayed first
+	relayed atomic.Int64 // bytes of output relayed to a terminal
 
 	exitR, exitW int // exitW is closed once the command has exited
 	stopR, stopW int // stopW is closed by Terminate and Kill: input stops
+	quitR, quitW int // quitW is closed by Abandon: the relay ends
 
 	done      chan struct{}
 	state     *os.ProcessState
 	stopOnce  sync.Once
+	quitOnce  sync.Once
 	closeOnce sync.Once
 }
 
@@ -106,6 +112,10 @@ func Start(argv []string, env []string, modes Modes, rows, cols int) (*Session, 
 		return fail(err)
 	}
 	fds = append(fds, s.stopR, s.stopW)
+	if s.quitR, s.quitW, err = pipe(); err != nil {
+		return fail(err)
+	}
+	fds = append(fds, s.quitR, s.quitW)
 
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = env
@@ -123,6 +133,10 @@ func Start(argv []string, env []string, modes Modes, rows, cols int) (*Session, 
 	}()
 	return s, nil
 }
+
+// Relayed counts the bytes of the command's output relayed to a terminal
+// so far: none means the far side has drawn nothing yet.
+func (s *Session) Relayed() int64 { return s.relayed.Load() }
 
 // Pid is the command's process id.
 func (s *Session) Pid() int { return s.cmd.Process.Pid }
@@ -238,6 +252,15 @@ func (s *Session) signal(sig syscall.Signal) {
 	s.cmd.Process.Signal(sig)
 }
 
+// Abandon ends a running relay at once, without waiting for the command
+// to exit: nothing more it writes reaches the terminal, and the terminal's
+// input stays where it is. Relay returns ErrAbandoned. For a session ended
+// for a switch: the next client need not wait for ssh's goodbye.
+func (s *Session) Abandon() {
+	s.stopOnce.Do(func() { unix.Close(s.stopW) })
+	s.quitOnce.Do(func() { unix.Close(s.quitW) })
+}
+
 // Close kills the command if it still runs, waits for it, and releases
 // the session's descriptors. Not while relaying.
 //
@@ -255,7 +278,8 @@ func (s *Session) Close() {
 			<-s.done
 		}
 		s.stopOnce.Do(func() { unix.Close(s.stopW) })
-		for _, fd := range []int{s.out, s.exitR, s.stopR} {
+		s.quitOnce.Do(func() { unix.Close(s.quitW) })
+		for _, fd := range []int{s.out, s.exitR, s.stopR, s.quitR} {
 			unix.Close(fd)
 		}
 	})

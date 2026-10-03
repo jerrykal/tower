@@ -281,6 +281,49 @@ func TestRelayWindowSize(t *testing.T) {
 	<-ch
 }
 
+func TestRelayAbandon(t *testing.T) {
+	// Abandon ends the relay at once, the command still running; what it
+	// writes afterwards never reaches the terminal, nor does it take the
+	// terminal's input.
+	s := startSession(t, sh(`trap '' TERM; stty raw -echo; printf R; sleep 0.3; printf late; sleep 1`), nil, cookedModes(t))
+	tt := newTestTerminal(t, 24, 80)
+	c := collect(tt)
+	ch := relay(s, tt.Terminal)
+	c.until(t, "R", 5*time.Second)
+	start := time.Now()
+	s.Terminate()
+	s.Abandon()
+	select {
+	case res := <-ch:
+		if res.err != ErrAbandoned {
+			t.Fatalf("relay: %+v", res)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the relay went on")
+	}
+	if d := time.Since(start); d > 100*time.Millisecond {
+		t.Fatalf("abandoned after %v", d)
+	}
+	select {
+	case <-s.Done():
+		t.Fatal("the command was not left running")
+	default:
+	}
+	unix.Write(tt.mfd, []byte("k"))
+	<-s.Done()
+	time.Sleep(50 * time.Millisecond)
+	c.mu.Lock()
+	got := string(c.buf)
+	c.mu.Unlock()
+	if strings.Contains(got, "late") {
+		t.Fatalf("the abandoned session's output reached the terminal: %q", got)
+	}
+	k := make([]byte, 1)
+	if _, err := io.ReadFull(tt.pty.Slave, k); err != nil || k[0] != 'k' {
+		t.Fatalf("terminal input %q %v", k, err)
+	}
+}
+
 func TestRelayTwice(t *testing.T) {
 	// One terminal, two sessions in turn; the second's output is not cut.
 	tt := newTestTerminal(t, 24, 80)

@@ -63,6 +63,7 @@ func (s *Session) output(t *Terminal, wakeR int) error {
 		{Fd: int32(s.master), Events: unix.POLLIN},
 		{Fd: int32(wakeR), Events: unix.POLLIN},
 		{Fd: int32(s.exitR), Events: unix.POLLIN},
+		{Fd: int32(s.quitR), Events: unix.POLLIN},
 	}
 	for {
 		// Queued writes go now if they can; else poll until they must.
@@ -80,6 +81,9 @@ func (s *Session) output(t *Terminal, wakeR int) error {
 		if _, err := poll(fds, wait); err != nil {
 			return err
 		}
+		if fds[4].Revents != 0 {
+			return ErrAbandoned
+		}
 		if fds[2].Revents != 0 {
 			for {
 				if _, err := readFd(wakeR, buf); err != nil {
@@ -93,6 +97,7 @@ func (s *Session) output(t *Terminal, wakeR int) error {
 			}
 			n, err := readFd(int(fds[i].Fd), buf)
 			if n > 0 {
+				s.relayed.Add(int64(n))
 				if err := t.emit(buf[:n]); err != nil {
 					return err
 				}
