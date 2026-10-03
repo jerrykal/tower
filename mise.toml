@@ -53,3 +53,16 @@ mise use --path ~/.config/mise/config.local.toml --remove github:jerrykal/tower
 mise uninstall github:jerrykal/tower@dev 2>/dev/null || true
 echo "tower is now $(mise which tower 2>/dev/null || echo 'not installed')"
 """
+
+[tasks.scenarios]
+description = "Run the scenario suite, isolated (about 20 minutes); extra arguments go to go test, e.g. -run S00"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+base=/tmp/tsc-$$
+mkdir -p "$base/tmux" "$base/tmp"
+export TMUX_TMPDIR="$base/tmux" TOWER_TEST_DIR="$base/d" TMPDIR="$base/tmp" TOWER_SCENARIOS=1
+unset TMUX TMUX_PANE
+trap 'rm -rf "$base"' EXIT
+go test -count=1 -timeout 60m ./test/scenario/ "$@"
+"""

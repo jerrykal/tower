@@ -153,8 +153,9 @@ that home as `relay` with the deadline converted.
 
 ## Home role (home.go, link.go)
 
-Activated by the first `loop` call (or at start if `last.json` lists
-loops). It reads `hosts.toml` (again on `reload` and when a dashboard
+A towerd started by a bridge (`tower towerd --bridged`) is remote-only
+until a `loop` or `reload` call activates the home role; one started any
+other way (by the loop, a dashboard, the CLI) plays home from the start. It reads `hosts.toml` (again on `reload` and when a dashboard
 opens) and keeps one link per enabled host.
 
 **Link**: `ssh -T … host -- '<tower> towerd --stdio --tmux …'` with stderr

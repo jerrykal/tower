@@ -1,0 +1,150 @@
+package scenario
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"os/exec"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/jerrykal/tower/internal/tmux"
+	"github.com/jerrykal/tower/internal/transport"
+)
+
+func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
+
+// Term is a terminal: the one pane of a tmux server of its own, running a
+// command (usually the attach loop) with some host's environment.
+type Term struct {
+	w    *World
+	Name string
+	Sock string
+}
+
+// Term starts a terminal running argv with host h's environment plus
+// extra. After argv exits the pane prints LOOP-EXIT=<code>.
+func (w *World) Term(name string, h *Host, extra map[string]string, argv ...string) *Term {
+	w.T.Helper()
+	t := &Term{w: w, Name: name, Sock: "tt-" + w.ID + "-term-" + name}
+	w.sockets = append(w.sockets, t.Sock)
+	env := h.EnvMap()
+	maps.Copy(env, extra)
+	keys := slices.Sorted(maps.Keys(env))
+	var b strings.Builder
+	b.WriteString("env -u TMUX -u TMUX_PANE")
+	for _, k := range keys {
+		if strings.HasPrefix(k, "TOWER_") || k == "PATH" || k == "HOME" || k == "XDG_CONFIG_HOME" || k == "TMPDIR" || k == "TMUX_TMPDIR" {
+			b.WriteString(" " + transport.ShellQuote(k+"="+env[k]))
+		}
+	}
+	b.WriteString(" TERM=xterm-256color")
+	for _, a := range argv {
+		b.WriteString(" " + transport.ShellQuote(a))
+	}
+	b.WriteString("; echo LOOP-EXIT=$?; sleep 600")
+	if _, err := t.tmux("-f", "/dev/null", "new-session", "-d", "-s", "term", "-x", "110", "-y", "32", b.String()); err != nil {
+		w.T.Fatal(err)
+	}
+	t.tmux("set", "-g", "escape-time", "0")
+	w.terms = append(w.terms, t)
+	return t
+}
+
+// Loop starts a terminal running the attach loop as on home h.
+func (w *World) Loop(name string, h *Host, extra map[string]string) *Term {
+	return w.Term(name, h, extra, towerBin)
+}
+
+func (t *Term) tmux(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, tmux.Bin(), append([]string{"-L", t.Sock}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("terminal tmux %v: %v: %s", args, err, out)
+	}
+	return string(out), nil
+}
+
+// Keys sends tmux key names (Enter, Escape, M-o, C-b, …).
+func (t *Term) Keys(keys ...string) {
+	t.w.T.Helper()
+	if _, err := t.tmux(append([]string{"send-keys", "-t", "term:"}, keys...)...); err != nil {
+		t.w.T.Fatal(err)
+	}
+}
+
+// Type types text literally.
+func (t *Term) Type(s string) {
+	t.w.T.Helper()
+	if _, err := t.tmux("send-keys", "-t", "term:", "-l", s); err != nil {
+		t.w.T.Fatal(err)
+	}
+}
+
+// Screen is what the terminal shows.
+func (t *Term) Screen() string {
+	out, _ := t.tmux("capture-pane", "-p", "-t", "term:")
+	return out
+}
+
+// Wait waits until the screen matches re, failing the test after d.
+func (t *Term) Wait(re string, d time.Duration) time.Duration {
+	t.w.T.Helper()
+	if el, ok := t.WaitOK(re, d); ok {
+		return el
+	}
+	t.w.T.Fatalf("terminal %s: no %q within %v; screen:\n%s", t.Name, re, d, t.Screen())
+	return 0
+}
+
+// WaitOK is Wait reporting instead of failing.
+func (t *Term) WaitOK(re string, d time.Duration) (time.Duration, bool) {
+	rx := regexp.MustCompile(re)
+	start := time.Now()
+	for {
+		if rx.MatchString(t.Screen()) {
+			return time.Since(start), true
+		}
+		if time.Since(start) > d {
+			return 0, false
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+}
+
+// Pick types a query into the dashboard and presses Enter.
+func (t *Term) Pick(query string) {
+	t.w.T.Helper()
+	t.Type(query)
+	time.Sleep(250 * time.Millisecond)
+	t.Keys("Enter")
+}
+
+// Prompt is what the dashboard shows while it waits for a query.
+const Prompt = `sessions>`
+
+// LoopTo starts a loop terminal on home and attaches it to the session
+// matching query; re is what the loop's current target must then match.
+func (w *World) LoopTo(name string, home *Host, extra map[string]string, query, re string) *Term {
+	w.T.Helper()
+	t := w.Loop(name, home, extra)
+	t.Wait(Prompt, 6*time.Second)
+	t.Pick(query)
+	w.WaitLoop(home, re, 6*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	return t
+}
+
+// DashTo opens the dashboard in the terminal's current client (M-o) and
+// picks query.
+func (t *Term) DashTo(query string) {
+	t.w.T.Helper()
+	t.Keys("M-o")
+	t.Wait(Prompt, 6*time.Second)
+	t.Pick(query)
+}

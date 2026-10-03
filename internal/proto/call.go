@@ -36,6 +36,9 @@ const (
 	CallWake       = "wake"
 	CallNetChange  = "netchange"
 	CallReload     = "reload"
+	// CallPlant stores a switch as if a dashboard had asked for it; only
+	// with TOWER_TEST_HOOKS set (the scenario suite).
+	CallPlant = "plant"
 )
 
 // StatusArgs asks for towerd's status; Full adds links, homes, loops and

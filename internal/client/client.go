@@ -29,6 +29,9 @@ var ErrNoTowerd = errors.New("towerd is not running")
 type Client struct {
 	Env     *config.Env
 	Version string
+	// Bridged: a towerd this client starts is remote-only (`towerd
+	// --bridged`) until an attach loop or a reload activates its home role.
+	Bridged bool
 }
 
 // New is a client of e's towerd at this build's version.
@@ -189,6 +192,9 @@ func (c *Client) start() error {
 		return err
 	}
 	args := []string{"towerd"}
+	if c.Bridged {
+		args = append(args, "--bridged")
+	}
 	if len(c.Env.Tmux) > 0 {
 		args = append(args, "--tmux", strings.Join(c.Env.Tmux, " "))
 	}

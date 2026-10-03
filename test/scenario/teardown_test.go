@@ -1,0 +1,139 @@
+package scenario
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/jerrykal/tower/internal/tmux"
+)
+
+// teardown ends everything the world started and checks nothing outlived
+// it: terminals first (a live loop restarts a stopped towerd), then every
+// towerd, the half-open holders, the hosts' tmux servers, and orphans.
+func (w *World) teardown() {
+	t := w.T
+	for _, term := range w.terms {
+		killSessions(term.Sock)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	var pids []int
+	towerds, _ := filepath.Glob(filepath.Join(w.Dir, "home-*", "state", "towerd", "*", "towerd.pid"))
+	for _, p := range towerds {
+		if b, err := os.ReadFile(p); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pid > 1 {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	for _, c := range w.spawned {
+		if c.Process != nil {
+			pids = append(pids, c.Process.Pid)
+		}
+	}
+	for _, pid := range pids {
+		syscall.Kill(pid, syscall.SIGCONT)
+		syscall.Kill(pid, syscall.SIGTERM)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for _, pid := range pids {
+		for alive(pid) && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+		}
+		if alive(pid) {
+			syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
+
+	if b, err := os.ReadFile(filepath.Join(w.Fake, "holders")); err == nil {
+		for _, f := range strings.Fields(string(b)) {
+			if pid, err := strconv.Atoi(f); err == nil {
+				syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	}
+
+	var wedged []string
+	for _, sock := range w.sockets {
+		killSessions(sock)
+	}
+	for _, sock := range w.sockets {
+		if !waitNoServer(sock, 10*time.Second) {
+			wedged = append(wedged, sock)
+			exec.Command("pkill", "-9", "-f", "tmux -L "+sock+" ").Run()
+			exec.Command("pkill", "-9", "-f", "tmux -L "+sock+"$").Run()
+		}
+	}
+	exec.Command("pkill", "-f", w.Dir).Run()
+	// Anything still running with this world's TOWER_HOME: a towerd a
+	// reconnect started during teardown, a bridge, a standby shim.
+	for _, pid := range pidsWithEnv("TOWER_HOME=" + w.Dir + "/") {
+		syscall.Kill(pid, syscall.SIGKILL)
+	}
+
+	if len(wedged) > 0 {
+		t.Errorf("teardown: tmux servers outlived their sessions: %v", wedged)
+	}
+	if !t.Failed() {
+		os.RemoveAll(w.Dir)
+	}
+}
+
+func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
+
+// killSessions ends every session of a test server, which ends the server
+// (exit-empty). A server is never killed outright: the user's tooling
+// forbids kill-server, and a server that does not exit is a finding.
+func killSessions(sock string) {
+	out, err := exec.Command(tmux.Bin(), "-L", sock, "list-sessions", "-F", "#{session_id}").Output()
+	if err != nil {
+		return
+	}
+	for _, id := range strings.Fields(string(out)) {
+		exec.Command(tmux.Bin(), "-L", sock, "kill-session", "-t", id).Run()
+	}
+}
+
+func waitNoServer(sock string, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if exec.Command(tmux.Bin(), "-L", sock, "list-sessions").Run() != nil {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
+// pidsWithEnv lists processes whose environment or command line contains
+// s (ps -E shows the environment on macOS; Linux reads /proc).
+func pidsWithEnv(s string) []int {
+	var out []int
+	if b, err := exec.Command("ps", "-xEww", "-o", "pid=,command=").Output(); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			if strings.Contains(l, s) {
+				f := strings.Fields(l)
+				if pid, err := strconv.Atoi(f[0]); err == nil && pid != os.Getpid() {
+					out = append(out, pid)
+				}
+			}
+		}
+		return out
+	}
+	procs, _ := filepath.Glob("/proc/[0-9]*/environ")
+	for _, p := range procs {
+		b, err := os.ReadFile(p)
+		if err != nil || !strings.Contains(string(b), s) {
+			continue
+		}
+		if pid, err := strconv.Atoi(filepath.Base(filepath.Dir(p))); err == nil && pid != os.Getpid() {
+			out = append(out, pid)
+		}
+	}
+	return out
+}
