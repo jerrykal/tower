@@ -29,11 +29,10 @@ type lcWorld struct {
 
 func lcName(rtt int) string { return fmt.Sprintf("R%d", rtt) }
 
-// lcSession is the session on the remote of round trip rtt: names no
-// picker query for one matches another's.
-func lcSession(rtt int) string {
-	return map[int]string{0: "kilo", 50: "lima", 150: "mike", 400: "oscar"}[rtt]
-}
+// lcSession is the session on the remote of round trip rtt: s0, s50,
+// s150, s400. The picker ranks the exact name first, so a query for s50
+// never takes s150.
+func lcSession(rtt int) string { return fmt.Sprintf("s%d", rtt) }
 
 // newLC makes the world and starts the home; entry, when set, edits each
 // remote's hosts.toml entry first.
