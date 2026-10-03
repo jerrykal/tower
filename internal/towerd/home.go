@@ -826,6 +826,10 @@ func (h *homeRole) route(ctx context.Context, req *proto.Request) *proto.Ack {
 		}
 		return &proto.Ack{ID: req.ID, Err: why}
 	}
+	if req.Deadline != 0 && req.Deadline-stream.Now() <= conn.Margin().Milliseconds() {
+		// The host would get it with its time already up.
+		return &proto.Ack{ID: req.ID, Err: "too little time left to reach " + hs.name}
+	}
 	ack, err := conn.Request(ctx, proto.TExec, req)
 	if err != nil {
 		switch streamErr(err) {
