@@ -41,23 +41,30 @@ const sshTempSuffix = 17
 
 // Load builds the Env for the tmux server selected by tmuxArgs (nil: the
 // TOWER_TMUX environment variable). Directories are created.
-func Load(tmuxArgs []string) (*Env, error) {
+func Load(tmuxArgs []string) (*Env, error) { return LoadWith(os.Getenv, tmuxArgs) }
+
+// LoadWith is Load reading the environment through getenv: the scenario
+// harness computes a simulated host's paths with that host's variables.
+func LoadWith(getenv func(string) string, tmuxArgs []string) (*Env, error) {
 	if tmuxArgs == nil {
-		tmuxArgs = strings.Fields(os.Getenv("TOWER_TMUX"))
+		tmuxArgs = strings.Fields(getenv("TOWER_TMUX"))
 	}
-	e := &Env{Home: os.Getenv("TOWER_HOME"), Tmux: tmuxArgs, Tag: TmuxTag(tmuxArgs)}
+	e := &Env{Home: getenv("TOWER_HOME"), Tmux: tmuxArgs, Tag: TmuxTag(tmuxArgs)}
 	if e.Home != "" {
 		e.ConfigDir = filepath.Join(e.Home, "config")
 		e.StateRoot = filepath.Join(e.Home, "state")
 	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
+		home := getenv("HOME")
+		if home == "" {
+			var err error
+			if home, err = os.UserHomeDir(); err != nil {
+				return nil, err
+			}
 		}
-		e.ConfigDir = xdg("XDG_CONFIG_HOME", filepath.Join(home, ".config"), "tower")
-		e.StateRoot = xdg("XDG_STATE_HOME", filepath.Join(home, ".local", "state"), "tower")
+		e.ConfigDir = xdg(getenv, "XDG_CONFIG_HOME", filepath.Join(home, ".config"), "tower")
+		e.StateRoot = xdg(getenv, "XDG_STATE_HOME", filepath.Join(home, ".local", "state"), "tower")
 	}
-	mkey, err := MachineKey()
+	mkey, err := machineKey(getenv)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +73,7 @@ func Load(tmuxArgs []string) (*Env, error) {
 	if err := os.MkdirAll(e.StateDir, 0o700); err != nil {
 		return nil, err
 	}
-	e.RunDir, err = runDir(e)
+	e.RunDir, err = runDir(getenv, e)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +83,8 @@ func Load(tmuxArgs []string) (*Env, error) {
 	return e, nil
 }
 
-func xdg(name, def, sub string) string {
-	if v := os.Getenv(name); filepath.IsAbs(v) {
+func xdg(getenv func(string) string, name, def, sub string) string {
+	if v := getenv(name); filepath.IsAbs(v) {
 		return filepath.Join(v, sub)
 	}
 	return filepath.Join(def, sub)
@@ -145,19 +152,21 @@ func ValidMKey(s string) bool { return mkeyRE.MatchString(s) }
 // MachineKey is sha256(machine id | uid), 12 hex. TOWER_MKEY, when valid,
 // is taken as is: processes that start helpers pass their key down so the
 // helpers skip the lookup (ioreg costs about 10ms on macOS).
-func MachineKey() (string, error) {
-	if k := os.Getenv("TOWER_MKEY"); ValidMKey(k) {
+func MachineKey() (string, error) { return machineKey(os.Getenv) }
+
+func machineKey(getenv func(string) string) (string, error) {
+	if k := getenv("TOWER_MKEY"); ValidMKey(k) {
 		return k, nil
 	}
-	id, err := machineID()
+	id, err := machineID(getenv)
 	if err != nil {
 		return "", err
 	}
 	return shortHash(id+"|"+strconv.Itoa(os.Getuid()), 12), nil
 }
 
-func machineID() (string, error) {
-	if id := os.Getenv("TOWER_MACHINE_ID"); id != "" {
+func machineID(getenv func(string) string) (string, error) {
+	if id := getenv("TOWER_MACHINE_ID"); id != "" {
 		return id, nil
 	}
 	if runtime.GOOS == "darwin" {
@@ -185,8 +194,8 @@ func machineID() (string, error) {
 
 // runDir picks where sockets go: $XDG_RUNTIME_DIR/tower, else the first
 // candidate short enough for every socket it will hold.
-func runDir(e *Env) (string, error) {
-	if x := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) {
+func runDir(getenv func(string) string, e *Env) (string, error) {
+	if x := getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) {
 		d := filepath.Join(x, "tower")
 		if fits(d, e.Tag) {
 			return d, os.MkdirAll(d, 0o700)
@@ -194,7 +203,7 @@ func runDir(e *Env) (string, error) {
 	}
 	uid := strconv.Itoa(os.Getuid())
 	h := shortHash(e.StateRoot+"|"+e.MKey, 8)
-	tmp := os.Getenv("TMPDIR")
+	tmp := getenv("TMPDIR")
 	if tmp == "" {
 		tmp = "/tmp"
 	}

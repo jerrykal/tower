@@ -54,7 +54,78 @@ type Status struct {
 	TmuxBin string `json:"tmux_bin"`
 	Home    bool   `json:"home,omitempty"` // plays the home role
 	// Full status only.
-	Detail json.RawMessage `json:"detail,omitempty"`
+	Detail *Detail `json:"detail,omitempty"`
+}
+
+// Detail is the full status: what towerd knows, for `tower status` and
+// the scenario suite.
+type Detail struct {
+	Links   []LinkStatus    `json:"links,omitempty"`   // home role: one per host
+	Homes   []HomeStatus    `json:"homes,omitempty"`   // remote role: one per connected home
+	Clients []Client        `json:"clients,omitempty"` // registrations
+	Loops   []LoopStatus    `json:"loops,omitempty"`   // home role
+	Pending []PendingSwitch `json:"pending,omitempty"` // home role: stored switches
+	Watch   WatchStatus     `json:"watch"`
+}
+
+// LinkStatus is one host link at the home.
+type LinkStatus struct {
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Reason   string `json:"reason,omitempty"`
+	ID       string `json:"id,omitempty"`
+	MKey     string `json:"mkey,omitempty"`
+	Inst     string `json:"inst,omitempty"`
+	Version  string `json:"version,omitempty"`
+	OS       string `json:"os,omitempty"`
+	Proto    int    `json:"proto,omitempty"`
+	Attempts int    `json:"attempts"` // connects tried so far
+	Link     int    `json:"link"`     // connects that came up
+	States   int    `json:"states"`   // state messages received
+	RTT      int64  `json:"rtt_ms"`
+	Offset   int64  `json:"offset_ms"`
+	Stalled  bool   `json:"stalled,omitempty"`
+	Rx       int64  `json:"rx"`
+	Tx       int64  `json:"tx"`
+	Sessions int    `json:"sessions"`
+	Warn     string `json:"warn,omitempty"`
+}
+
+// HomeStatus is one home connected to this towerd.
+type HomeStatus struct {
+	ID   string `json:"id"`
+	As   string `json:"as"`
+	Live bool   `json:"live"`
+	Age  int64  `json:"age_ms,omitempty"` // since it disconnected
+}
+
+// LoopStatus is one loop at its home.
+type LoopStatus struct {
+	ID   string `json:"id"`
+	Gen  int    `json:"gen"`
+	Cur  Ref    `json:"cur"`
+	Prev Ref    `json:"prev,omitempty"`
+	Host string `json:"host,omitempty"`
+}
+
+// PendingSwitch is a stored switch waiting for its loop.
+type PendingSwitch struct {
+	Loop   string `json:"loop"`
+	Gen    int    `json:"gen"`
+	Target Ref    `json:"target"`
+	Nonce  string `json:"nonce,omitempty"`
+	Age    int64  `json:"age_ms"`
+}
+
+// WatchStatus is towerd's watch on its own tmux.
+type WatchStatus struct {
+	Inst     string `json:"inst,omitempty"`
+	NoServer bool   `json:"nosrv,omitempty"`
+	Sessions int    `json:"sessions"`
+	CtlPid   int    `json:"ctl_pid,omitempty"`
+	CtlName  string `json:"ctl_name,omitempty"`
+	CtlBytes int64  `json:"ctl_bytes"` // bytes read from the control client
+	Keys     string `json:"keys,omitempty"`
 }
 
 // StopArgs asks towerd to exit; with IfOlderThan set, only if its version

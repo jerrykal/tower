@@ -35,3 +35,19 @@ func Flag(name string, def bool) bool {
 		return true
 	}
 }
+
+var markFile = os.Getenv("TOWER_TEST_TIMING")
+
+// Mark appends "<unix µs> <what>" to the file named by TOWER_TEST_TIMING,
+// when set: the scenario suite times hand-offs and attaches from these.
+func Mark(what string) {
+	if markFile == "" {
+		return
+	}
+	f, err := os.OpenFile(markFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	f.WriteString(strconv.FormatInt(time.Now().UnixMicro(), 10) + " " + what + "\n")
+	f.Close()
+}
