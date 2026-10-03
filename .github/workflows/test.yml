@@ -12,4 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
+      - name: tmux
+        run: |
+          if command -v apt-get >/dev/null; then sudo apt-get update -q && sudo apt-get install -yq tmux; else brew install tmux; fi
+          tmux -V
       - run: mise run test
