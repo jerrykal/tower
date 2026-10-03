@@ -27,13 +27,17 @@ func towerCmd(dash bool) error {
 	if os.Getenv("TMUX") == "" {
 		return attachLoop(dash)
 	}
-	config.Mark("dash: start")
+	id := os.Getenv("TOWER_CLIENT")
+	if id != "" {
+		config.Mark("dash: start")
+	} else {
+		config.Mark("dash: open")
+	}
 	ctx := context.Background()
 	e, err := config.Load(serverArgs())
 	if err != nil {
 		return err
 	}
-	id := os.Getenv("TOWER_CLIENT")
 	c, err := ui.Dial(ctx, e, id)
 	if err != nil {
 		return err
