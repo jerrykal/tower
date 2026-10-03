@@ -128,19 +128,8 @@ func TestV04(t *testing.T) {
 	if px, py := x.TowerdPid(), y.TowerdPid(); px == 0 || py == 0 || px == py {
 		t.Fatalf("towerd pids %d %d", px, py)
 	}
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "X", "xray"), x)
-	woke := l.WaitSwitch()
-	time.Sleep(50 * time.Millisecond)
-	ack := switchFrom(t, x, x.ClientIDs("xray")[0], w.Ref(a, "Y", "yankee"))
-	if !ack.OK || !<-woke {
-		t.Fatalf("switch X → Y: %+v", ack)
-	}
-	next := l.After(42, false)
-	if next.Do != proto.NextHandoff {
-		t.Fatalf("after: %+v", next)
-	}
-	l.Attach(next.Target, y)
+	term := w.LoopTo("t", a, nil, "xray", "^X:xray")
+	term.DashTo("yankee")
 	w.WaitLoop(a, "^Y:yankee", 8*time.Second)
 }
 
@@ -189,33 +178,48 @@ func TestV06(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
 	c := w.Host("C", []string{"charlie"})
-	w.Home(a, b.Remote(), c.Remote())
-	w.WaitUp(a, "B", "C")
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "B", "bravo"), b)
+	stdSetup(w, a, b, c)
+	w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	cl := b.ClientIDs("bravo")[0]
-	var total time.Duration
+	rows := func() string {
+		out, err := b.UI(cl, nil, "rows")
+		if err != nil {
+			t.Fatalf("rows on B: %v\n%s", err, out)
+		}
+		return out
+	}
+	var total, call time.Duration
 	for range 10 {
 		start := time.Now()
-		v := b.View(cl)
+		out := rows()
 		total += time.Since(start)
-		if v == nil || !HasSession(&v.View, "A", "alpha") || !HasSession(&v.View, "C", "charlie") {
-			b, _ := json.Marshal(v)
-			t.Fatalf("B's rows lack other hosts: %s", b)
+		if !strings.Contains(out, "alpha") || !strings.Contains(out, "charlie") {
+			t.Fatalf("B's rows lack other hosts:\n%s", out)
 		}
+		start = time.Now()
+		if v := b.View(cl); v == nil {
+			t.Fatal("no view from B")
+		}
+		call += time.Since(start)
 	}
-	t.Logf("rows on B: %v a read (the call, without a process start)", (total / 10).Round(time.Microsecond))
+	t.Logf("rows on B: %v a run of `tower _ui rows` (process start included), %v the view call alone",
+		(total / 10).Round(time.Microsecond), (call / 10).Round(time.Microsecond))
 	start := time.Now()
 	c.NewSession("fresh")
-	w.Eventually(5*time.Second, "C:fresh on B", func() bool { return HasSession(&b.View(cl).View, "C", "fresh") })
-	t.Logf("C:fresh on B after %v", time.Since(start).Round(time.Millisecond))
+	w.Eventually(5*time.Second, "C:fresh in B's rows", func() bool { return strings.Contains(rows(), "fresh") })
+	t.Logf("C:fresh in B's rows after %v", time.Since(start).Round(time.Millisecond))
 	c.MustTmux("send-keys", "-t", "charlie", "echo PREVIEW-MARK-$((6*7))", "Enter")
 	time.Sleep(300 * time.Millisecond)
 	ack, el := b.Act(cl, proto.Request{Op: proto.OpCapture, Target: w.Ref(a, "C", "charlie")}, 0)
-	t.Logf("preview of C from B: %v", el)
 	if !ack.OK || !strings.Contains(ack.Text, "PREVIEW-MARK-42") {
 		t.Fatalf("capture: %+v", ack)
 	}
+	start = time.Now()
+	out, err := b.UI(cl, nil, "preview", "C", "charlie")
+	if err != nil || !strings.HasPrefix(out, "C:charlie  ($") || !strings.Contains(out, "PREVIEW-MARK-42") {
+		t.Fatalf("preview of C from B: %v\n%s", err, out)
+	}
+	t.Logf("preview of C from B: the capture call %v, `tower _ui preview` %v", el.Round(time.Microsecond), time.Since(start).Round(time.Microsecond))
 }
 
 // V07: the home dies while a loop's client is on a remote: B keeps the

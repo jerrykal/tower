@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -189,17 +190,21 @@ func TestS17(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("run-shell 'sleep 6'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	nid := w.Link(a, "N").ID
-	// The dashboard's ^n on N's row: towerd waits for the slow config.
-	// loop part: the "starting tmux on N…" note is the dashboard's.
-	ack, el := a.Act("", proto.Request{Op: proto.OpNew, Target: proto.Ref{Host: nid}, Name: "fresh"}, 0)
-	t.Logf("new on N: %+v after %v", ack, el.Round(time.Millisecond))
-	if !ack.OK {
-		t.Fatalf("new on N: %s", ack.Err)
-	}
-	if !strings.Contains(strings.Join(n.Sessions(), ","), "fresh") {
-		t.Fatalf("N has %v", n.Sessions())
-	}
+	// The picker's ^n on N's row: the dashboard says it is starting tmux
+	// there while towerd waits for the slow config.
+	term := w.Loop("t", a, nil)
+	term.Wait(`\(no sessions\)`, 6*time.Second)
+	term.Type("N no sessions")
+	time.Sleep(300 * time.Millisecond)
+	term.Keys("C-n")
+	time.Sleep(700 * time.Millisecond)
+	term.Type("fresh")
+	start := time.Now()
+	term.Keys("Enter")
+	term.Wait("starting tmux on N…", 3*time.Second)
+	w.Eventually(12*time.Second, "N:fresh", func() bool { return slices.Contains(n.Sessions(), "fresh") })
+	term.Wait("new on N: done", 6*time.Second)
+	t.Logf("new on N, with a 6s config: done after %v", time.Since(start).Round(time.Millisecond))
 	if !HasSession(&a.View("").View, "N", "fresh") {
 		t.Fatal("the answer came before the view had the new session")
 	}
