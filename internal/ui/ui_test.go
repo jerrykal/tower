@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -179,12 +181,38 @@ func TestOpen(t *testing.T) {
 	if !strings.HasPrefix(strings.Join(args, " "), "display-popup -E -c /dev/ttys042 ") {
 		t.Fatalf("popup %q", args)
 	}
-	for _, s := range []string{"TOWER_CLIENT='" + testClient + "'", "TOWER_TMUX='-L work'", `TOWER_HOME='/h o'\''me'`, "exec '/bin/tower' dash"} {
+	for _, s := range []string{"TOWER_CLIENT=" + testClient, "TOWER_TMUX='-L work'", `TOWER_HOME='/h o'\''me'`, "exec /bin/tower dash"} {
 		if !strings.Contains(cmd, s) {
 			t.Errorf("popup command lacks %s: %s", s, cmd)
 		}
 	}
 	if strings.Contains(cmd, "TOWER_MKEY") {
 		t.Error("an empty variable is left out")
+	}
+}
+
+// TestActDeadlineSkew: a request's deadline is in tower's clock
+// (stream.Now, TOWER_TEST_SKEW included), the one towerd checks it
+// against. The skew is read as the process starts, so the check runs in a
+// child.
+func TestActDeadlineSkew(t *testing.T) {
+	if os.Getenv("UI_SKEW_CHILD") == "1" {
+		f := newFakeTowerd(t, testDash())
+		c := &Conn{Towerd: Calls{C: f.client}}
+		c.act(context.Background(), proto.Request{Op: proto.OpKill})
+		acts := f.actsOf(proto.OpKill)
+		if len(acts) != 1 {
+			t.Fatalf("acts %v", acts)
+		}
+		ahead := acts[0].Deadline - time.Now().UnixMilli()
+		if ahead < 3600000 || ahead > 3600000+ackTimeout().Milliseconds()+1000 {
+			t.Fatalf("the deadline is %dms ahead of the wall clock, want the skew (3600000ms) plus the timeout", ahead)
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestActDeadlineSkew$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "UI_SKEW_CHILD=1", "TOWER_TEST_SKEW=3600000")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
 	}
 }

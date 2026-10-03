@@ -121,9 +121,9 @@ type (
 		gen uint64
 		err error
 	}
-	readTickMsg  struct{}
+	readTickMsg   struct{}
 	watchRetryMsg struct{}
-	actMsg       struct {
+	actMsg        struct {
 		op   string
 		host string
 		key  rowKey

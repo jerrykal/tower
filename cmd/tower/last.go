@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/client"
@@ -18,7 +17,8 @@ import (
 // no previous session, or towerd cannot be reached.
 func cmdLast(args []string) error {
 	cl := os.Getenv("TOWER_CLIENT")
-	_, _, name := splitClient(cl)
+	id, _ := proto.ParseClient(cl)
+	name := id.Name
 	env, err := config.Load(nil)
 	srv := tmux.Server{Bin: tmux.Bin()}
 	if err == nil {
@@ -57,13 +57,4 @@ func cmdLast(args []string) error {
 		return err
 	}
 	return fallback()
-}
-
-// splitClient splits TOWER_CLIENT, "pid:created:name".
-func splitClient(v string) (pid, created, name string) {
-	f := strings.SplitN(v, ":", 3)
-	if len(f) != 3 {
-		return "", "", ""
-	}
-	return f[0], f[1], f[2]
 }

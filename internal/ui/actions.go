@@ -11,6 +11,7 @@ import (
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/relay"
 )
 
 // errGone is ⏎ on a row whose session (or window) no longer exists.
@@ -118,11 +119,11 @@ func (c *Conn) enter(ctx context.Context, k rowKey) (outcome, proto.Ref, error) 
 // switchHere moves the pressing client on this server, as tmux's own
 // session picker does; the attach goes on.
 func (c *Conn) switchHere(ctx context.Context, r proto.Ref) error {
-	cl, err := parseClient(c.Client)
+	cl, err := proto.ParseClient(c.Client)
 	if err != nil {
 		return err
 	}
-	args := []string{"switch-client", "-c", cl.name, "-t", r.Session}
+	args := []string{"switch-client", "-c", cl.Name, "-t", r.Session}
 	if r.Window != "" {
 		args = append(args, ";", "select-window", "-t", r.Window)
 	}
@@ -137,7 +138,7 @@ func (c *Conn) switchHere(ctx context.Context, r proto.Ref) error {
 // Otherwise hold the frame on the client's terminal and detach the client
 // with exit 42, which the loop takes from there.
 func (c *Conn) handoff(ctx context.Context, r proto.Ref) error {
-	cl, err := parseClient(c.Client)
+	cl, err := proto.ParseClient(c.Client)
 	if err != nil {
 		return err
 	}
@@ -153,17 +154,17 @@ func (c *Conn) handoff(ctx context.Context, r proto.Ref) error {
 		os.Exit(3) // test hook: the dashboard dies once its switch is stored
 	}
 	if ack.Ended {
-		for t0 := time.Now(); alive(cl.pid) && time.Since(t0) < 3*time.Second; {
+		for t0 := time.Now(); alive(cl.Pid) && time.Since(t0) < 3*time.Second; {
 			time.Sleep(5 * time.Millisecond)
 		}
 		return nil
 	}
 	tty := c.hold(ctx)
-	_, err = c.Tmux.Run(ctx, "detach-client", "-t", cl.name, "-E", "exit 42")
-	if err != nil && alive(cl.pid) {
+	_, err = c.Tmux.Run(ctx, "detach-client", "-t", cl.Name, "-E", "exit 42")
+	if err != nil && alive(cl.Pid) {
 		// The client stays: let its terminal draw again.
 		if tty != "" {
-			writeTTY(tty, syncEnd)
+			writeTTY(tty, relay.SyncEnd)
 		}
 		return err
 	}
@@ -185,7 +186,7 @@ func (c *Conn) hold(ctx context.Context) string {
 	if err != nil || info.tty == "" {
 		return ""
 	}
-	if writeTTY(info.tty, syncBegin) != nil {
+	if writeTTY(info.tty, relay.SyncBegin) != nil {
 		return ""
 	}
 	return info.tty

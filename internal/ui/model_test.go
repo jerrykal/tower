@@ -3,13 +3,14 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/relay"
 )
 
 func TestMatch(t *testing.T) {
@@ -306,7 +307,7 @@ func TestHandoff(t *testing.T) {
 	if c := x.called("detach-client"); len(c) != 1 || !slices.Equal(c[0], want) {
 		t.Fatalf("no loop ended the client: the dashboard detaches it: %v", x.calls)
 	}
-	if b, _ := os.ReadFile(tty); string(b) != syncBegin {
+	if b, _ := os.ReadFile(tty); string(b) != relay.SyncBegin {
 		t.Fatalf("frame hold on the client's tty: %q", b)
 	}
 	if !m.quitted {
@@ -320,7 +321,7 @@ func TestHandoff(t *testing.T) {
 	x2.err["detach-client"] = errTest
 	m2.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
 	press(t, m2, "b", "a", "n", "enter")
-	if b, _ := os.ReadFile(tty); string(b) != syncBegin+syncEnd || m2.quitted || !m2.noteErr {
+	if b, _ := os.ReadFile(tty); string(b) != relay.SyncBegin+relay.SyncEnd || m2.quitted || !m2.noteErr {
 		t.Fatalf("failed detach: tty %q quit %v note %q", b, m2.quitted, m2.note)
 	}
 

@@ -1,6 +1,11 @@
 package proto
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // Call is one request on towerd's unix socket: a JSON line, answered by
 // one Reply line. Version is the caller's tower version.
@@ -296,3 +301,25 @@ type GoLine struct {
 	Window  string `json:"w,omitempty"`
 	Note    string `json:"note,omitempty"` // the loop's note for the new client's status line
 }
+
+// ClientID is a TOWER_CLIENT value: the tmux client that pressed a key,
+// "pid:created:name" (its pid, client_created and client_name).
+type ClientID struct {
+	Pid     int
+	Created string
+	Name    string
+}
+
+// ParseClient reads a TOWER_CLIENT value. The name may hold colons.
+func ParseClient(s string) (ClientID, error) {
+	f := strings.SplitN(s, ":", 3)
+	if len(f) == 3 && f[2] != "" {
+		if pid, err := strconv.Atoi(f[0]); err == nil && pid > 0 {
+			return ClientID{Pid: pid, Created: f[1], Name: f[2]}, nil
+		}
+	}
+	return ClientID{}, fmt.Errorf("TOWER_CLIENT %q is not pid:created:name", s)
+}
+
+// String is the TOWER_CLIENT form.
+func (c ClientID) String() string { return strconv.Itoa(c.Pid) + ":" + c.Created + ":" + c.Name }

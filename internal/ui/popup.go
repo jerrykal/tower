@@ -7,7 +7,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
+	"github.com/jerrykal/tower/internal/transport"
 )
 
 // PopupSize is the dashboard popup's size, as display-popup arguments.
@@ -25,7 +27,7 @@ func Open(ctx context.Context, sv Tmux, self string, env map[string]string) erro
 		return err
 	}
 	id := strings.TrimSpace(out)
-	cl, err := parseClient(id)
+	cl, err := proto.ParseClient(id)
 	if err != nil {
 		return fmt.Errorf("no tmux client to open the dashboard in (%v)", err)
 	}
@@ -48,17 +50,12 @@ func Open(ctx context.Context, sv Tmux, self string, env map[string]string) erro
 	slices.Sort(keys)
 	var cmd strings.Builder
 	for _, k := range keys {
-		cmd.WriteString(k + "=" + shellQuote(vars[k]) + " ")
+		cmd.WriteString(k + "=" + transport.ShellQuote(vars[k]) + " ")
 	}
-	cmd.WriteString("exec " + shellQuote(self) + " dash")
-	args := append([]string{"display-popup", "-E", "-c", cl.name}, PopupSize...)
+	cmd.WriteString("exec " + transport.ShellQuote(self) + " dash")
+	args := append([]string{"display-popup", "-E", "-c", cl.Name}, PopupSize...)
 	_, err = sv.Run(ctx, append(args, cmd.String())...)
 	return err
-}
-
-// shellQuote makes s one word for the shell display-popup runs.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 var _ Tmux = tmux.Server{}

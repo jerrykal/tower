@@ -20,8 +20,8 @@ type style struct {
 
 func fg(c ansi.Color) style { return style{fg: c} }
 
-func (s style) Bold() style                    { s.bold = true; return s }
-func (s style) Underline() style               { s.underline = true; return s }
+func (s style) Bold() style                   { s.bold = true; return s }
+func (s style) Underline() style              { s.underline = true; return s }
 func (s style) Background(c ansi.Color) style { s.bg = c; return s }
 
 // Render styles t, resetting after it.

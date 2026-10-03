@@ -3,9 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,6 +12,7 @@ import (
 	"github.com/jerrykal/tower/internal/client"
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/stream"
 	"github.com/jerrykal/tower/internal/tmux"
 )
 
@@ -99,7 +98,7 @@ func (c *Conn) act(ctx context.Context, r proto.Request) (proto.Ack, error) {
 // actWithin is act with deadline d.
 func (c *Conn) actWithin(ctx context.Context, r proto.Request, d time.Duration) (proto.Ack, error) {
 	r.ID = config.NewID()
-	r.Deadline = time.Now().Add(d).UnixMilli()
+	r.Deadline = stream.Now() + d.Milliseconds() // the clock towerd checks it against
 	ctx, cancel := context.WithTimeout(ctx, d+time.Second)
 	defer cancel()
 	a, err := c.Towerd.Act(ctx, r)
@@ -118,25 +117,6 @@ func (c *Conn) actWithin(ctx context.Context, r proto.Request, d time.Duration) 
 	return a, nil
 }
 
-// clientRef parses TOWER_CLIENT.
-type clientRef struct {
-	pid     int
-	created string
-	name    string
-}
-
-func parseClient(s string) (clientRef, error) {
-	f := strings.SplitN(s, ":", 3)
-	if len(f) != 3 || f[2] == "" {
-		return clientRef{}, fmt.Errorf("TOWER_CLIENT %q is not pid:created:name", s)
-	}
-	pid, err := strconv.Atoi(f[0])
-	if err != nil || pid <= 0 {
-		return clientRef{}, fmt.Errorf("TOWER_CLIENT %q is not pid:created:name", s)
-	}
-	return clientRef{pid: pid, created: f[1], name: f[2]}, nil
-}
-
 // clientInfo is what tmux says of the pressing client.
 type clientInfo struct {
 	tty     string
@@ -153,14 +133,14 @@ func (c *Conn) clientInfo(ctx context.Context) (*clientInfo, error) {
 	if c.info != nil {
 		return c.info, nil
 	}
-	cl, err := parseClient(c.Client)
+	cl, err := proto.ParseClient(c.Client)
 	if err != nil {
 		return nil, err
 	}
 	if c.Tmux == nil {
 		return nil, errors.New("no tmux server")
 	}
-	out, err := c.Tmux.Run(ctx, "display-message", "-p", "-c", cl.name,
+	out, err := c.Tmux.Run(ctx, "display-message", "-p", "-c", cl.Name,
 		"#{client_tty}\t#{session_id}\t#{window_id}")
 	if err != nil {
 		return nil, err
@@ -178,12 +158,6 @@ func alive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
-
-// Frame hold: synchronized output (DEC mode 2026).
-const (
-	syncBegin = "\x1b[?2026h"
-	syncEnd   = "\x1b[?2026l"
-)
 
 // writeTTY writes seq to a terminal without ever blocking on it.
 func writeTTY(tty, seq string) error {

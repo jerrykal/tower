@@ -174,7 +174,7 @@ func windowRows(d *proto.Dash, k rowKey, mk marks) []row {
 				key:  rowKey{Host: h.ID, Inst: h.Inst, Session: s.ID, Window: w.ID},
 				host: h, sess: s, win: w, band: band(h), local: h.ID == d.Self, status: hostStatus(h),
 				bell: w.Bell, activity: w.Activity,
-				text: strconv.Itoa(w.Index) + ":" + w.Name,
+				text:   strconv.Itoa(w.Index) + ":" + w.Name,
 				nameAt: len(strconv.Itoa(w.Index)) + 1,
 			}
 			r.cur = cur && (mk.cur.Window == w.ID || mk.cur.Window == "" && w.Active)
