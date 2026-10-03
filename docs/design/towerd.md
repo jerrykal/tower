@@ -20,7 +20,7 @@ and the home role once an attach loop starts on its machine.
 | `home.go` | the home role: merged view, loops, switches, prepare and after, standby offers, routing |
 | `link.go` | one host link at the home: the `Transport` seam, ssh, the stream, liveness, reconnect |
 | `bridge.go` | `tower towerd --stdio` |
-| `pace.go` | the token bucket shared by re-reads and pushes |
+| `pace.go` | the token bucket shared by re-reads and pushes: two at once, then one per interval; a run that sent nothing (an unchanged body) costs no token |
 | `testhooks.go` | the scenario suite's hooks: `TOWER_TEST_PROTO`, `TOWER_TEST_FUTURE`, `TOWER_TEST_PAD` |
 
 ## Daemon

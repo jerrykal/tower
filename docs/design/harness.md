@@ -12,10 +12,11 @@
 | `world_test.go` | `World` (one scenario), `Host` (one simulated machine and tmux server), homes, waits on links and loops, timing marks |
 | `term_test.go` | `Term`: a terminal running the attach loop, driven with `send-keys`, read with `capture-pane` |
 | `teardown_test.go` | ends everything and fails the test if a tmux server outlives its sessions |
+| `towerd_test.go` | towerd-side helpers (pids, live homes, registrations, `view` and `act` calls, other binaries) and `FakeLoop` |
 | `fakenet/` | the knobs contract between the harness and the fake ssh |
 | `fakessh/` | the fake ssh |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
-| `s*_test.go` … | the scenarios, one file per family |
+| `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `lh`, `lv`, `lc`, `ld`, `ls08` so far |
 
 ## Hosts
 
@@ -44,6 +45,30 @@ there (or sends `reload` to a towerd a bridge already started, which
 activates the home role). `h.Remote()` is the `hosts.toml` entry for a
 simulated host: its fake ssh name, its tmux socket, the built binary.
 `w.WaitLink`, `w.WaitUp` and `w.WaitLoop` poll the home's full status.
+
+## Driving towerd directly
+
+Scenarios that test towerd's side of a behaviour whose other side is the
+attach loop or the dashboard call towerd as those would:
+
+- `h.View(client)` and `h.Act(client, req, ms)` are the dashboard's `view`
+  and `act` calls on `h`'s towerd, as the client `pid:created:name`
+  (`h.ClientIDs(session)`), with a deadline `ms` from now;
+- `w.FakeLoop(home)` beats every 2s like a loop and makes its attaches
+  with `Prepare`, running the prepared argv (the real attach shim, over the
+  fake ssh for a remote) in a terminal of its own; `Attach` ends the
+  previous attach's terminal first, as a loop ends its old client.
+  `WaitSwitch`, `Held` and `After` are the loop's other calls;
+- `h.TowerdPid()`, `h.LiveHomes()`, `h.Regs()`, `h.HiddenSessions()`,
+  `h.TowerdProcs()` and `h.TowerBin(bin, args…)` (another build, for
+  upgrades).
+
+The parts of a scenario that need the loop or the dashboard are marked
+`// loop part:` and come with them.
+
+Family timings: the slow-host family (LH) runs with `TOWER_SILENCE=15000`
+and `TOWER_TEST_PAD=30000` (states and views padded to 30 KB, so a stalled
+pipe fills); the connection family (LC) and LH06 with `ProductionTimings`.
 
 ## Terminals
 
