@@ -87,9 +87,12 @@ type attachLoop struct {
 	c    *client.Client
 	id   string
 	term *relay.Terminal
-	tty  int         // the terminal's descriptor (stdin)
-	orig relay.Modes // the terminal's modes as the loop found them
-	last proto.Ref   // the home's last target when the loop started
+	tty  int // the terminal's descriptor (stdin)
+	// ttyPath is the terminal's path: the name of a local tmux client on
+	// it.
+	ttyPath string
+	orig    relay.Modes // the terminal's modes as the loop found them
+	last    proto.Ref   // the home's last target when the loop started
 
 	sync    bool // TOWER_SYNC: frame holds
 	eager   bool // TOWER_EAGER: the loop ends the old client of a switch itself
@@ -133,6 +136,7 @@ func start(ctx context.Context, o Options) (*attachLoop, error) {
 	tmux.UseBin(st.TmuxBin)
 	l := &attachLoop{
 		env: o.Env, c: c, id: config.NewID(), term: term, tty: tty, orig: orig,
+		ttyPath: func() string { p, _ := ttyName(tty); return p }(),
 		sync:    config.Flag("TOWER_SYNC", true),
 		eager:   config.Flag("TOWER_EAGER", true),
 		relayOn: config.Flag("TOWER_RELAY", true),

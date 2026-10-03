@@ -107,6 +107,18 @@ func TestStandbyStartOutsideLock(t *testing.T) {
 	}
 }
 
+func TestTTYName(t *testing.T) {
+	p, err := relay.OpenPty()
+	if err != nil {
+		t.Skip("no pty:", err)
+	}
+	defer p.Close()
+	got, err := ttyName(int(p.Slave.Fd()))
+	if err != nil || got != p.Name {
+		t.Fatalf("ttyName %q %v, want %q", got, err, p.Name)
+	}
+}
+
 func TestTowerless(t *testing.T) {
 	got := towerless([]string{"TOWER_TMUX=-L x", "PATH=/bin", "HOME=/h", "TOWER_TEST_TIMING=/t"})
 	if !slices.Equal(got, []string{"HOME=/h", "PATH=/bin"}) {

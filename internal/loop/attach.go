@@ -285,11 +285,17 @@ func exitStatus(ps *os.ProcessState) int {
 
 // detachLocal ends the loop's local tmux client (the shim's pid became
 // the client) through its server, so tmux restores the terminal itself;
-// with -E the client prints nothing as it goes.
+// with -E the client prints nothing as it goes. The client is named by
+// the loop's own tty (a client's name is its tty): one tmux run.
 func (l *attachLoop) detachLocal(pid int) {
 	sv := tmux.Server{Args: l.env.Tmux}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	if l.ttyPath != "" {
+		if _, err := sv.Run(ctx, "detach-client", "-t", l.ttyPath, "-E", "exit 42"); err == nil {
+			return
+		}
+	}
 	out, _ := sv.Run(ctx, "list-clients", "-F", "#{client_pid} #{client_name}")
 	for _, line := range strings.Split(out, "\n") {
 		p, name, ok := strings.Cut(line, " ")
