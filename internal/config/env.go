@@ -192,11 +192,14 @@ func machineID(getenv func(string) string) (string, error) {
 	return "host:" + h, nil
 }
 
-// runDir picks where sockets go: $XDG_RUNTIME_DIR/tower, else the first
-// candidate short enough for every socket it will hold.
+// runDir picks where sockets go: $XDG_RUNTIME_DIR/tower/<machine key>
+// unless TOWER_HOME is set (it is per user, while a TOWER_HOME is one
+// simulated machine of several on one box), else the first candidate short
+// enough for every socket it will hold, each keyed by the state root and
+// machine key.
 func runDir(getenv func(string) string, e *Env) (string, error) {
-	if x := getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) {
-		d := filepath.Join(x, "tower")
+	if x := getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) && e.Home == "" {
+		d := filepath.Join(x, "tower", e.MKey)
 		if fits(d, e.Tag) {
 			return d, os.MkdirAll(d, 0o700)
 		}

@@ -71,6 +71,47 @@ func TestLoadRunDirFallsBack(t *testing.T) {
 	}
 }
 
+// TestRunDirXDG: $XDG_RUNTIME_DIR holds the sockets of a user's own
+// towerds, one directory per machine key; a TOWER_HOME (one of several
+// machines simulated on one box) never shares it.
+func TestRunDirXDG(t *testing.T) {
+	// Short, as /run/user/<uid> is: sockets have a 104-byte limit.
+	xdg, err := os.MkdirTemp("/tmp", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(xdg) })
+	t.Setenv("XDG_RUNTIME_DIR", xdg)
+	t.Setenv("TOWER_MKEY", "")
+	t.Setenv("TMPDIR", "/tmp")
+	load := func(home, machine string) *Env {
+		t.Helper()
+		t.Setenv("TOWER_HOME", home)
+		t.Setenv("TOWER_MACHINE_ID", machine)
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("XDG_STATE_HOME", "")
+		e, err := Load([]string{"-L", "x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	a, b := load(t.TempDir(), "ma"), load(t.TempDir(), "mb")
+	if a.Socket() == b.Socket() || a.CMDir() == b.CMDir() || a.LockPath() == b.LockPath() {
+		t.Fatalf("two TOWER_HOMEs share %s", a.RunDir)
+	}
+	for _, e := range []*Env{a, b} {
+		if strings.HasPrefix(e.RunDir, xdg) {
+			t.Fatalf("a TOWER_HOME's run dir %s is under XDG_RUNTIME_DIR", e.RunDir)
+		}
+	}
+	u1, u2 := load("", "m1"), load("", "m2")
+	if u1.RunDir != filepath.Join(xdg, "tower", u1.MKey) || u2.RunDir == u1.RunDir {
+		t.Fatalf("run dirs without TOWER_HOME: %s and %s", u1.RunDir, u2.RunDir)
+	}
+}
+
 func TestTowerdIDStable(t *testing.T) {
 	d := t.TempDir()
 	a, err := TowerdID(d)

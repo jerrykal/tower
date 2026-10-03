@@ -62,7 +62,8 @@ closed.
 | `<run>/<tag>.sock`, `<run>/<tag>.lock` | the towerd socket and its lock |
 | `<run>/cm/%C` | ssh control sockets |
 
-`<run>` is `$XDG_RUNTIME_DIR/tower` when set; otherwise the first of
+`<run>` is `$XDG_RUNTIME_DIR/tower/<machine>` when that is set and
+`TOWER_HOME` is not; otherwise the first of
 `<state>/run-<machine>`, `$TMPDIR/tower-<uid>/<hash>` and
 `/tmp/tower-<uid>/<hash>` that is short enough for a 104-byte unix socket
 path, including the 17 bytes ssh appends to a control path while creating
