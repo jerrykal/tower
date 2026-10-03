@@ -91,7 +91,7 @@ type watcher struct {
 func newWatcher(d *Daemon) *watcher {
 	w := &watcher{d: d, srv: d.tm, stopC: make(chan struct{}), doneC: make(chan struct{}), pollC: make(chan struct{}, 1)}
 	w.keys = newKeys(w)
-	w.pace = newPacer(50*time.Millisecond, 2, func() { w.reread() })
+	w.pace = newPacer(50*time.Millisecond, 2, func() bool { w.reread(); return true })
 	return w
 }
 
@@ -188,9 +188,9 @@ func (w *watcher) attach() (*tmux.Control, error) {
 	keep := transport.ShellQuote(w.d.self) + " _keep " + strconv.Itoa(os.Getpid()) + " " + transport.ShellQuote(w.d.env.StateDir)
 	// -N: never start a server for it.
 	_, err := w.srv.Run(ctx, "-N", "new-session", "-d", "-s", towerSession, "-x", "10", "-y", "3", keep,
-		";", "set-option", "-t", "="+towerSession, "destroy-unattached", "off",
-		";", "set-option", "-t", "="+towerSession, "remain-on-exit", "off",
-		";", "set-option", "-t", "="+towerSession, "status", "off")
+		";", "set-option", "-t", "="+towerSession+":", "destroy-unattached", "off",
+		";", "set-option", "-t", "="+towerSession+":", "remain-on-exit", "off",
+		";", "set-option", "-t", "="+towerSession+":", "status", "off")
 	if err != nil && !strings.Contains(err.Error(), "duplicate session") {
 		return nil, fmt.Errorf("make %s: %w", towerSession, err)
 	}

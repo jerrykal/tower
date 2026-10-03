@@ -615,8 +615,9 @@ func (l *link) takeState(conn *stream.Conn, st *proto.State) {
 	go l.h.save(false)
 }
 
-// pushView sends the merged view to the host if it changed.
-func (l *link) pushView() {
+// pushView sends the merged view to the host if it changed, and reports
+// whether it sent.
+func (l *link) pushView() bool {
 	d := l.h.d
 	d.mu.Lock()
 	conn := l.conn
@@ -628,6 +629,7 @@ func (l *link) pushView() {
 	if m != nil {
 		conn.Send(m)
 	}
+	return m != nil
 }
 
 // viewMsgLocked builds the view message for this host; nil when it is

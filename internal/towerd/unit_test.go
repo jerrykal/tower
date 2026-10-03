@@ -13,10 +13,11 @@ import (
 func TestPacerBurstThenPaced(t *testing.T) {
 	var mu sync.Mutex
 	var runs []time.Time
-	p := newPacer(100*time.Millisecond, 2, func() {
+	p := newPacer(100*time.Millisecond, 2, func() bool {
 		mu.Lock()
 		runs = append(runs, time.Now())
 		mu.Unlock()
+		return true
 	})
 	defer p.Stop()
 	start := time.Now()
@@ -50,10 +51,11 @@ func TestPacerBurstThenPaced(t *testing.T) {
 func TestPacerFoldsKicksDuringARun(t *testing.T) {
 	var n atomic.Int32
 	release := make(chan struct{})
-	p := newPacer(time.Millisecond, 2, func() {
+	p := newPacer(time.Millisecond, 2, func() bool {
 		if n.Add(1) == 1 {
 			<-release
 		}
+		return true
 	})
 	defer p.Stop()
 	p.Kick()
@@ -65,6 +67,36 @@ func TestPacerFoldsKicksDuringARun(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := n.Load(); got != 2 {
 		t.Fatalf("%d runs: kicks during a run fold into one more", got)
+	}
+}
+
+func TestPacerRunsThatSentNothingAreFree(t *testing.T) {
+	var mu sync.Mutex
+	var sent []time.Time
+	send := false
+	p := newPacer(time.Second, 2, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if send {
+			sent = append(sent, time.Now())
+		}
+		return send
+	})
+	defer p.Stop()
+	for range 5 {
+		p.Kick()
+		time.Sleep(5 * time.Millisecond)
+	}
+	mu.Lock()
+	send = true
+	mu.Unlock()
+	start := time.Now()
+	p.Kick()
+	time.Sleep(30 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 1 || sent[0].Sub(start) > 20*time.Millisecond {
+		t.Fatalf("the first real send waited behind runs that sent nothing: %v", sent)
 	}
 }
 
@@ -225,3 +257,4 @@ func TestKeyBindingParse(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+

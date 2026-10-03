@@ -8,18 +8,20 @@ import (
 // pacer runs fn when kicked, paced by a token bucket: a kick after a
 // quiet spell runs at once, a burst runs burst times at once and then once
 // per every. Kicks that arrive while fn waits or runs fold into one more
-// run, so fn always sees everything kicked before it started.
+// run, so fn always sees everything kicked before it started. fn reports
+// whether it did anything: a run that sent nothing (an unchanged body)
+// costs no token.
 type pacer struct {
 	every time.Duration
 	burst int
-	fn    func()
+	fn    func() bool
 
 	kick chan struct{}
 	stop chan struct{}
 	once sync.Once
 }
 
-func newPacer(every time.Duration, burst int, fn func()) *pacer {
+func newPacer(every time.Duration, burst int, fn func() bool) *pacer {
 	p := &pacer{every: every, burst: burst, fn: fn, kick: make(chan struct{}, 1), stop: make(chan struct{})}
 	go p.run()
 	return p
@@ -59,12 +61,13 @@ func (p *pacer) run() {
 			tokens = min(float64(p.burst), tokens+float64(now.Sub(last))/float64(p.every))
 			last = now
 		}
-		tokens--
 		// Kicks that came in while waiting are covered by this run.
 		select {
 		case <-p.kick:
 		default:
 		}
-		p.fn()
+		if p.fn() {
+			tokens--
+		}
 	}
 }

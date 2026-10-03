@@ -122,7 +122,7 @@ func (d *Daemon) serveStream(c net.Conn, br *bufio.Reader) {
 	if rec == nil {
 		rec = &homeRec{key: key, id: hello.ID, as: hello.As}
 		r := rec
-		rec.pace = newPacer(100*time.Millisecond, 2, func() { d.pushState(r) })
+		rec.pace = newPacer(100*time.Millisecond, 2, func() bool { return d.pushState(r) })
 		d.homes[key] = rec
 	}
 	old = rec.conn
@@ -155,25 +155,27 @@ func (d *Daemon) serveStream(c net.Conn, br *bufio.Reader) {
 	d.logf("home %s (%s) disconnected: %v", hello.ID, hello.Name, conn.Err())
 }
 
-// pushState sends rec's home our state if it changed since the last one.
-func (d *Daemon) pushState(rec *homeRec) {
+// pushState sends rec's home our state if it changed since the last one,
+// and reports whether it sent.
+func (d *Daemon) pushState(rec *homeRec) bool {
 	d.mu.Lock()
 	conn := rec.conn
 	if conn == nil {
 		d.mu.Unlock()
-		return
+		return false
 	}
 	st := d.stateFor(rec.id)
 	body, _ := json.Marshal(st)
 	if string(body) == rec.lastState {
 		d.mu.Unlock()
-		return
+		return false
 	}
 	rec.lastState = string(body)
 	rec.stateSeq++
 	st.Seq = rec.stateSeq
 	d.mu.Unlock()
 	conn.Send(&proto.Msg{T: proto.TState, State: st})
+	return true
 }
 
 // takeView keeps the newest view a home sent.
