@@ -15,7 +15,11 @@ echo "built tower $v"
 """
 
 [tasks.test]
-description = "Vet and test"
+description = "Vet and test (-short: the relay's 200 MiB throughput runs are left out)"
+run = ["go vet ./...", "go test -short ./..."]
+
+[tasks."test:full"]
+description = "Vet and every package test, the relay's throughput runs included"
 run = ["go vet ./...", "go test ./..."]
 
 [tasks.dist]
