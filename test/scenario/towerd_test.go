@@ -146,6 +146,26 @@ func (h *Host) Act(client string, req proto.Request, ms int) (*proto.Ack, time.D
 	return &ack, time.Since(start)
 }
 
+// TowerBin runs another tower binary (an upgrade) on the host.
+func (h *Host) TowerBin(bin string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = h.Env()
+	cmd.WaitDelay = time.Second
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// ClientName is the tmux client name in a TOWER_CLIENT value.
+func ClientName(id string) string {
+	f := strings.SplitN(id, ":", 3)
+	if len(f) != 3 {
+		return ""
+	}
+	return f[2]
+}
+
 // Kill9 SIGKILLs pid.
 func Kill9(pid int) { syscall.Kill(pid, syscall.SIGKILL) }
 
@@ -191,6 +211,8 @@ type FakeLoop struct {
 	ID   string
 	Gen  int
 	Term *Term
+	// KeepOld keeps earlier attaches' terminals running.
+	KeepOld bool
 
 	mu   sync.Mutex
 	cur  proto.Ref
@@ -254,12 +276,16 @@ func (l *FakeLoop) Prepare(target proto.Ref) (*proto.Prepared, error) {
 }
 
 // Attach prepares target and runs the attach in a new terminal, waiting
-// until the target host has a client on it.
+// until the target host has a client on it. The previous attach's
+// terminal ends first, as a loop ends its old client.
 func (l *FakeLoop) Attach(target proto.Ref, on *Host) *Term {
 	l.w.T.Helper()
 	p, err := l.Prepare(target)
 	if err != nil {
 		l.w.T.Fatalf("prepare %s: %v", target.String(), err)
+	}
+	if l.Term != nil && !l.KeepOld {
+		killSessions(l.Term.Sock)
 	}
 	l.n++
 	t := l.w.Term(fmt.Sprintf("%s-%d", l.ID[:4], l.n), l.Home, nil, p.Argv...)
@@ -272,6 +298,8 @@ func (l *FakeLoop) Attach(target proto.Ref, on *Host) *Term {
 		}
 		return false
 	})
+	// As a loop's attach, settled: its client registered and bound.
+	time.Sleep(300 * time.Millisecond)
 	return t
 }
 

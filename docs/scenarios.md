@@ -57,13 +57,13 @@ a scenario measures what a user would see.
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
 | V01 | 8 concurrent first calls start one towerd; SIGKILL leaves a stale socket the next call replaces; stop leaves nothing | client, towerd | pass |
-| V02 | Upgrading the home with a loop attached: replaced fast; the old loop re-registers by heartbeat; an older binary never downgrades it; hand-off from an old dashboard binary works | client, towerd | todo |
-| V03 | Upgrading a remote with a loop's client attached there: the next bridge replaces its towerd, which restores the client from disk; hand-off works | towerd | todo |
-| V04 | Two machines sharing one home directory: two towerds, separate run and state dirs; hand-off between them | config, towerd | todo |
-| V05 | A remote whose own `hosts.toml` lists another host stays remote-only while only a bridge started it; an attach loop there makes it a home | towerd | todo |
-| V06 | A dashboard on a remote: its rows fast; a session on C shows on B fast; a preview of C's pane from B fast | towerd, ui | todo |
-| V07 | The home dies while a loop's client is on a remote: B keeps the last view, marked not connected; ⏎ to A refused before detaching; a local switch works; the restarted home relearns the loop and hand-off works | towerd | todo |
-| V08 | Keys: towerd takes `M-o` and `prefix L` where free, leaves the user's `L`; in a plain terminal `prefix L` is tmux's own; in a tower terminal `M-o` opens the dashboard and `prefix L` goes back across hosts; stopping towerd puts the keys back | towerd | todo |
+| V02 | Upgrading the home with a loop attached: replaced fast; the old loop re-registers by heartbeat; an older binary never downgrades it; hand-off from an old dashboard binary works | client, towerd | pass (towerd part) |
+| V03 | Upgrading a remote with a loop's client attached there: the next bridge replaces its towerd, which restores the client from disk; hand-off works | towerd | pass (towerd part) |
+| V04 | Two machines sharing one home directory: two towerds, separate run and state dirs; hand-off between them | config, towerd | pass (towerd part) |
+| V05 | A remote whose own `hosts.toml` lists another host stays remote-only while only a bridge started it; an attach loop there makes it a home | towerd | pass |
+| V06 | A dashboard on a remote: its rows fast; a session on C shows on B fast; a preview of C's pane from B fast | towerd, ui | pass |
+| V07 | The home dies while a loop's client is on a remote: B keeps the last view, marked not connected; ⏎ to A refused before detaching; a local switch works; the restarted home relearns the loop and hand-off works | towerd | pass (towerd part) |
+| V08 | Keys: towerd takes `M-o` and `prefix L` where free, leaves the user's `L`; in a plain terminal `prefix L` is tmux's own; in a tower terminal `M-o` opens the dashboard and `prefix L` goes back across hosts; stopping towerd puts the keys back | towerd | pass (towerd part) |
 
 ## Slow, stalled and wedged hosts
 
