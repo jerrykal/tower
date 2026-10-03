@@ -80,7 +80,9 @@ func (k *keys) shellLine(expansions int, args ...string) string {
 	env = append(env, "TOWER_TMUX="+strings.Join(d.env.Tmux, " "), "TOWER_MKEY="+d.env.MKey, "TOWER_TMUX_BIN="+d.tm.Bin)
 	slices.Sort(env)
 	for _, kv := range env {
-		s := transport.ShellQuote(kv)
+		// Only the value is quoted: a quoted NAME=value is no assignment.
+		k, v, _ := strings.Cut(kv, "=")
+		s := k + "=" + transport.ShellQuote(v)
 		for range expansions {
 			s = tmux.Literal(s)
 		}

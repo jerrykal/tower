@@ -1,11 +1,14 @@
 package towerd
 
 import (
+	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
 )
@@ -258,3 +261,22 @@ func TestKeyBindingParse(t *testing.T) {
 	}
 }
 
+func TestBindingShellLineSetsTheEnvironment(t *testing.T) {
+	d := &Daemon{
+		towerEnv: []string{"TOWER_HOME=/tmp/with space", "TOWER_TMUX=-L ignored", "TOWER_SSH=it's"},
+		env:      &config.Env{Tmux: []string{"-L", "the server"}, MKey: "0123456789ab"},
+		tm:       tmux.Server{Bin: "/usr/bin/tmux"},
+		self:     "/usr/bin/env",
+	}
+	k := &keys{w: &watcher{d: d}}
+	line := strings.Replace(k.shellLine(0), "#{client_pid}:#{client_created}:#{client_name}", "1:2:/dev/tty", 1)
+	out, err := exec.Command("/bin/sh", "-c", line).Output()
+	if err != nil {
+		t.Fatal(err, line)
+	}
+	for _, want := range []string{"TOWER_CLIENT=1:2:/dev/tty", "TOWER_HOME=/tmp/with space", "TOWER_TMUX=-L the server", "TOWER_SSH=it's", "TOWER_MKEY=0123456789ab", "TOWER_TMUX_BIN=/usr/bin/tmux"} {
+		if !strings.Contains(string(out), want+"\n") {
+			t.Fatalf("%q missing from the binding's environment:\n%s", want, out)
+		}
+	}
+}
