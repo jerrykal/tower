@@ -114,3 +114,11 @@ func TestSweepKeepsLiveSockets(t *testing.T) {
 		t.Error("dead socket kept")
 	}
 }
+
+func TestTmuxAtLeast(t *testing.T) {
+	for v, want := range map[string]bool{"3.2": true, "3.2a": true, "3.10": true, "next-3.6": true, "3.1c": false, "2.9": false, "4.0": true, "": false} {
+		if got := tmuxAtLeast(v, MinTmux); got != want {
+			t.Errorf("%q: %v", v, got)
+		}
+	}
+}
