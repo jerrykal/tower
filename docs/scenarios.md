@@ -69,12 +69,12 @@ a scenario measures what a user would see.
 
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
-| LH01 | Baseline round trips with a slow host and a stalled host in the list | towerd | todo |
-| LH02 | One stalled host: a change elsewhere still reaches every dashboard fast | towerd, stream | todo |
+| LH01 | Baseline round trips with a slow host and a stalled host in the list | towerd | pass (towerd part) |
+| LH02 | One stalled host: a change elsewhere still reaches every dashboard fast | towerd, stream | pass (towerd part) |
 | LH03 | A switch to a stalled host is refused at once once marked; one that stalls just before is given up, back where it was with a note; recovery | towerd, loop | todo |
-| LH04 | Two homes on one remote, one home's link stalled: the other home's view keeps flowing | towerd, stream | todo |
-| LH05 | A wake with one wedged master: every other host back fast | towerd | todo |
-| LH06 | A towerd wedged on a healthy link with a loop's client attached there: stalled, the stream alone given up, a new towerd started, the client never cut | towerd, client | todo |
+| LH04 | Two homes on one remote, one home's link stalled: the other home's view keeps flowing | towerd, stream | pass |
+| LH05 | A wake with one wedged master: every other host back fast | towerd | pass |
+| LH06 | A towerd wedged on a healthy link with a loop's client attached there: stalled, the stream alone given up, a new towerd started, the client never cut | towerd, client | pass |
 
 ## Connections and switches
 
