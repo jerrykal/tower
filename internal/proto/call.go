@@ -110,6 +110,7 @@ type LoopStatus struct {
 	Cur  Ref    `json:"cur"`
 	Prev Ref    `json:"prev,omitempty"`
 	Host string `json:"host,omitempty"`
+	Seen bool   `json:"seen,omitempty"` // the home has seen this attach's client
 }
 
 // PendingSwitch is a stored switch waiting for its loop.

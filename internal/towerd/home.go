@@ -245,7 +245,7 @@ func (h *homeRole) buildView(now time.Time) proto.View {
 	slices.Sort(ids)
 	for _, id := range ids {
 		l := h.loops[id]
-		v.Loops = append(v.Loops, proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev})
+		v.Loops = append(v.Loops, proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Seen: l.seen})
 	}
 	return v
 }
@@ -942,7 +942,7 @@ func (h *homeRole) detail(det *proto.Detail) {
 	slices.Sort(ids)
 	for _, id := range ids {
 		l := h.loops[id]
-		det.Loops = append(det.Loops, proto.LoopStatus{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Host: l.cur.Host})
+		det.Loops = append(det.Loops, proto.LoopStatus{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Host: l.cur.Host, Seen: l.seen})
 		if l.sw != nil {
 			det.Pending = append(det.Pending, proto.PendingSwitch{Loop: l.id, Gen: l.sw.gen, Target: l.sw.target, Nonce: l.sw.nonce, Age: time.Since(l.sw.at).Milliseconds()})
 		}

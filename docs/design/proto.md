@@ -70,7 +70,12 @@ type Host struct {
     Seen      int64 // ms since last heard (cached hosts)
 }
 
-type Loop struct { ID string; Gen int; Cur, Prev Ref; Host string }
+type Loop struct {
+    ID        string
+    Gen       int
+    Cur, Prev Ref
+    Seen      bool // the home has seen this attach's client: a loop's fallback frame release
+}
 
 type View struct {
     Seq   uint64

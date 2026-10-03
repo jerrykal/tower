@@ -298,7 +298,13 @@ func (l *FakeLoop) Attach(target proto.Ref, on *Host) *Term {
 		}
 		return false
 	})
-	// As a loop's attach, settled: its client registered and bound.
+	// The home sees the attach's client (what releases a loop's frame
+	// hold when the new client draws nothing).
+	l.w.Eventually(3*time.Second, "the home sees "+target.String()+"'s client", func() bool {
+		s := l.Status()
+		return s != nil && s.Gen == p.Gen && s.Seen
+	})
+	// As a loop's attach, settled.
 	time.Sleep(300 * time.Millisecond)
 	return t
 }

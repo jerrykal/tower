@@ -123,6 +123,7 @@ type Loop struct {
 	Gen  int    `json:"gen"`
 	Cur  Ref    `json:"cur"`
 	Prev Ref    `json:"prev,omitempty"`
+	Seen bool   `json:"seen,omitempty"` // the home has seen this attach's client
 }
 
 // View is the home's merged picture of every host.
