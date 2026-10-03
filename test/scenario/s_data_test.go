@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,8 +51,15 @@ func TestS13(t *testing.T) {
 	if got := b.Status().Detail.Watch.CtlPid; got != ctl {
 		t.Fatalf("B's control client changed: %d → %d", ctl, got)
 	}
-	// loop part: the loop reattaches to B:bravo (B's clients exactly
-	// bravo within 10s); added with the attach loop.
+	// The attach's ssh ended with the drop: the loop is told to reconnect
+	// to where it was, and is back.
+	next := l.After(255, false)
+	if next.Do != proto.NextReconnect || next.Target.Label != "bravo" {
+		t.Fatalf("after the drop: %+v", next)
+	}
+	l.Attach(next.Target, b)
+	w.Eventually(10*time.Second, "B's client on bravo", func() bool { return slices.Equal(b.Clients(), []string{"bravo"}) })
+	// loop part: the loop's own reconnect timing.
 	gen := w.Link(a, "B").Link
 	if err := a.Call(proto.CallWake, nil, nil); err != nil {
 		t.Fatal(err)

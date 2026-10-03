@@ -54,10 +54,9 @@ func TestV02(t *testing.T) {
 	if len(cl) != 1 {
 		t.Fatalf("clients on bravo: %v", cl)
 	}
-	if ack := switchFrom(t, b, cl[0], alpha); !ack.OK {
-		t.Fatalf("a switch from the old dashboard: %+v", ack)
-	}
-	// loop part: the loop hands off to A:alpha.
+	// A switch from the old dashboard binary's towerd, to the new home.
+	l.Handoff(b, "bravo", alpha, a)
+	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 	out, err = a.Tower("_ensure")
 	if err != nil {
 		t.Fatal(err, out)
@@ -110,10 +109,8 @@ func TestV03(t *testing.T) {
 	start = time.Now()
 	w.Eventually(5*time.Second, "B holds the view", func() bool { return HasSession(&b.View(cl).View, "A", "alpha") })
 	t.Logf("B's dashboard has the view %v after the upgrade", time.Since(start).Round(time.Millisecond))
-	if ack := switchFrom(t, b, cl, alpha); !ack.OK {
-		t.Fatalf("a switch on the upgraded remote: %+v", ack)
-	}
-	// loop part: the loop hands off to A:alpha.
+	l.Handoff(b, "bravo", alpha, a)
+	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 }
 
 // V04: two machines sharing one home directory: two towerds, separate
@@ -261,10 +258,8 @@ func TestV07(t *testing.T) {
 	w.WaitUp(a, "B")
 	w.WaitLoop(a, "^B:berry", 10*time.Second)
 	time.Sleep(500 * time.Millisecond)
-	if ack := switchFrom(t, b, cl, alpha); !ack.OK {
-		t.Fatalf("a switch after the home came back: %+v", ack)
-	}
-	// loop part: the loop hands off to A:alpha.
+	l.Handoff(b, "berry", alpha, a)
+	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 }
 
 // V08: keys: towerd takes M-o and prefix L where free and leaves the
@@ -335,7 +330,13 @@ func TestV08(t *testing.T) {
 		}
 		return false
 	})
-	// loop part: the loop hands off to K:k1.
+	if next := l.After(42, false); next.Do != proto.NextHandoff || next.Target.Label != "k1" {
+		t.Fatalf("after prefix L: %+v", next)
+	} else {
+		l.Attach(next.Target, k)
+	}
+	w.WaitLoop(a, "^K:k1", 8*time.Second)
+	// loop part: the loop itself ending the client and holding the frame.
 
 	if out, err := a.Tower("host", "off", "K"); err != nil {
 		t.Fatal(err, out)

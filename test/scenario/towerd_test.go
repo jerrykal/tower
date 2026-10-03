@@ -333,5 +333,26 @@ func (l *FakeLoop) Held() bool {
 	return r.End
 }
 
+// Handoff is a dashboard's ⏎ on target from the loop's client on
+// from:session, as towerd sees it: the switch asked of from's towerd
+// (relayed to the home), the loop's after with exit 42, and the attach
+// that follows on to.
+func (l *FakeLoop) Handoff(from *Host, session string, target proto.Ref, to *Host) {
+	l.w.T.Helper()
+	ids := from.ClientIDs(session)
+	if len(ids) == 0 {
+		l.w.T.Fatalf("no client on %s:%s", from.Name, session)
+	}
+	ack, _ := from.Act(ids[0], proto.Request{Op: proto.OpSwitch, Target: target, Nonce: config.NewID()}, 0)
+	if !ack.OK {
+		l.w.T.Fatalf("switch to %s: %s", target.String(), ack.Err)
+	}
+	next := l.After(42, false)
+	if next.Do != proto.NextHandoff || next.Target.Session != target.Session {
+		l.w.T.Fatalf("after the switch to %s: %+v", target.String(), next)
+	}
+	l.Attach(next.Target, to)
+}
+
 // Bye ends the loop at its home.
 func (l *FakeLoop) Bye() { l.Home.Call(proto.CallLoopBye, proto.LoopArgs{ID: l.ID}, nil) }
