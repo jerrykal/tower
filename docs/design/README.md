@@ -14,6 +14,7 @@ internal/tmux        binary resolution, quoting, one-shot runs, the control clie
 internal/stream      one JSON-lines peer: queued writer, requests, ping, stall, clock
 internal/transport   ssh: options, commands, failure classes, probe, masters, network watch
 internal/client      calls to the local towerd, ensure (start, upgrade, replace)
+internal/install     install on connect: platform, build source, upload
 internal/towerd      the daemon: watch, registrations, keys, remote and home roles
 internal/relay       terminal modes, ptys, the relay, frame writes between sequences
 internal/loop        the attach loop, the attach shim, standbys
@@ -33,6 +34,7 @@ towerd only through `client`.
 | [tmux.md](tmux.md) | `tmux` |
 | [transport.md](transport.md) | `transport` |
 | [client.md](client.md) | `client` |
+| [install.md](install.md) | `install` |
 | [towerd.md](towerd.md) | `towerd` |
 | [relay.md](relay.md) | `relay` |
 | [loop.md](loop.md) | `loop` |
