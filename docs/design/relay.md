@@ -53,6 +53,8 @@ func (s *Session) Send(line []byte) error           // line + "\n" to the pty: t
 func (s *Session) Relay(t *Terminal) (exit int, err error)
 func (s *Session) Terminate()                       // SIGTERM to ssh; the relay stops taking input
 func (s *Session) Kill()                            // SIGKILL (a stopped ssh loses SIGTERM); same
+func (s *Session) Abandon()                         // the relay ends at once (ErrAbandoned), ssh running on
+func (s *Session) Relayed() int64                   // bytes of output relayed so far: has the far side drawn?
 func (s *Session) SetSize(rows, cols int) error
 func (s *Session) Done() <-chan struct{}            // ssh has exited (a standby that died)
 func (s *Session) ExitCode() int                    // exit code, or 128 + signal
@@ -100,12 +102,15 @@ bytes; outside one it writes them before returning.
 client the loop hung up (its own never arrives), less synchronized output
 since the loop writes it inside a hold: `ESC[r` (scroll region),
 `ESC[m` (attributes), `ESC(B` (G0 ASCII), `ESC[?1l ESC>` (cursor keys and
-keypad normal), `ESC[H ESC[2J` (clear the alternate screen about to be
-left), `ESC[0 q` (cursor shape), `ESC[?25h` (cursor shown), `ESC[?1000l
-ESC[?1002l ESC[?1003l ESC[?1006l ESC[?1005l` (mouse), `ESC[?2004l`
-(bracketed paste), `ESC[?1004l` (focus events), `ESC[>4m` (extended keys),
-`ESC[?1049l` (out of the alternate screen, the shell's screen and cursor
-back).
+keypad normal), `ESC[0 q` (cursor shape), `ESC[?25h` (cursor shown),
+`ESC[?1000l ESC[?1002l ESC[?1003l ESC[?1006l ESC[?1005l` (mouse),
+`ESC[?2004l` (bracketed paste), `ESC[?1004l` (focus events), `ESC[>4m`
+(extended keys), `ESC[?1049l` (out of the alternate screen, the shell's
+screen and cursor back). tmux also clears the alternate screen as it
+goes; the restore does not, since the next client entering it with
+`ESC[?1049h` clears it anyway, and a restore written after a connection
+that never drew would clear the shell's screen instead. The loop writes
+it only for a session that drew something (`Session.Relayed`).
 
 ## The relay
 

@@ -4,61 +4,109 @@ The attach loop (`tower` outside tmux, and `tower dash`), the attach shim
 (`tower attach`, also as a standby), and the loop's set of standby
 sessions.
 
+| File | Holds |
+| --- | --- |
+| `loop.go` | `Run`, start and close, the heartbeat, frame holds, the state machine, the reconnect's pause |
+| `attach.go` | one attach: local through the shim, relayed (standby or new session), ssh given the terminal; wait-switch, ending the old client, the give-up, the fallback release |
+| `view.go` | the loop's copy of the home's view (`watch` + `view`) |
+| `standby.go` | the standby set |
+| `shim.go` | `tower attach` |
+
 ## Attach loop
 
 ```go
 type Options struct {
-    Dash bool // start at the picker
-    Env  *config.Env
+    Dash bool        // tower dash: start at the picker; esc there attaches to the last target
+    Env  *config.Env // the home: this machine and tmux server
 }
 func Run(ctx context.Context, o Options) int // exit code for the process
 ```
 
-State machine (see protocol.md, "After an attach ends"):
+`cmd/tower` sets the `attachLoop` hook to it. SIGHUP and SIGTERM end the
+loop as an exit does.
 
-```go
-for {
-    switch step {
-    case picker:   // the dashboard on the loop's terminal; ⏎ → prepare
-    case prepare:  // home.prepare(target) → Prepared
-    case attach:   // run the attach (local or relayed), with wait-switch alongside
-    case after:    // home.after(gen, code) → handoff | picker | reconnect | exit
-    case reconnect:// backoff, re-prepare the same target
-    }
-}
+**Start.** The terminal (stdin, stdout) must be a tty; its modes are kept
+as found. Ensure the home towerd (not bridged, so it plays home), take its
+tmux binary, send the first `loop` beat, which answers the last target
+(`last.json`). Write `loop-<id>.pid` in the towerd's state dir. Start the
+view watcher, the heartbeat and, unless `TOWER_RELAY=0` or
+`TOWER_STANDBY=0`, the standbys. The first step is the picker with
+`Dash`, with no last target, or with `TOWER_TEST_PICKER`; otherwise the
+last target.
+
+**State machine** (protocol.md, "After an attach ends"):
+
+```
+picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ handoff ──▶ prepare (the note on the next client)
+   ▲              │ fails                     ├─ reconnect ─▶ [pause] ─▶ prepare
+   │              ▼                           ├─ picker (with the note)
+   └──── back where the terminal was,         └─ exit (the note on stderr)
+         or the picker, saying why
 ```
 
-- **Start.** Ensure the home towerd; send the first `loop` beat (which
-  activates the home role); read `last.json` through the beat's answer. No
-  last target, or `Dash`: the picker. `tower dash`'s `Esc` attaches to the
-  last target when there is one, else exits.
-- **Heartbeat** every 5s: `{id, gen, cur, prev, host}`, so a restarted home
-  relearns the loop (S24, V07).
-- **Attach.** Local: run `tower attach …` with the terminal as its stdio
-  (it execs tmux). Remote: the host's standby if prepare's key matches and
-  it is ready and made for this terminal, else `relay.Start` with the
-  attach argv; then relay. `TOWER_RELAY=0`: ssh with the terminal itself.
-- **wait-switch** runs alongside every attach. When it answers `switch`:
-  `Hold`, call `held`; on `end`, end the old client (local: the home detaches
-  it through its control client; remote: `Terminate` the ssh, then write the
-  client's terminal restore inside the hold), and report exit 42 with
-  `Ended`.
-- **Frame release.** After the next attach starts: the new client's first
-  synced frame releases the hold by itself; as a fallback, 150ms after
-  `watch` shows the home bound the new client, or 1.5s, `Release(n)` for
-  this hold only (S27). Always released before the picker or an exit.
+- **Picker**: release any hold, restore the terminal's modes, `ui.Pick`.
+  `esc` (`ErrQuit`) exits 0; `tower dash`'s `esc` (first picker only) is
+  the last target, or exits with none.
+- **Prepare** failing: for a hand-off's target, back to where the terminal
+  was with the error as the note (a switch to a stalled host fails fast
+  and lands back home); while reconnecting, a pause and another try;
+  otherwise the picker with the error. An attach given up (see below)
+  goes the same way, except that with nowhere to go back to the loop
+  retries the target instead of the picker.
+- **After**'s note goes on the next client's status line (the shim's
+  `--note`, a standby's go line) or, at exit, to stderr.
 - **Reconnect** on 255: at once, then backoff 1s doubling to 30s while it
-  keeps failing; a failed prepare pauses at most 4s; more than 10s
-  attached resets the backoff; the pause ends early when the home's view
-  shows a new link generation for that host; `ctrl-c` gives the picker.
+  keeps failing; a failed prepare (or an attach given up) pauses at most
+  4s; more than 10s attached starts the backoff afresh. The pause shows
+  why on the terminal, ends early when the home's view shows a new link
+  generation for that host, and `ctrl-c` (the terminal raw) gives the
+  picker.
+- **Heartbeat** every 5s: `{id, gen, cur, prev}`; at once when wait-switch
+  answers at once without a switch (the home forgot the loop: it
+  restarted). The view watcher keeps `cur` and `prev` as the home has them,
+  so moves on a server travel in the beat too.
 - **Exit**: end the standbys, `loop-bye`, release any hold, restore the
-  terminal's modes.
+  terminal's modes, remove the pid file.
+
+## Attach
+
+- **Local**: run the prepared argv (`tower attach …`, which execs tmux)
+  with the terminal as its stdio, its modes restored first. Ending it for
+  a switch: `detach-client -t <its client> -E 'exit 42'` on the local
+  server (the client found by pid), so tmux restores the terminal and
+  prints nothing.
+- **Remote**: the host's standby if prepare's key matches and it is ready
+  and made for this terminal; its pty sized, the go line sent, the go
+  marker awaited `300ms + 2 × RTT` (`TOWER_STANDBY_TIMEOUT`), else
+  `Kill` and a new session. A new session is `relay.Start` with the
+  attach argv, the terminal's original modes and size. The terminal goes
+  raw and the session is relayed. Ending it for a switch: `Terminate` and
+  `Abandon` (the relay stops at once; ssh is reaped in the background), so
+  the next client waits for nothing.
+- **`TOWER_RELAY=0`**: ssh with the terminal itself, ended with SIGTERM.
+- **wait-switch** runs alongside (not with `TOWER_EAGER=0`, so the home
+  leaves the old client to the dashboard). On `switch`: `Hold`, `held`; on
+  `end`, end the client and report 42 with `Ended`. Without `end` the
+  dashboard detaches; should nothing end the client, that hold is
+  released after 1.5s.
+- **Give-up**: a remote attach whose host the view shows stalled or down
+  before the home has seen its client is killed: a hand-off goes back
+  where the terminal was, saying why; otherwise the loop pauses and tries
+  that target again, as after a lost connection.
+- **The old client gone**, the frame is held again at once, then a remote
+  client hung up or lost (255) gets the terminal restore its own never
+  wrote (`relay.ClientRestore`).
+- **Fallback release** of that hold: 150ms after the view shows the home
+  saw the new attach's client, or 1.5s, `Release(n)` for that hold only
+  (S27). Always released before the picker or an exit.
+- Marks: `attach`, `attach: standby`, `attach: session`, `standby: go`,
+  `standby did not answer`, `switch stored: hold`, `end attach`, `exited
+  <code>`, `attach given up: <why>`.
 
 ## Attach shim
 
 `internal/loop/shim.go`: `tower attach --loop L --gen G --home H --inst I
---mkey K [--standby] --tmux ARGS $3 [@7]` (flags first; Go's flag parsing
-stops at the first positional argument):
+--mkey K [--standby] [--note TEXT] --tmux ARGS $3 [@7]`:
 
 1. With `--mkey` and a towerd answering under it with that key,
    `register` is the only call (its answer carries the key and the tmux
@@ -66,50 +114,55 @@ stops at the first positional argument):
    remote-only (`--bridged`): an attach never makes a machine a home.
 2. Exec `tmux <args> attach-session -t $3 ; if-shell -F
    '#{!=:#{pid}:#{start_time},<inst>}' "detach-client -E 'exit 43'" ;
-   select-window -t @7` (`AttachCommand`), with `TOWER_CLIENT` and
-   `TOWER_MKEY` dropped from its environment.
+   select-window -t @7 ; display-message -d 4000 <note>`
+   (`AttachCommand`), with `TOWER_CLIENT` and `TOWER_MKEY` dropped from its
+   environment.
 
 As a standby (`--standby`, no target): ensure the towerd, turn the pty's
 echo and line editing off, write the ready marker (`relay.MarkerReady`,
-`ESC ] 7193 ; tower-standby-ready BEL`), read one JSON line a byte at a
-time (the go line: loop, gen, home, inst, mkey, session, window), restore
-the modes, write the answer marker (`relay.MarkerGo`, `ESC ] 7193 ;
-tower-standby-go BEL`), then continue as above. A standby nobody used
-exits after 12h.
+`ESC ] 7193 ; tower-standby-ready BEL`) on stdout, where an attach's
+output goes, read one JSON line a byte at a time (the go line: loop, gen,
+home, inst, mkey, session, window, note), restore the modes, write the
+answer marker (`relay.MarkerGo`, `ESC ] 7193 ; tower-standby-go BEL`),
+then continue as above. A standby nobody used exits after 12h.
 
 ## Standbys
 
 ```go
 type standbys struct {
-    byHost map[string]*standby // towerd id → standby
-    ...
+    byHost   map[string]*standby // towerd id → standby
+    backoff  map[string]*hostBackoff
+    reserved string              // the host an attach is being prepared for
 }
 type standby struct {
-    key     string
-    sess    *relay.Session
-    ready   bool
-    env     []string // the loop's environment, tower's variables left out
-    modes   relay.Modes
-    backoff time.Duration
+    host, name, key string
+    sess  *relay.Session
+    env   []string    // the loop's environment, tower's variables left out
+    modes relay.Modes // the terminal's original modes
+    ready bool
 }
 ```
 
-- **Refresh** on every view change (`watch`), every 2s, and when one is
-  used or dies: ask `standby`, drop those whose key is no longer offered or
-  whose host is the current one, start those missing (not while backed
-  off).
-- **Use**: prepare's key equals the standby's, it is ready, its env and
-  modes match the terminal's now. Send the go line; wait for the answer
-  marker for `300ms + 2 × SlowRTT` (or `TOWER_STANDBY_TIMEOUT`); on timeout
-  `Kill` it and open a new session.
-- A standby that dies before ready backs its host off (1s doubling to a
-  minute); one not ready in 20s counts as dead.
+- **Refresh** on every change of the view, every 2s, and when one is used
+  or dies: ask `standby`; drop those whose key is no longer offered (host
+  gone, down, stalled, reconnected, now the current one), except the host
+  being prepared; start those missing, once the view names their host,
+  not while backed off. Marks: `standby: start|ready|drop <host>`,
+  `standby: not used <host>: <why>`.
+- **Use** (`take`): ready, prepare's key, the same environment and modes
+  (`relay.Modes.Same`) as the terminal's now; one made for another
+  terminal is dropped.
+- A standby that dies (or is not ready in 20s) before it is ready backs
+  its host off, 1s doubling to a minute; one that dies ready is replaced.
+- The home offers none for the host the loop is attached to; at the
+  picker the loop is attached nowhere, so every host gets one.
 
 ## Concurrency
 
-The loop's main goroutine runs the state machine. During an attach:
-the attach (process wait or relay), `wait-switch`, `watch` (fallback
-release, standby refresh), and the heartbeat ticker run as goroutines that
-report to the main goroutine through channels. Standbys are managed by one
-goroutine of their own; the main goroutine takes one with a request on a
-channel, so the set has a single owner.
+The main goroutine runs the state machine and owns the attach. Alongside
+an attach: its runner (process wait or relay), wait-switch, the host
+watch and the fallback release. For the loop's life: the view watcher,
+the heartbeat and the standbys' refresh, each a goroutine; the standby
+set is under its own mutex (refresh, the watch per standby, and `take`
+from the main goroutine); the loop's `gen`, `cur`, `prev` and the hold
+number under the loop's mutex.
