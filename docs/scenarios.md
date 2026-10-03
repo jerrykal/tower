@@ -26,17 +26,17 @@ a scenario measures what a user would see.
 | S10 | `prefix d` versus hand-off: tower exits like tmux, the session keeps running, the registration is dropped, the next `tower` reattaches | loop | todo |
 | S11 | `tower` inside tmux is the dashboard, never a nested attach; dashboards in clients no loop owns (on the home and on a remote) see every host and switch locally but cannot hand off | ui, towerd | todo |
 | S12 | base-index 0 and 1: windows reached by id | loop | todo |
-| S13 | Sleep (every connection half-open), then back: detected within seconds; back fast; B replaces the stale stream (never two); B's control client unaffected; the loop is restored | towerd, loop | todo |
+| S13 | Sleep (every connection half-open), then back: detected within seconds; back fast; B replaces the stale stream (never two); B's control client unaffected; the loop is restored | towerd, loop | pass (towerd part) |
 | S14 | A tunnel flapping 0.6s/0.6s for 12s: few ssh calls (backoff), up once steady, the local link untouched | towerd | pass |
 | S15 | ssh would prompt (host key, password, locked key, unresolvable, Tailscale check, timeout): each down with its reason and fix, fast; every call `BatchMode=yes`; `tower host add` reports the same | transport, towerd | pass |
 | S16 | 104-byte socket paths: the run dir falls back to a short one; one control path value in every call; a stale control socket removed, a busy one kept; no `ssh -O check` | config, transport | pass |
 | S17 | No server: towerd polls and never starts one; `^n` starts one, waiting for a slow config with "starting tmux on N…"; `_tower` never keeps a server alive; towerd outlives its server | towerd, ui | pass (towerd part) |
 | S18 | No binary (`tower is not installed on M`), protocol 0 only (`incompatible protocol … 0-0 … 1-1`), newer peers (1–2) and one sending unknown messages: the right outcome each; hand-off to the newer peer works | towerd | pass |
 | S19 | 16 hostile names: created, relayed B → home → C, renamed, picked, handed off to, all exact; no name on any ssh command line | towerd, ui | todo |
-| S20 | 300 windows; state and view padded to 2 MB: a new session on B reaches the view held on C fast; C's dashboard reads its rows fast | towerd, stream | todo |
-| S21 | A remote's clock an hour ahead: the offset measured; ages right; a 1.5s-deadline request runs there | stream, towerd | todo |
-| S22 | Control-mode side effects: `session_last_attached` untouched; attached 0; window sizes unaffected; little traffic while a pane prints megabytes; 400 concurrent commands matched; `_tower` ends with the last session | tmux, towerd | todo |
-| S23 | Kill, rename, new on C from B's dashboard: fast; a duplicate id runs once; C down: an error fast, never run later; home frozen: a timeout, never run after thawing; home dead: refused fast | towerd | todo |
+| S20 | 300 windows; state and view padded to 2 MB: a new session on B reaches the view held on C fast; C's dashboard reads its rows fast | towerd, stream | pass |
+| S21 | A remote's clock an hour ahead: the offset measured; ages right; a 1.5s-deadline request runs there | stream, towerd | pass |
+| S22 | Control-mode side effects: `session_last_attached` untouched; attached 0; window sizes unaffected; little traffic while a pane prints megabytes; 400 concurrent commands matched; `_tower` ends with the last session | tmux, towerd | pass |
+| S23 | Kill, rename, new on C from B's dashboard: fast; a duplicate id runs once; C down: an error fast, never run later; home frozen: a timeout, never run after thawing; home dead: refused fast | towerd | pass |
 | S24 | Previous and current across hosts, a stream reset and a home crash: `-` ⏎ goes back; kept through the reset; relearned by the restarted home | towerd, loop | todo |
 | S25 | Everyday habits: closing the last pane with another session free (tmux moves, tower follows) and without (the previous session on another host, with a note); nothing left anywhere: exit; `tower last` across hosts; `prefix d` returns fast | loop, towerd | todo |
 | S26 | Hand-offs both ways without a flash: the frame held while the old client leaves and the new one enters, released after, nothing printed between, also when the dashboard cannot write its client's tty | loop, ui | todo |

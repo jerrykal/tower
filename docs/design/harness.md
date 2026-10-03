@@ -91,8 +91,9 @@ ServerAliveInterval × ServerAliveCountMax, the remote side kept alive by a
 holder process), `drop`, `o_delay_ms`, `delay_ms`, `jitter_ms`, `bw_kbps`,
 `window_kb`, `stall` (no byte moves, never given up), `pty` (`ssh -t` gets
 a pty on the host and the link's delays), `mux` (a shared control master:
-6 round trips for a new one, 2 for a session on it; `-O exit` ends its
-sessions) and `halfopen_at` (a network change: masters made before it are
+6 round trips for a new one, 2 for a session on it; a session rides an
+existing master whatever its `ControlMaster`, `no` only declines to make
+one, as with ssh; `-O exit` ends its sessions) and `halfopen_at` (a network change: masters made before it are
 dead and give up after the alive window).
 
 ## Teardown

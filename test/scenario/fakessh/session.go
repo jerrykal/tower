@@ -48,8 +48,11 @@ func session(a *args, k *Knobs) int {
 	}
 }
 
+// useMaster reports whether a session rides an existing master, as ssh
+// does with any ControlMaster value: "no" only declines to become one
+// (the home's probe relies on that to test the master itself).
 func (c *conn) useMaster() bool {
-	return c.w.get().Mux && c.a.opt("ControlMaster") != "no"
+	return c.w.get().Mux
 }
 
 // connect opens the connection, costing what a real one costs, or fails
