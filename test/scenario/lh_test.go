@@ -369,8 +369,9 @@ func TestLH06(t *testing.T) {
 	w.Knobs("B", func(k *fakenet.Knobs) { k.Mux, k.DelayMs = true, 25 })
 	w.Home(a, b.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)
-	l := w.FakeLoop(a)
-	l.Attach(w.Ref(a, "B", "bravo"), b)
+	// A real loop: nothing it does while B's towerd is wedged may cut its
+	// client.
+	w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	w.Eventually(10*time.Second, "B's client on bravo", func() bool { return slices.Equal(b.Clients(), []string{"bravo"}) })
 	time.Sleep(2 * time.Second)
 	old := b.TowerdPid()
