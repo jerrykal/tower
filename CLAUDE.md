@@ -10,7 +10,7 @@ server. Read [docs/overview.md](docs/overview.md) for the product,
 
 - Build and test through mise: `mise run build`, `mise run test`. The
   scenario suite is `mise run scenarios` (see below).
-- Commits are unscoped conventional commits (`feat: …`, `fix: …`,
+- Commits are unscoped conventional commits (`feat: …`, `fix: …`, `perf: …`,
   `docs: …`, `test: …`, `ci: …`), no attribution lines.
 - Write docs, comments and commit messages in tower's own terms.
 - A design change goes into the package's note in `docs/design/` and a
