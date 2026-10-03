@@ -81,10 +81,10 @@ a scenario measures what a user would see.
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
 | LC01 | Cold start, attach, wake, upgrade: the host never shows up empty; a reattach after a wake is fast | towerd, loop | todo |
-| LC02 | A clean drop reconnects within 200ms of a stable link | towerd | todo |
-| LC03 | A link half-open after a network change: the client back in seconds, faster with the interface watcher | towerd | todo |
+| LC02 | A clean drop reconnects within 200ms of a stable link | towerd | pass (towerd part) |
+| LC03 | A link half-open after a network change: the client back in seconds, faster with the interface watcher | towerd | pass (towerd part) |
 | LC04 | A 20s blackout: the loop's reattach does not sleep through the link's return | loop, towerd | todo |
-| LC05 | A slow but live link (200–800ms each way, 30s) is never dropped | stream, towerd | todo |
+| LC05 | A slow but live link (200–800ms each way, 30s) is never dropped | stream, towerd | pass |
 | LC06 | A switch to a host half-open 1s ago lands in seconds | towerd, loop | todo |
 | LC07 | Spawn cost: tower runs tmux past version-manager shims, and passes the machine key down | tmux, config | todo |
 | LC08 | A switch's critical path at 0/50/150/400ms round trips: the loop ends the old client itself; with standbys laptop → remote 0.5r, remote → remote 1r | loop, towerd | todo |
@@ -97,7 +97,7 @@ a scenario measures what a user would see.
 | LV02 | A burst of 40 switches and 40 new windows costs the home about 17 states | towerd | pass |
 | LV04 | An open dashboard follows the view within a round trip plus its redraw | ui, towerd | todo |
 | LD01 | Dashboard requests at 150 and 400ms: rows right after every answer; a kill's row gone before the answer; a preview's windows before the capture | ui, towerd | todo |
-| LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | todo |
+| LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | pass |
 | LD03 | `^x` three times fast kills three sessions | ui | todo |
 
 ## Standbys and the relay
