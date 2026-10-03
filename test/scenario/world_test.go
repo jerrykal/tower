@@ -97,6 +97,7 @@ type Host struct {
 	BaseIndex int
 	extra     map[string]string
 	sockPath  string
+	uname     string // what uname -s -m says on the host; empty: the truth
 }
 
 // HostOpt configures a host.
@@ -115,6 +116,10 @@ func BaseIndex(n int) HostOpt { return func(h *Host) { h.BaseIndex = n } }
 
 // Env sets an extra variable on the host.
 func Env(k, v string) HostOpt { return func(h *Host) { h.extra[k] = v } }
+
+// Platform makes the host say it is another platform: uname -s -m (and
+// -s, -m) answer from a shim first on the host's PATH ("Linux x86_64").
+func Platform(uname string) HostOpt { return func(h *Host) { h.uname = uname } }
 
 // Host makes a host with the given sessions (none: no tmux server). It is
 // also registered with the fake ssh under its name.
@@ -185,6 +190,11 @@ func (h *Host) EnvMap() map[string]string {
 	m["TOWER_FAKE_DIR"] = h.w.Fake
 	m["TOWER_TEST_TIMING"] = h.w.Marks
 	m["TOWER_TEST_NAME"] = h.Name
+	// Every machine installs tower under its own root in the world.
+	m["TOWER_INSTALL_DIR"] = h.InstallDir()
+	if h.uname != "" {
+		m["PATH"] = h.unameShim() + ":" + m["PATH"]
+	}
 	if raceBuild {
 		m["GORACE"] = "log_path=" + filepath.Join(h.w.Dir, "race", "report")
 	}
@@ -439,9 +449,35 @@ func (w *World) SSHLog() []map[string]any {
 	return out
 }
 
-// Remote is a host as a home lists it.
+// Remote is a host as a home lists it, pinned to the built binary.
 func (h *Host) Remote() config.Host {
 	return config.Host{Name: h.Name, SSH: h.Name, Tmux: "-L " + h.Sock, Tower: towerBin}
+}
+
+// Unpinned is a host as a home lists it with no tower path: the home
+// installs its own build there, under the host's InstallDir.
+func (h *Host) Unpinned() config.Host {
+	return config.Host{Name: h.Name, SSH: h.Name, Tmux: "-L " + h.Sock}
+}
+
+// InstallDir is where tower is installed on the host's machine
+// (TOWER_INSTALL_DIR there).
+func (h *Host) InstallDir() string { return filepath.Join(h.w.Dir, "install-"+h.Machine) }
+
+// unameShim writes the host's uname shim and returns its directory.
+func (h *Host) unameShim() string {
+	dir := filepath.Join(h.w.Dir, "plat-"+h.Name)
+	s, m, _ := strings.Cut(h.uname, " ")
+	script := "#!/bin/sh\ncase \"$*\" in\n" +
+		"\"-s -m\") echo '" + h.uname + "' ;;\n" +
+		"\"-s\") echo '" + s + "' ;;\n" +
+		"\"-m\") echo '" + m + "' ;;\n" +
+		"*) exec /usr/bin/uname \"$@\" ;;\nesac\n"
+	if _, err := os.Stat(filepath.Join(dir, "uname")); err != nil {
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "uname"), []byte(script), 0o755)
+	}
+	return dir
 }
 
 // Home makes h a home listing remotes, starting its towerd (or, if a

@@ -8,7 +8,7 @@
 
 | File | Holds |
 | --- | --- |
-| `main_test.go` | builds `tower` at `0.0.1-test`, `tower-v2` at `0.0.2-test` and the fake ssh into `$TOWER_TEST_DIR/bin`; with `TOWER_RACE=1` tower is built with the race detector, every process writes its reports under the world's `race/`, and a report fails the scenario at teardown |
+| `main_test.go` | builds `tower` at `0.0.1-test`, `tower-v2` at `0.0.2-test`, `tower-dev` at `0.0.3-dev+test` (a development build, no release) and the fake ssh into `$TOWER_TEST_DIR/bin`; with `TOWER_RACE=1` tower is built with the race detector, every process writes its reports under the world's `race/`, and a report fails the scenario at teardown |
 | `world_test.go` | `World` (one scenario), `Host` (one simulated machine and tmux server), homes, waits on links and loops, timing marks |
 | `term_test.go` | `Term`: a terminal running the attach loop, driven with `send-keys`, read with `capture-pane` |
 | `teardown_test.go` | ends everything and fails the test if a tmux server outlives its sessions |
@@ -16,7 +16,7 @@
 | `fakenet/` | the knobs contract between the harness and the fake ssh |
 | `fakessh/` | the fake ssh |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
-| `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `lh`, `lv`, `lc`, `ld`, `ls08` so far |
+| `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls08` so far |
 
 ## Hosts
 
@@ -36,7 +36,13 @@ for it. A host's processes run with:
 - the test timings below, then the host's own extras.
 
 Options: `Machine(m)` (several servers on one machine), `HomeName(n)` (a
-shared home directory), `BaseIndex(n)`, `Env(k, v)`.
+shared home directory), `BaseIndex(n)`, `Env(k, v)`, `Platform(uname)` (a
+`uname` shim first on the host's PATH answers `uname -s -m` with another
+platform, for install on connect).
+
+Every machine has its own install root, `TOWER_INSTALL_DIR=<dir>/install-<machine>`
+(`h.InstallDir()`). `h.Remote()` pins the built binary (`tower =`);
+`h.Unpinned()` leaves it out, so the home installs its build there.
 
 ## Homes and links
 

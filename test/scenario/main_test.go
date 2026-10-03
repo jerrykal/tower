@@ -18,6 +18,8 @@ import (
 const (
 	Version  = "0.0.1-test"
 	Version2 = "0.0.2-test"
+	// VersionDev is a development build: it has no release to download.
+	VersionDev = "0.0.3-dev+test"
 )
 
 // raceBuild (TOWER_RACE=1) builds tower with the race detector.
@@ -27,6 +29,7 @@ var (
 	root     string // TOWER_TEST_DIR
 	towerBin string
 	tower2   string
+	towerDev string
 	fakeSSH  string
 )
 
@@ -64,10 +67,12 @@ func setup() error {
 	}
 	towerBin = filepath.Join(bin, "tower")
 	tower2 = filepath.Join(bin, "tower-v2")
+	towerDev = filepath.Join(bin, "tower-dev")
 	fakeSSH = filepath.Join(bin, "ssh")
 	builds := []struct{ out, pkg, version string }{
 		{towerBin, "../../cmd/tower", Version},
 		{tower2, "../../cmd/tower", Version2},
+		{towerDev, "../../cmd/tower", VersionDev},
 		{fakeSSH, "./fakessh", ""},
 	}
 	for _, b := range builds {

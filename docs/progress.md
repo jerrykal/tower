@@ -8,7 +8,7 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 | --- | --- |
 | 1. Skeleton, packaging, v0.0.0 | done |
 | 2. Core: proto, stream, towerd, transport, loop, relay, harness | in progress |
-| 3. Install on connect | not started |
+| 3. Install on connect | done (R03, on real hosts, waits for the main session) |
 | 4. Dashboard (Atlas) | not started |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
 

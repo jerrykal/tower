@@ -52,6 +52,18 @@ a scenario measures what a user would see.
 | E03 | The last session ends while the home's stream is half-open: the server exits at once | towerd | pass |
 | E04 | `tower host add / off / on / rm`: checks in order (ssh, tmux, OS, tower); the stream closed on off and rm | towerd | pass |
 
+## Install on connect
+
+See [design/install.md](design/install.md).
+
+| ID | What must hold | Package | Status |
+| --- | --- | --- | --- |
+| I01 | A host without tower: the first connect installs this build under `TOWER_INSTALL_DIR`, swaps `current`, the host is up; the next connect does not install again; `tower host add` installs as its last check | install, towerd | pass |
+| I02 | The home upgraded: the new version beside the old, `current` swapped, the older towerd replaced by the new bridge, a loop's client there kept | install, towerd | pass |
+| I03 | A pinned `tower =` host is never installed to; a missing pinned binary is `failed: tower is not installed` | towerd | pass |
+| I04 | Another platform: the build from the dist cache; else downloaded from the release with its checksum verified; a bad checksum refused; a dev build with no cache fails with the `mise run dist` fix | install | pass |
+| I05 | Two homes installing on one host at once leave one whole binary and a valid `current` | install | pass |
+
 ## towerd
 
 | ID | What must hold | Package | Status |
