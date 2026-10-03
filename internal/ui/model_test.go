@@ -28,9 +28,9 @@ func TestMatch(t *testing.T) {
 		{"ovar", "B bravo", false, nil},
 		{"日本", "N 日x本", true, []int{2, 4}},
 	} {
-		pos, ok := match([]rune(c.q), c.text)
+		_, pos, ok := rank(fold([]rune(c.q)), c.text, strings.IndexByte(c.text, 32)+1)
 		if ok != c.ok || !slices.Equal(pos, c.pos) {
-			t.Errorf("match(%q, %q) = %v %v, want %v %v", c.q, c.text, pos, ok, c.pos, c.ok)
+			t.Errorf("rank(%q, %q) = %v %v, want %v %v", c.q, c.text, pos, ok, c.pos, c.ok)
 		}
 	}
 }

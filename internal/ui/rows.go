@@ -41,6 +41,7 @@ type row struct {
 	local    bool   // the host is the machine the dashboard runs on
 	status   string // the host's status when it is not up
 	text     string // what the filter matches: "host session" or "idx:name"
+	nameAt   int    // rune offset of the session (or window) name in text; -1: none
 }
 
 // marks are what the rows mark as current and previous.
@@ -113,6 +114,7 @@ func sessionRows(d *proto.Dash, mk marks, since time.Duration) []row {
 			r.key = rowKey{Host: hostKey(h), Inst: h.Inst}
 			r.ago = time.Duration(math.MaxInt64)
 			r.text = h.Name + " (no sessions)"
+			r.nameAt = -1
 			rows = append(rows, r)
 			continue
 		}
@@ -133,6 +135,7 @@ func sessionRows(d *proto.Dash, mk marks, since time.Duration) []row {
 				r.activity = r.activity || w.Activity
 			}
 			r.text = h.Name + " " + s.Name
+			r.nameAt = len([]rune(h.Name)) + 1
 			rows = append(rows, r)
 		}
 	}
@@ -172,6 +175,7 @@ func windowRows(d *proto.Dash, k rowKey, mk marks) []row {
 				host: h, sess: s, win: w, band: band(h), local: h.ID == d.Self, status: hostStatus(h),
 				bell: w.Bell, activity: w.Activity,
 				text: strconv.Itoa(w.Index) + ":" + w.Name,
+				nameAt: len(strconv.Itoa(w.Index)) + 1,
 			}
 			r.cur = cur && (mk.cur.Window == w.ID || mk.cur.Window == "" && w.Active)
 			rows = append(rows, r)

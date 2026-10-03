@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -354,17 +355,35 @@ func (m *Model) rebuild() {
 	m.refilter()
 }
 
-// refilter matches the rows against the query and puts the cursor back on
-// its row; when that row is gone, on the nearest row after it that is
-// still there, else before it.
+// refilter matches the rows against the query, best matches first (see
+// rank), and puts the cursor back on its row; when that row is gone, on
+// the nearest row after it that is still there, else before it.
 func (m *Model) refilter() {
 	old, oldAt := m.shown, m.at
-	m.shown, m.hits = nil, nil
+	type hit struct {
+		r   row
+		s   score
+		pos []int
+	}
+	q := fold(m.query)
+	var hits []hit
 	for _, r := range m.rows {
-		if pos, ok := match(m.query, r.text); ok {
-			m.shown = append(m.shown, r)
-			m.hits = append(m.hits, pos)
+		if s, pos, ok := rank(q, r.text, r.nameAt); ok {
+			hits = append(hits, hit{r, s, pos})
 		}
+	}
+	slices.SortStableFunc(hits, func(a, b hit) int {
+		switch {
+		case a.s.less(b.s):
+			return -1
+		case b.s.less(a.s):
+			return 1
+		}
+		return 0
+	})
+	m.shown, m.hits = make([]row, len(hits)), make([][]int, len(hits))
+	for i, h := range hits {
+		m.shown[i], m.hits[i] = h.r, h.pos
 	}
 	if i := m.index(m.cursor); i >= 0 {
 		m.at = i
