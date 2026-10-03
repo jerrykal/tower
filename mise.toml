@@ -23,7 +23,7 @@ description = "Vet and every package test, the relay's throughput runs included"
 run = ["go vet ./...", "go test ./..."]
 
 [tasks.dist]
-description = "Cross-compile release archives into dist/"
+description = "Cross-compile release archives into dist/ and the dist cache install on connect reads"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -39,6 +39,11 @@ for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
 done
 (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
 ls dist
+# The home installs these on hosts of other platforms (install on connect).
+cache="${TOWER_DIST_DIR:-$HOME/.cache/tower/dist}/$v"
+mkdir -p "$cache"
+cp dist/*.tar.gz dist/checksums.txt "$cache"/
+echo "dist cache: $cache"
 """
 
 [tasks.dev]
