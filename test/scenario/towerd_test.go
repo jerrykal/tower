@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -184,21 +185,16 @@ func (w *World) WaitGone(pid int, d time.Duration) bool {
 // TowerdProcs are the towerd processes (bridges left out) running with
 // the host's TOWER_HOME and tmux socket.
 func (h *Host) TowerdProcs() []int {
-	var out []int
-	for _, pid := range pidsWithEnv("TOWER_HOME=" + h.HomeDir + " ") {
-		b, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil {
-			continue
+	return procsWhere(func(p proc) bool {
+		if home, _ := p.getenv("TOWER_HOME"); home != h.HomeDir {
+			return false
 		}
-		f := strings.Fields(string(b))
-		if len(f) >= 2 && f[1] == "towerd" && !strings.Contains(string(b), "--stdio") {
-			env, _ := exec.Command("ps", "-xEww", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
-			if strings.Contains(string(env), "-L "+h.Sock) {
-				out = append(out, pid)
-			}
+		if len(p.argv) < 2 || p.argv[1] != "towerd" || slices.Contains(p.argv, "--stdio") {
+			return false
 		}
-	}
-	return out
+		tm, _ := p.getenv("TOWER_TMUX")
+		return hasArgs(p.argv, "--tmux", "-L "+h.Sock) || !slices.Contains(p.argv, "--tmux") && tm == "-L "+h.Sock
+	})
 }
 
 // Loop drives towerd's loop calls the way an attach loop does, without

@@ -72,7 +72,7 @@ func (w *World) teardown() {
 	exec.Command("pkill", "-f", w.Dir).Run()
 	// Anything still running with this world's TOWER_HOME: a towerd a
 	// reconnect started during teardown, a bridge, a standby shim.
-	for _, pid := range pidsWithEnv("TOWER_HOME=" + w.Dir + "/") {
+	for _, pid := range pidsWithEnvPrefix("TOWER_HOME", w.Dir+"/") {
 		syscall.Kill(pid, syscall.SIGKILL)
 	}
 
@@ -116,30 +116,3 @@ func waitNoServer(sock string, d time.Duration) bool {
 	return false
 }
 
-// pidsWithEnv lists processes whose environment or command line contains
-// s (ps -E shows the environment on macOS; Linux reads /proc).
-func pidsWithEnv(s string) []int {
-	var out []int
-	if b, err := exec.Command("ps", "-xEww", "-o", "pid=,command=").Output(); err == nil {
-		for _, l := range strings.Split(string(b), "\n") {
-			if strings.Contains(l, s) {
-				f := strings.Fields(l)
-				if pid, err := strconv.Atoi(f[0]); err == nil && pid != os.Getpid() {
-					out = append(out, pid)
-				}
-			}
-		}
-		return out
-	}
-	procs, _ := filepath.Glob("/proc/[0-9]*/environ")
-	for _, p := range procs {
-		b, err := os.ReadFile(p)
-		if err != nil || !strings.Contains(string(b), s) {
-			continue
-		}
-		if pid, err := strconv.Atoi(filepath.Base(filepath.Dir(p))); err == nil && pid != os.Getpid() {
-			out = append(out, pid)
-		}
-	}
-	return out
-}

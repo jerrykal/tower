@@ -25,6 +25,10 @@ func runHelper(name string) int {
 		return helperBuildLog()
 	case "reader":
 		return helperReader()
+	case "sleep":
+		// A process that only lives a while (whatever its argv says).
+		time.Sleep(30 * time.Second)
+		return 0
 	}
 	fmt.Fprintln(os.Stderr, "unknown helper", name)
 	return 2
