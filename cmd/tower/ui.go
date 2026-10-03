@@ -27,6 +27,7 @@ func towerCmd(dash bool) error {
 	if os.Getenv("TMUX") == "" {
 		return attachLoop(dash)
 	}
+	config.Mark("dash: start")
 	ctx := context.Background()
 	e, err := config.Load(serverArgs())
 	if err != nil {

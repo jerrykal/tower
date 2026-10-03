@@ -12,6 +12,7 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 
 	"github.com/jerrykal/tower/internal/client"
@@ -85,7 +86,9 @@ type runOptions struct {
 // run reads the view, so the first frame has the rows, and runs the
 // program until it quits.
 func run(ctx context.Context, c *Conn, o runOptions) (*Model, error) {
+	config.Mark("dash: connected")
 	d, err := c.Towerd.View(ctx, c.viewArgs())
+	config.Mark("dash: view")
 	m := newModel(ctx, c, d, err == nil, config.Flag("TOWER_LIVE", true))
 	m.dash = o.dash
 	if err != nil {
@@ -95,6 +98,17 @@ func run(ctx context.Context, c *Conn, o runOptions) (*Model, error) {
 	}
 	m.firstDraw = func() { config.Mark("dash: frame") }
 	opts := []tea.ProgramOption{tea.WithContext(ctx), tea.WithFPS(fps)}
+	if os.Getenv("TMUX") != "" {
+		// Inside tmux, Bubble Tea's colour detection runs `tmux info`
+		// through PATH (a version manager's shim costs 60-80ms) on the
+		// popup's start. tmux maps RGB colours to what the terminal
+		// outside it supports, so true colour is right here.
+		p := colorprofile.TrueColor
+		if os.Getenv("NO_COLOR") != "" {
+			p = colorprofile.Ascii
+		}
+		opts = append(opts, tea.WithColorProfile(p))
+	}
 	if o.in != nil {
 		opts = append(opts, tea.WithInput(o.in))
 	}
