@@ -28,3 +28,7 @@ After that `mise run build` updates the tower on your PATH in place.
 
 Versions come from git tags: a build at a clean `v*` tag is that version;
 anything else is the last tag with `-dev+<commit>`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
