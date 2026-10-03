@@ -473,7 +473,7 @@ func TestNoServerNeverStarted(t *testing.T) {
 		t.Fatal("towerd started a server")
 	}
 	ack := n.d.act(context.Background(), &proto.Request{Op: proto.OpNew, Name: "first"})
-	if !ack.OK {
+	if !ack.OK || ack.Note != "started tmux on N" {
 		t.Fatalf("new with no server: %+v", ack)
 	}
 	if s := n.d.snapshotNow(); s.NoServer || len(s.Sessions) != 1 || s.Sessions[0].Name != "first" {

@@ -162,6 +162,9 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 		_, err = do(line)
 	case proto.OpNew:
 		ack.Ref, err = d.newLocal(req, ctl, left)
+		if err == nil && ctl == nil {
+			ack.Note = "started tmux on " + d.name
+		}
 	case proto.OpDup:
 		line := "new-session -d -P -F " + tmux.Quote("#{session_id}\t#{session_name}") + " -t " + tmux.Quote(t.Session)
 		if req.Name != "" {
