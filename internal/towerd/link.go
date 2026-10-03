@@ -35,6 +35,9 @@ type Transport interface {
 	AttachArgv(h config.Host, remote string) []string
 	// Sweep removes control sockets nobody listens on.
 	Sweep()
+	// Run runs one command on h with stdin and returns its stdout (an
+	// install's checks and upload).
+	Run(ctx context.Context, h config.Host, remote string, stdin io.Reader) (string, error)
 }
 
 // Pipe is a running remote command.
@@ -110,6 +113,9 @@ func (t *sshTransport) AttachArgv(h config.Host, remote string) []string {
 	return t.ssh.Attach(h, remote)
 }
 func (t *sshTransport) Sweep() { transport.Sweep(t.cm) }
+func (t *sshTransport) Run(ctx context.Context, h config.Host, remote string, stdin io.Reader) (string, error) {
+	return t.ssh.Run(ctx, h, remote, stdin)
+}
 
 // link is the home's connection to one host: ssh, the bridge, the stream,
 // liveness and reconnects. Its fields are guarded by Daemon.mu.
@@ -135,6 +141,9 @@ type link struct {
 	gotState             chan struct{}
 	lastView             string
 	rx, tx               atomic.Int64
+
+	installed string // "installed <version>" once this home installed its build here
+	installs  int    // installs since the host last came up; a second means it does not take
 
 	givenUp  string        // why the home gave the current stream up
 	resetC   chan struct{} // closed when a master reset under way is done
@@ -227,7 +236,7 @@ func (l *link) status_() proto.LinkStatus {
 // earlier link, another towerd or another command is never used. Call
 // with mu held.
 func (l *link) standbyKey() string {
-	return fmt.Sprintf("%d|%s|%s|%s|%s", l.gen, l.id, l.version, l.cfg.Tmux, towerPath(l.cfg))
+	return fmt.Sprintf("%d|%s|%s|%s|%s", l.gen, l.id, l.version, l.cfg.Tmux, l.h.towerCommand(l.cfg))
 }
 
 func (l *link) start() {
@@ -272,13 +281,16 @@ func (l *link) kick() {
 	}
 }
 
-func (l *link) logf(f string, a ...any) { l.h.d.logf("link %s: "+f, append([]any{l.cfg.Name}, a...)...) }
+func (l *link) logf(f string, a ...any) {
+	l.h.d.logf("link %s: "+f, append([]any{l.cfg.Name}, a...)...)
+}
 
 // outcome is how one connection ended.
 type outcome struct {
 	upFor   time.Duration
 	givenUp bool
 	failed  bool
+	missing bool // the shell found no tower binary (127) on an unpinned host
 }
 
 // run connects, and reconnects with backoff from TOWER_BACKOFF_BASE (1s)
@@ -294,6 +306,12 @@ func (l *link) run() {
 		o := l.connect()
 		if l.stopped() {
 			return
+		}
+		if o.missing {
+			// The build is not there yet: install it and connect again
+			// at once, or wait the cap after a failed install.
+			o.givenUp = l.install()
+			o.failed = !o.givenUp
 		}
 		var wait time.Duration
 		switch {
@@ -374,7 +392,7 @@ func (l *link) connect() outcome {
 	l.h.kickViews()
 
 	l.h.tr.Sweep()
-	remote := transport.RemoteCommand(towerPath(l.cfg), "towerd", "--stdio", "--tmux", l.cfg.Tmux)
+	remote := l.h.towerCommand(l.cfg, "towerd", "--stdio", "--tmux", l.cfg.Tmux)
 	p, err := l.h.tr.Dial(l.cfg, remote)
 	if err != nil {
 		l.down(transport.Down, err.Error())
@@ -465,6 +483,11 @@ func (l *link) connect() outcome {
 			class, reason = transport.Down, given
 		}
 		result.failed = class == transport.Failed
+		if code == 127 && !result.givenUp && l.cfg.Tower == "" {
+			// An unpinned host lacking this build: run() installs it.
+			result.missing, result.failed = true, false
+			return result
+		}
 		if result.givenUp {
 			l.setStatus(proto.StatusConnecting, reason)
 		} else if class != "dup" {
@@ -495,7 +518,7 @@ func (l *link) connect() outcome {
 	if hello.Tmux != "" {
 		l.tmuxV = hello.Tmux
 	}
-	l.warn = ""
+	l.warn = l.installed
 	if hello.Version != d.version {
 		l.warn = fmt.Sprintf("tower %s there, %s here (protocol %d)", hello.Version, d.version, hello.Proto)
 	}
@@ -523,6 +546,7 @@ func (l *link) connect() outcome {
 	d.mu.Lock()
 	l.status, l.reason = proto.StatusUp, ""
 	l.upAt = time.Now()
+	l.installs = 0
 	l.gen++
 	l.heard = time.Now()
 	// A first state that came in before the hello was taken: its clients
@@ -557,6 +581,56 @@ func (l *link) connect() outcome {
 		return finish(transport.Down, "link stopped")
 	}
 	return finish("", reason)
+}
+
+// install puts this build on the host and reports whether the link should
+// connect again at once. A build still missing after an install fails the
+// host instead of installing for ever.
+func (l *link) install() bool {
+	v := l.h.inst.Version
+	d := l.h.d
+	d.mu.Lock()
+	l.installs++
+	again := l.installs > 1
+	if again {
+		l.installs = 0
+	}
+	d.mu.Unlock()
+	if again {
+		l.down(transport.Failed, fmt.Sprintf("tower is not installed on %s: installing %s there did not take", l.cfg.Name, v))
+		return false
+	}
+	l.setStatus(proto.StatusInstalling, "installing tower "+v+"…")
+	l.logf("installing tower %s", v)
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	go func() {
+		select {
+		case <-l.stopC:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	if err := l.h.inst.Install(ctx, hostRunner{l.h.tr, l.cfg}, l.cfg.Name); err != nil {
+		l.down(transport.Failed, err.Error())
+		return false
+	}
+	l.logf("installed tower %s in %v", v, time.Since(start).Round(time.Millisecond))
+	d.mu.Lock()
+	l.installed = "installed " + v
+	d.mu.Unlock()
+	return true
+}
+
+// hostRunner runs commands on one host through the home's transport.
+type hostRunner struct {
+	tr Transport
+	h  config.Host
+}
+
+func (r hostRunner) Run(ctx context.Context, remote string, stdin io.Reader) (string, error) {
+	return r.tr.Run(ctx, r.h, remote, stdin)
 }
 
 // awaitHello waits for the remote's hello, at most 15s.

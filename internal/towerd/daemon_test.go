@@ -237,6 +237,9 @@ func (p *inproc) AttachArgv(h config.Host, remote string) []string {
 	return []string{"ssh", "-t", h.Target(), "--", remote}
 }
 func (p *inproc) Sweep() {}
+func (p *inproc) Run(ctx context.Context, h config.Host, remote string, stdin io.Reader) (string, error) {
+	return "", fmt.Errorf("no commands in process")
+}
 
 var _ io.Writer = (*lockedBuf)(nil)
 

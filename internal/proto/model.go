@@ -92,6 +92,7 @@ const (
 	StatusFailed     = "failed"
 	StatusDup        = "dup"
 	StatusOff        = "off"
+	StatusInstalling = "installing" // the home is putting its build there
 )
 
 // Host is one host in the home's view.

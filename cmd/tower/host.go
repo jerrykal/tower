@@ -6,14 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/client"
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/install"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/transport"
+	"github.com/jerrykal/tower/internal/version"
 )
 
 func cmdHost(args []string, out io.Writer) error {
@@ -85,13 +88,27 @@ func hostAdd(env *config.Env, args []string, out io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	towerBin := h.Tower
-	if towerBin == "" {
-		towerBin = "tower"
-	}
 	ssh := transport.New(env.CMDir())
+	self, _ := os.Executable()
+	inst := install.New(version.Version, self)
+	towerCmd := inst.Command()
+	if h.Tower != "" {
+		towerCmd = transport.RemoteCommand(h.Tower)
+	}
 	failed := false
-	for _, c := range ssh.CheckHost(ctx, h, towerBin) {
+	checks := ssh.CheckHost(ctx, h, towerCmd)
+	if last := &checks[len(checks)-1]; last.Name == "tower" && !last.OK && h.Tower == "" {
+		// The last check: put this build there, as the home would on connect.
+		ictx, icancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		err := inst.Install(ictx, sshRunner{ssh, h}, h.Name)
+		icancel()
+		if err != nil {
+			last.Detail = err.Error()
+		} else {
+			last.OK, last.Detail = true, "installed "+version.Version
+		}
+	}
+	for _, c := range checks {
 		mark := "✓"
 		if !c.OK {
 			mark, failed = "✗", true
@@ -134,6 +151,16 @@ func hostEdit(env *config.Env, args []string, out io.Writer, did string, edit fu
 	fmt.Fprintf(out, "%s %s\n", did, name)
 	reloadHome(env)
 	return nil
+}
+
+// sshRunner runs commands on one host over ssh (an install's).
+type sshRunner struct {
+	ssh *transport.SSH
+	h   config.Host
+}
+
+func (r sshRunner) Run(ctx context.Context, remote string, stdin io.Reader) (string, error) {
+	return r.ssh.Run(ctx, r.h, remote, stdin)
 }
 
 // reloadHome tells a running towerd to read hosts.toml again; one that

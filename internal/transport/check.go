@@ -27,11 +27,14 @@ var MinTmux = [2]int{3, 2}
 // it), tmux 3.2 or later, the OS (uname -s), and the tower binary. The
 // steps after ssh share one ssh session. A failed step ends the list
 // except tower's, which install on connect can mend.
+//
+// tower is the shell command that runs tower there (a pinned binary's, or
+// the home's build under the install root).
 func (s *SSH) CheckHost(ctx context.Context, h config.Host, tower string) []Check {
 	script := strings.Join([]string{
 		`echo "tmux $(tmux -V 2>/dev/null)"`,
 		`echo "os $(uname -s 2>/dev/null)"`,
-		`echo "tower $(` + RemoteCommand(tower, "version") + ` 2>/dev/null)"`,
+		`echo "tower $(` + tower + ` version 2>/dev/null)"`,
 	}, "; ")
 	out, code, stderr, err := s.runWatched(ctx, h, script)
 	if err != nil || code != 0 && !strings.HasPrefix(out, "tmux ") {
@@ -60,7 +63,7 @@ func (s *SSH) CheckHost(ctx context.Context, h config.Host, tower string) []Chec
 	}
 	checks = append(checks, Check{Name: "os", OK: true, Detail: vals["os"]})
 	if vals["tower"] == "" {
-		return append(checks, Check{Name: "tower", Detail: "tower is not installed on " + h.Name + ": install it there, or set its path with --tower"})
+		return append(checks, Check{Name: "tower", Detail: "tower is not installed on " + h.Name + ": install it there, or leave out --tower to let the home install it"})
 	}
 	return append(checks, Check{Name: "tower", OK: true, Detail: vals["tower"]})
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/install"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/stream"
 	"github.com/jerrykal/tower/internal/transport"
@@ -32,8 +33,9 @@ func handoffTTL() time.Duration { return config.Duration("TOWER_HANDOFF_TTL", 30
 // the local one into the view, and owns its loops' current, previous and
 // pending switch. Its fields are guarded by Daemon.mu.
 type homeRole struct {
-	d  *Daemon
-	tr Transport
+	d    *Daemon
+	tr   Transport
+	inst *install.Installer // this build, for hosts that lack it
 
 	links    map[string]*link // by host name
 	order    []string
@@ -97,7 +99,7 @@ func newHome(d *Daemon) *homeRole {
 	if tr == nil {
 		tr = newSSHTransport(d.env.CMDir())
 	}
-	h := &homeRole{d: d, tr: tr, links: map[string]*link{}, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, cache: map[string]cachedHost{}}
+	h := &homeRole{d: d, tr: tr, inst: install.New(d.version, d.self), links: map[string]*link{}, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, cache: map[string]cachedHost{}}
 	h.ctx, h.cancel = context.WithCancel(d.ctx)
 	config.ReadJSON(d.env.State("hosts.json"), &h.cache)
 	var lf lastFile
@@ -526,7 +528,7 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 		if t.Window != "" {
 			args = append(args, t.Window)
 		}
-		p.Argv = h.tr.AttachArgv(lk.cfg, transport.RemoteCommand(towerPath(lk.cfg), args...))
+		p.Argv = h.tr.AttachArgv(lk.cfg, h.towerCommand(lk.cfg, args...))
 		goLine, _ := json.Marshal(proto.GoLine{Loop: l.id, Gen: gen, Home: h.d.id, Inst: hs.inst, MKey: hs.mkey, Session: t.Session, Window: t.Window})
 		p.Go = string(goLine)
 		p.Key = lk.standbyKey()
@@ -801,7 +803,7 @@ func (h *homeRole) standby(loop string) []proto.Offer {
 			continue
 		}
 		args := []string{"attach", "--standby", "--mkey", l.mkey, "--tmux", l.cfg.Tmux}
-		o := proto.Offer{Host: l.id, Key: l.standbyKey(), Argv: h.tr.AttachArgv(l.cfg, transport.RemoteCommand(towerPath(l.cfg), args...))}
+		o := proto.Offer{Host: l.id, Key: l.standbyKey(), Argv: h.tr.AttachArgv(l.cfg, h.towerCommand(l.cfg, args...))}
 		if l.conn != nil {
 			o.RTT = l.conn.SlowRTT().Milliseconds()
 		}
@@ -967,11 +969,14 @@ func (h *homeRole) abortSwitches(hostID, why string) {
 	}
 }
 
-func towerPath(h config.Host) string {
-	if h.Tower != "" {
-		return h.Tower
+// towerCommand is the shell line running tower with args on host c: the
+// binary c pins (tower = …), else this build's under the install root,
+// by its exact path.
+func (h *homeRole) towerCommand(c config.Host, args ...string) string {
+	if c.Tower != "" {
+		return transport.RemoteCommand(c.Tower, args...)
 	}
-	return "tower"
+	return h.inst.Command(args...)
 }
 
 // sessionOf names r's session (host:session), without its window: what a

@@ -239,10 +239,15 @@ type Transport interface {
     Exit(ctx, h) error                                // ssh -O exit
     AttachArgv(h, remote string) []string             // ssh -t …
     Sweep()                                           // stale control sockets
+    Run(ctx, h, remote string, stdin io.Reader) (string, error) // an install's commands
 }
 ```
 
-**Link**: sweep, then `ssh -T … host -- '<tower> towerd --stdio --tmux …'`
+**Link**: sweep, then `ssh -T … host -- '<tower> towerd --stdio --tmux …'`,
+where `<tower>` is the pinned binary or this build's versioned path under
+the install root (`towerCommand`, also used for attaches and standbys); a
+127 from an unpinned host installs the build (`internal/install`, status
+`installing`) and connects again at once,
 with stderr read line by line (a Tailscale check banner ends ssh at once),
 a stream with the home's timings, the hello (15s), then the first state:
 the link is `up` only once a state is in, so a host never shows up empty

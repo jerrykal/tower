@@ -138,7 +138,9 @@ setting belongs to the master, so it goes on every call;
 **Failures are classified** from ssh's exit and stderr: host key changed or
 unknown, a locked key or password needed (`load the key with ssh-add, or set
 one up with ssh-copy-id`), cannot resolve, refused, timed out, `tower is not
-installed on <host>` (exit 127). A Tailscale SSH check (a banner naming
+installed on <host>` (exit 127; for a host with no pinned `tower =` the
+home installs its build instead and reconnects, see
+[design/install.md](design/install.md)). A Tailscale SSH check (a banner naming
 "Tailscale SSH" and a check, after which the connection is held until a
 browser login) is read from stderr as it arrives: the ssh is ended at once
 and the host is down with "Tailscale SSH wants a check: run `ssh <host>`

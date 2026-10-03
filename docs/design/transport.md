@@ -26,7 +26,7 @@ type Failure struct { Class, Reason string } // "down" or "failed", and the text
 func Classify(host string, exit int, stderr string) Failure
 func TailscaleCheck(line string) bool
 
-func (s *SSH) CheckHost(ctx context.Context, h config.Host, tower string) []Check
+func (s *SSH) CheckHost(ctx context.Context, h config.Host, tower string) []Check // tower: a shell command running it there
 
 func Sweep(dir string)                                  // remove control sockets nobody listens on
 func WatchNet(ctx context.Context, every time.Duration, changed func())
@@ -62,7 +62,9 @@ a Tailscale check banner, which otherwise holds the connection.
 
 `CheckHost` is what `tower host add` (and the dashboard's add) runs, in
 order: ssh with `BatchMode=yes`, tmux 3.2 or later, `uname -s`, and the
-tower binary (`<tower> version`). The steps after ssh go in one remote
+tower binary (`<tower> version`, `<tower>` being the pinned path or the
+home's build under the install root; the caller installs a missing build
+as the last step). The steps after ssh go in one remote
 command on the one session, so a check costs a single connection. Each
 `Check` carries what was found or the reason with its fix. stderr is read
 as it arrives: a Tailscale check banner ends ssh at once instead of after

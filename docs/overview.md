@@ -220,10 +220,10 @@ towerd.
 
 ## Binaries on other hosts: install on connect
 
-The home checks each host's tower version over the existing ssh master. If
-it is missing or differs from the home's, the home copies the right build
-to `~/.local/share/tower/<version>/tower` there and swaps a `current`
-symlink. A running towerd keeps its old file until the next connect's
+The home runs its own version's build on every host, by its exact path
+`~/.local/share/tower/<version>/tower`. When that build is missing there,
+the home copies it over the existing ssh master and swaps a `current`
+symlink, then connects again. A running towerd keeps its old file until the next connect's
 bridge replaces it (towerd's upgrade path). Builds for other platforms come
 from the GitHub release assets that match the home's version, downloaded
 once into `~/.cache/tower/dist/<version>/`; remote hosts never need
