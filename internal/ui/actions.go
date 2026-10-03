@@ -227,8 +227,18 @@ func (c *Conn) rename(ctx context.Context, t target, name string) (proto.Ack, er
 // newSession makes a session on h; an empty name leaves it to tmux.
 func (c *Conn) newSession(ctx context.Context, h *proto.Host, name string) (proto.Ack, error) {
 	ref := proto.Ref{Host: h.ID, Name: h.Name, Inst: h.Inst}
-	return c.act(ctx, proto.Request{Op: proto.OpNew, Target: ref, Kind: proto.KindSession, Name: name})
+	req := proto.Request{Op: proto.OpNew, Target: ref, Kind: proto.KindSession, Name: name}
+	if h.NoServer {
+		// Starting the server runs the user's config, seconds with a
+		// plugin manager: towerd gives it 15s, and so does the dashboard.
+		return c.actWithin(ctx, req, max(ackTimeout(), newServerWait))
+	}
+	return c.act(ctx, req)
 }
+
+// newServerWait is how long a new session may take to start its host's
+// tmux server.
+const newServerWait = 15 * time.Second
 
 // startingNote is what the dashboard says while a new session starts a
 // host's tmux server, which may take seconds with a plugin manager.

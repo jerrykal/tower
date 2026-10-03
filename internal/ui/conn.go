@@ -93,7 +93,11 @@ func ackTimeout() time.Duration { return config.Duration("TOWER_ACK_TIMEOUT", 5*
 // call itself may take a little longer than the deadline, so towerd's own
 // refusal, which says why, is what the user sees.
 func (c *Conn) act(ctx context.Context, r proto.Request) (proto.Ack, error) {
-	d := ackTimeout()
+	return c.actWithin(ctx, r, ackTimeout())
+}
+
+// actWithin is act with deadline d.
+func (c *Conn) actWithin(ctx context.Context, r proto.Request, d time.Duration) (proto.Ack, error) {
 	r.ID = config.NewID()
 	r.Deadline = time.Now().Add(d).UnixMilli()
 	ctx, cancel := context.WithTimeout(ctx, d+time.Second)

@@ -2,6 +2,8 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/jerrykal/tower/internal/config"
 )
 
 // key handles one key press.
@@ -118,6 +120,7 @@ func (m *Model) kill() tea.Cmd {
 	}
 	t := rowTarget(r)
 	op, host, key := "kill", r.host.Name, r.key
+	config.Mark("dash: kill")
 	m.hidden[key] = hide{}
 	m.rebuild()
 	m.setNote(op + " on " + host + "…")
@@ -131,6 +134,7 @@ func (m *Model) kill() tea.Cmd {
 // gotAct takes an action's answer: the note, and a view read, since the
 // rows read after an answer show its result.
 func (m *Model) gotAct(msg actMsg) tea.Cmd {
+	config.Mark("dash: " + msg.op + " answered")
 	if msg.err != nil {
 		delete(m.hidden, msg.key)
 		m.setErr(failed(msg.op, msg.host, msg.err))
