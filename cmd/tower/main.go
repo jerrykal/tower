@@ -74,9 +74,12 @@ func run(args []string) error {
 }
 
 func usage() error {
-	fmt.Print(`usage: tower <command>
+	fmt.Print(`usage: tower [<command>]
 
+  (none)                   outside tmux: attach this terminal, to the last
+                           target or through the picker; inside: the dashboard
 commands:
+  dash                     the same, starting at the picker (esc: the last target)
   status [--json]          what the local towerd knows: hosts, loops, clients
   stop                     stop the local towerd
   host add <ssh target>    add a host [--name N] [--tmux ARGS] [--tower PATH]
