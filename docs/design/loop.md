@@ -66,10 +66,11 @@ for {
    select-window -t @7`.
 
 As a standby (`--standby`): ensure the towerd, set the pty's modes (echo
-and canonical off), write the ready marker (`ESC ] 7193 ; ready ST`), read
-one JSON line a byte at a time (the go line: loop, gen, home, inst, mkey,
-session, window), restore the modes, write the answer marker, then continue
-as above. A standby nobody used exits after 12h.
+and canonical off), write the ready marker (`relay.MarkerReady`, `ESC ]
+7193 ; tower-standby-ready BEL`), read one JSON line a byte at a time (the
+go line: loop, gen, home, inst, mkey, session, window), restore the modes,
+write the answer marker (`relay.MarkerGo`, `ESC ] 7193 ; tower-standby-go
+BEL`), then continue as above. A standby nobody used exits after 12h.
 
 ## Standbys
 

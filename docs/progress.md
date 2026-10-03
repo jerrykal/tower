@@ -18,8 +18,9 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 - [x] proto, config, tmux, stream, transport, client, with unit tests
 - [x] harness and fake ssh (`test/scenario`, `mise run scenarios`)
 - [ ] towerd (an agent is building it in a worktree)
-- [ ] relay (an agent is building it in a worktree), then loop and standbys
-- [ ] picker (Bubble Tea; `docs/design/ui.md`)
+- [x] relay (LS06, LS07 and the relay part of LS08 as package tests)
+- [ ] loop, standbys
+- [ ] picker (Bubble Tea; `docs/design/ui.md`; an agent is building it)
 - [ ] scenarios (see scenarios.md for the per-scenario status)
 
 ## Blocked
