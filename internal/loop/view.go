@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -77,30 +78,43 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 	}
 }
 
-// readKey reads one byte from the terminal fd once one is there, until
-// ctx ends.
-func readKey(ctx context.Context, fd int) (byte, error) {
-	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
-	for ctx.Err() == nil {
-		fds[0].Revents = 0
-		n, err := unix.Poll(fds, 100)
-		if err == unix.EINTR || n == 0 {
-			continue
-		}
-		if err != nil {
-			return 0, err
-		}
-		if fds[0].Revents&unix.POLLIN == 0 {
-			return 0, unix.EIO
-		}
-		var b [1]byte
-		if k, err := unix.Read(fd, b[:]); k == 1 {
-			return b[0], nil
-		} else if err != nil && err != unix.EAGAIN && err != unix.EINTR {
-			return 0, err
-		}
+// watchCtrlC watches the terminal (raw) for the ctrl-c byte: hit is
+// closed when it comes. stop ends the watch and returns once it has
+// ended, so nothing typed after stop is taken from whatever has the
+// terminal next.
+func watchCtrlC(fd int) (hit <-chan struct{}, stop func()) {
+	h := make(chan struct{})
+	r, w, err := os.Pipe()
+	if err != nil {
+		return h, func() {}
 	}
-	return 0, ctx.Err()
+	quit := int(r.Fd())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}, {Fd: int32(quit), Events: unix.POLLIN}}
+		var b [1]byte
+		for {
+			fds[0].Revents, fds[1].Revents = 0, 0
+			if _, err := unix.Poll(fds, -1); err == unix.EINTR {
+				continue
+			} else if err != nil {
+				return
+			}
+			if fds[1].Revents != 0 || fds[0].Revents&unix.POLLIN == 0 {
+				return // stopped, or the terminal hung up
+			}
+			if n, _ := unix.Read(fd, b[:]); n == 1 && b[0] == 3 {
+				close(h)
+				return
+			}
+		}
+	}()
+	return h, func() {
+		w.Close()
+		<-done
+		r.Close()
+	}
 }
 
 // sameModes reports whether the terminal's modes now are those a standby

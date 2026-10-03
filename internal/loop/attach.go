@@ -400,17 +400,3 @@ func withNoteGo(line, note string) string {
 	b, _ := json.Marshal(g)
 	return string(b)
 }
-
-// waitCtrlC waits for ctrl-c on the terminal (raw) until ctx ends.
-func waitCtrlC(ctx context.Context, fd int) bool {
-	for ctx.Err() == nil {
-		b, err := readKey(ctx, fd)
-		if err != nil {
-			return false
-		}
-		if b == 3 {
-			return true
-		}
-	}
-	return false
-}

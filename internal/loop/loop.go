@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,6 +31,10 @@ const (
 	prepareRetry  = 4 * time.Second  // a failed prepare pauses at most this long
 	stableAttach  = 10 * time.Second // attached this long starts the backoff afresh
 	endClientWait = 3 * time.Second  // an old client ending, before it is killed
+	// reviveAfter is how long the towerd may be gone before the loop's
+	// background calls start a new one; the user's own steps (prepare,
+	// after, the picker) start one at once.
+	reviveAfter = 10 * time.Second
 )
 
 // Options configure the attach loop.
@@ -45,11 +50,29 @@ type Options struct {
 func Run(ctx context.Context, o Options) int {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGHUP, syscall.SIGTERM)
 	defer stop()
-	l, err := start(ctx, o)
+	// ctrl-c between attaches, with the terminal cooked, is SIGINT: it
+	// cancels the wait under way (the picker), never the process.
+	intr := make(chan os.Signal, 1)
+	signal.Notify(intr, os.Interrupt)
+	defer signal.Stop(intr)
+	sctx, scancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-intr:
+			scancel()
+		case <-sctx.Done():
+		}
+	}()
+	l, err := start(sctx, o)
+	scancel()
 	if err != nil {
+		if ctx.Err() == nil && sctx.Err() != nil {
+			return 130
+		}
 		fmt.Fprintln(os.Stderr, "tower:", err)
 		return 1
 	}
+	l.intr = intr
 	code, note := l.run(ctx, o.Dash)
 	l.close()
 	if note != "" {
@@ -85,6 +108,11 @@ type attachLoop struct {
 	pidFile string
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
+
+	intr    chan os.Signal // SIGINT
+	picking atomic.Bool    // at the picker: every call may restart towerd
+	goneAt  time.Time      // when calls found no towerd (under mu)
+	revMu   sync.Mutex     // one restart at a time
 }
 
 func start(ctx context.Context, o Options) (*attachLoop, error) {
@@ -148,8 +176,106 @@ func (l *attachLoop) close() {
 	os.Remove(l.pidFile)
 }
 
+// call makes one call to the home towerd. A towerd that is gone is
+// started again: at once for the user's own steps (prepare, after, held,
+// anything at the picker), after reviveAfter for the background ones, so
+// a home that is merely restarting is not raced.
 func (l *attachLoop) call(ctx context.Context, op string, args, result any) error {
+	err := l.c.Call(ctx, op, args, result)
+	if err == nil {
+		l.mu.Lock()
+		l.goneAt = time.Time{}
+		l.mu.Unlock()
+		return nil
+	}
+	if !errors.Is(err, client.ErrNoTowerd) || ctx.Err() != nil {
+		return err
+	}
+	urgent := l.picking.Load()
+	switch op {
+	case proto.CallPrepare, proto.CallAfter, proto.CallHeld, proto.CallStatus:
+		urgent = true
+	}
+	if !l.revive(ctx, urgent) {
+		return err
+	}
 	return l.c.Call(ctx, op, args, result)
+}
+
+// revive starts the towerd again and tells it about the loop, unless it
+// has been gone for less than reviveAfter and the caller can wait.
+func (l *attachLoop) revive(ctx context.Context, urgent bool) bool {
+	l.mu.Lock()
+	if l.goneAt.IsZero() {
+		l.goneAt = time.Now()
+	}
+	gone := time.Since(l.goneAt)
+	b := proto.LoopBeat{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev}
+	l.mu.Unlock()
+	if !urgent && gone < reviveAfter {
+		return false
+	}
+	l.revMu.Lock()
+	defer l.revMu.Unlock()
+	ectx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	if _, err := l.c.Ensure(ectx); err != nil {
+		return false
+	}
+	l.mu.Lock()
+	l.goneAt = time.Time{}
+	l.mu.Unlock()
+	// The new towerd learns the loop before anything else asks it.
+	l.c.Call(ectx, proto.CallLoop, b, nil)
+	return true
+}
+
+// intrDrain drops a SIGINT that came while nothing waited for one (a
+// child had the terminal cooked).
+func (l *attachLoop) intrDrain() {
+	for {
+		select {
+		case <-l.intr:
+		default:
+			return
+		}
+	}
+}
+
+// interruptible is ctx, canceled by ctrl-c: SIGINT (the terminal cooked),
+// or with keys the ctrl-c byte from the terminal, made raw (the
+// reconnect's own rule). stop ends it and reports whether it was.
+func (l *attachLoop) interruptible(ctx context.Context, keys bool) (context.Context, func() bool) {
+	l.intrDrain()
+	cctx, cancel := context.WithCancel(ctx)
+	var hit atomic.Bool
+	go func() {
+		select {
+		case <-l.intr:
+			hit.Store(true)
+			cancel()
+		case <-cctx.Done():
+		}
+	}()
+	unwatch := func() {}
+	if keys {
+		l.rawModes()
+		var pressed <-chan struct{}
+		pressed, unwatch = watchCtrlC(l.tty)
+		go func() {
+			select {
+			case <-pressed:
+				hit.Store(true)
+				cancel()
+			case <-cctx.Done():
+			}
+		}()
+	}
+	return cctx, func() bool {
+		cancel()
+		unwatch()
+		return hit.Load() && ctx.Err() == nil
+	}
 }
 
 // heartbeat tells the home about the loop every beatEvery, and at once
@@ -255,7 +381,12 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 		if st == stepPicker {
 			l.release()
 			l.restoreModes()
+			l.picking.Store(true)
+			sctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+			l.call(sctx, proto.CallStatus, proto.StatusArgs{}, nil)
+			cancel()
 			ch, err := ui.Pick(ctx, l.c, ui.PickOptions{Loop: l.id, Note: note, Dash: dash})
+			l.picking.Store(false)
 			dash, note, handoff, retry, backoff = false, "", false, false, 0
 			switch {
 			case errors.Is(err, ui.ErrQuit):
@@ -275,7 +406,13 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 			st = stepPrepare
 		}
 
-		p, err := l.prepare(ctx, target)
+		pctx, stop := l.interruptible(ctx, retry)
+		p, err := l.prepare(pctx, target)
+		if stop() {
+			// ctrl-c: the picker.
+			st = stepPicker
+			continue
+		}
 		if err != nil {
 			switch {
 			case ctx.Err() != nil:
@@ -325,7 +462,12 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 			continue
 		}
 		from = p.Target
-		next := l.after(ctx, p.Gen, res)
+		actx, stop := l.interruptible(ctx, false)
+		next := l.after(actx, p.Gen, res)
+		if stop() {
+			st = stepPicker
+			continue
+		}
 		switch next.Do {
 		case proto.NextHandoff:
 			target, note, handoff, retry = next.Target, next.Note, true, false
@@ -397,12 +539,9 @@ func (l *attachLoop) after(ctx context.Context, gen int, res attachResult) *prot
 		if ctx.Err() != nil || i == 2 {
 			return &proto.Next{Do: proto.NextPicker, Note: "towerd: " + err.Error()}
 		}
-		// A home being replaced: ensure it and say who we are again.
-		ectx, ecancel := context.WithTimeout(ctx, 5*time.Second)
-		l.c.Ensure(ectx)
-		ecancel()
+		// A home being replaced: call restarts it; say who we are again.
 		l.beatNow()
-		time.Sleep(200 * time.Millisecond)
+		sleepCtx(ctx, 200*time.Millisecond)
 	}
 }
 
@@ -420,8 +559,9 @@ func (l *attachLoop) pause(ctx context.Context, target proto.Ref, d time.Duratio
 	}
 	ctx, cancel := context.WithTimeout(ctx, d)
 	defer cancel()
-	keys := make(chan bool, 1)
-	go func() { keys <- waitCtrlC(ctx, l.tty) }()
+	pressed, unwatch := watchCtrlC(l.tty)
+	defer unwatch()
+	l.intrDrain()
 	for {
 		v, changed := l.views.get()
 		if v != nil {
@@ -432,10 +572,10 @@ func (l *attachLoop) pause(ctx context.Context, target proto.Ref, d time.Duratio
 		select {
 		case <-ctx.Done():
 			return false
-		case c := <-keys:
-			if c {
-				return true
-			}
+		case <-pressed:
+			return true
+		case <-l.intr:
+			return true
 		case <-changed:
 		}
 	}

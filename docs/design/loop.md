@@ -65,6 +65,15 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
   answers at once without a switch (the home forgot the loop: it
   restarted). The view watcher keeps `cur` and `prev` as the home has them,
   so moves on a server travel in the beat too.
+- **ctrl-c** between attaches gives the picker: SIGINT (the terminal
+  cooked: the first prepare, `after`) cancels the wait under way; while
+  reconnecting the terminal is raw and the ctrl-c byte does it. It never
+  ends the loop, so `loop-bye` and the terminal's restore always run.
+- **A towerd gone** (the socket refuses) is started again and told about
+  the loop (a beat) by the call that found it gone: at once for the
+  user's own steps (prepare, `after`, `held`, anything at the picker),
+  after 10s for the background ones (heartbeat, view, standbys,
+  wait-switch), so a home being restarted is not raced.
 - **Exit**: end the standbys, `loop-bye`, release any hold, restore the
   terminal's modes, remove the pid file.
 

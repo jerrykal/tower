@@ -2,11 +2,13 @@ package loop
 
 import (
 	"encoding/json"
+	"io"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/relay"
 )
 
 func TestBackoff(t *testing.T) {
@@ -39,6 +41,40 @@ func TestNotes(t *testing.T) {
 	var g proto.GoLine
 	if err := json.Unmarshal([]byte(withNoteGo(string(line), "now on B")), &g); err != nil || g.Note != "now on B" || g.Gen != 3 || g.Session != "$1" {
 		t.Fatalf("go line: %+v %v", g, err)
+	}
+}
+
+// TestWatchCtrlC: the watch sees ctrl-c among other keys, and once
+// stopped takes nothing more from the terminal.
+func TestWatchCtrlC(t *testing.T) {
+	p, err := relay.OpenPty()
+	if err != nil {
+		t.Skip("no pty:", err)
+	}
+	defer p.Close()
+	sfd := int(p.Slave.Fd())
+	m, _ := relay.GetModes(sfd)
+	relay.SetModes(sfd, m.Raw())
+	hit, stop := watchCtrlC(sfd)
+	p.Master.Write([]byte("ab\x03"))
+	select {
+	case <-hit:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ctrl-c not seen")
+	}
+	stop()
+	hit, stop = watchCtrlC(sfd)
+	stop()
+	p.Master.Write([]byte("xyz"))
+	buf := make([]byte, 3)
+	p.Slave.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if n, _ := io.ReadFull(p.Slave, buf); n != 3 || string(buf) != "xyz" {
+		t.Fatalf("after the watch stopped the terminal holds %q", buf[:n])
+	}
+	select {
+	case <-hit:
+		t.Fatal("a stopped watch reported ctrl-c")
+	default:
 	}
 }
 
