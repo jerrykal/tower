@@ -79,6 +79,7 @@ type Conn struct {
 	epoch   uint64 // stalls so far
 	stallC  chan struct{}
 	live    bool
+	writing bool // the writer holds a message it has not finished writing
 	unknown map[string]bool
 	closed  bool
 	err     error
@@ -295,15 +296,38 @@ func (c *Conn) next() *proto.Msg {
 		m := c.queue[0]
 		c.queue[0] = nil
 		c.queue = c.queue[1:]
+		c.writing = true
 		return m
 	}
 	for _, t := range []string{proto.TState, proto.TView} {
 		if m := c.snaps[t]; m != nil {
 			delete(c.snaps, t)
+			c.writing = true
 			return m
 		}
 	}
+	c.writing = false
 	return nil
+}
+
+// Drain waits until everything queued has been written, at most d; it
+// reports whether it all went. A refusal is drained before the stream
+// closes, so the peer reads why.
+func (c *Conn) Drain(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for {
+		c.mu.Lock()
+		idle := len(c.queue) == 0 && len(c.snaps) == 0 && !c.writing
+		closed := c.closed
+		c.mu.Unlock()
+		if idle {
+			return true
+		}
+		if closed || time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // heardReader notes the time of every read that returned bytes: any byte

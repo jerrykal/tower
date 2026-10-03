@@ -26,6 +26,7 @@ func (c *Conn) Send(m *proto.Msg)              // queue; never blocks
 func (c *Conn) SendNow(m *proto.Msg)           // a snapshot in order, ahead of an answer
 func (c *Conn) Request(ctx context.Context, t string, r *proto.Request) (*proto.Ack, error)
 func (c *Conn) Answer(a *proto.Ack)            // an ack, in order
+func (c *Conn) Drain(d time.Duration) bool     // wait until everything queued is written
 func (c *Conn) Close(err error)
 func (c *Conn) Done() <-chan struct{}
 func (c *Conn) Err() error
@@ -80,11 +81,12 @@ stall.
 
 ## Requests
 
-`Request` assigns an id if the request has none, converts its deadline to
-the peer's clock (`ToPeer`), queues it, and waits for the ack, the
+`Request` assigns an id if the request has none, keeps back the margin
+(one slow round trip, at least 200ms) for the answer, converts the
+deadline to the peer's clock, queues it, and waits for the ack, the
 context, the deadline, or the stream's end. A stall aborts every waiting
-request at once with `ErrStalled`. The receiving side converts the deadline
-back with `ToLocal` before deciding.
+request at once with `ErrStalled`. The receiver gets the deadline in its
+own clock and uses it as is.
 
 ## Concurrency
 

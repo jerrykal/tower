@@ -343,3 +343,20 @@ func TestSlowRTTIgnoresOneOutlier(t *testing.T) {
 		t.Fatal("margin floor")
 	}
 }
+
+func TestDrainWaitsForTheWriter(t *testing.T) {
+	in := newInbox()
+	a, b := pair(t, Options{}, Options{OnMsg: in.on})
+	a.Start()
+	b.Start()
+	for i := range 20 {
+		a.Send(&proto.Msg{T: proto.TExec, Req: &proto.Request{ID: string(rune('a' + i))}})
+	}
+	if !a.Drain(2 * time.Second) {
+		t.Fatal("not drained")
+	}
+	a.Close(nil)
+	for range 20 {
+		in.next(t, time.Second)
+	}
+}
