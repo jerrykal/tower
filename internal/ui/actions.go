@@ -68,6 +68,10 @@ func reachable(h *proto.Host) error {
 	if h.Reachable() {
 		return nil
 	}
+	if h.Status == proto.StatusStalled {
+		// towerd's own words for it, as the loop and a refused switch say.
+		return fmt.Errorf("%s is not responding", h.Name)
+	}
 	return fmt.Errorf("%s is %s", h.Name, hostStatus(h))
 }
 
