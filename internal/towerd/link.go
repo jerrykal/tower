@@ -125,6 +125,7 @@ type link struct {
 	inst                 string
 	nosrv                bool
 	sessions             []proto.Session
+	clients              []proto.Client // the host's last client list
 	stateAt              time.Time
 	heard                time.Time // last heard from the host (wall clock, for hosts.json)
 	conn                 *stream.Conn
@@ -448,6 +449,9 @@ func (l *link) connect() outcome {
 			if class == "" {
 				f := transport.Classify(l.cfg.Name, code, tail.String())
 				class, reason = f.Class, f.Reason
+				if code == 0 && strings.TrimSpace(tail.String()) == "" {
+					reason = "the stream ended"
+				}
 			}
 		}
 		d.mu.Lock()
@@ -521,6 +525,9 @@ func (l *link) connect() outcome {
 	l.upAt = time.Now()
 	l.gen++
 	l.heard = time.Now()
+	// A first state that came in before the hello was taken: its clients
+	// apply now that the host's id is known.
+	l.h.applyClients(l.id, l.cfg.Name, l.inst, l.sessions, l.clients)
 	d.bump()
 	d.mu.Unlock()
 	l.logf("up: towerd %s, tower %s, protocol %d, link %d", hello.ID, hello.Version, hello.Proto, l.gen)
@@ -596,7 +603,7 @@ func (l *link) takeState(conn *stream.Conn, st *proto.State) {
 		d.mu.Unlock()
 		return
 	}
-	l.inst, l.nosrv, l.sessions, l.stateAt = st.Inst, st.NoServer, st.Sessions, time.Now()
+	l.inst, l.nosrv, l.sessions, l.clients, l.stateAt = st.Inst, st.NoServer, st.Sessions, st.Clients, time.Now()
 	l.heard = time.Now()
 	l.states++
 	if l.id != "" {
