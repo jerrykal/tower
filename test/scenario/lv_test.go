@@ -139,8 +139,7 @@ func TestLV01(t *testing.T) {
 					return w != nil && w.Bell
 				}))
 			}
-			l := x.w.FakeLoop(x.a)
-			l.Attach(x.w.Ref(x.a, "C", "c-one"), c)
+			x.w.LoopTo("t", x.a, nil, "c-one", "^C:c-one")
 			for range reps {
 				ids := c.ClientIDs("c-one")
 				if len(ids) == 0 {
@@ -152,8 +151,40 @@ func TestLV01(t *testing.T) {
 				x.w.Eventually(5*time.Second, "back on c-one in B's view", func() bool { return loopAt(&x.b.View("").View, "C", "c-one") })
 				time.Sleep(200 * time.Millisecond)
 			}
-			// loop part: the hand-offs C → B → C and the home binding the
-			// new client, timed by the dashboard's view.
+			// Hand-offs C → B → C from the dashboard there, timed until the
+			// home's view shows the loop's new client seen.
+			for range reps {
+				for _, hop := range []struct {
+					from, to *Host
+					session  string
+				}{{c, x.b, "b-one"}, {x.b, c, "c-one"}} {
+					ids := hop.from.ClientIDs("")
+					if len(ids) == 0 {
+						t.Fatalf("no client on %s", hop.from.Name)
+					}
+					start := time.Now()
+					if out, err := hop.from.UI(ids[0], nil, "goto", hop.to.Name, hop.session); err != nil {
+						t.Fatalf("goto %s:%s: %v %s", hop.to.Name, hop.session, err, out)
+					}
+					x.w.Eventually(15*time.Second, "a client on "+hop.to.Name, func() bool { return len(hop.to.ClientIDs(hop.session)) > 0 })
+					bound := time.Duration(-1)
+					for time.Since(start) < 5*time.Second {
+						v := x.a.View("")
+						if v != nil && slices.ContainsFunc(v.View.Loops, func(l proto.Loop) bool {
+							return l.Cur.Name == hop.to.Name && l.Cur.Label == hop.session && l.Seen
+						}) {
+							bound = time.Since(start)
+							break
+						}
+						time.Sleep(3 * time.Millisecond)
+					}
+					res["hand-off "+hop.from.Name+"→"+hop.to.Name+", home binds"] = append(res["hand-off "+hop.from.Name+"→"+hop.to.Name+", home binds"], bound)
+					if bound < 0 {
+						t.Fatalf("the home never saw the loop's client on %s", hop.to.Name)
+					}
+					time.Sleep(400 * time.Millisecond)
+				}
+			}
 			keys := make([]string, 0, len(res))
 			for k := range res {
 				keys = append(keys, k)
