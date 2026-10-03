@@ -14,12 +14,12 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 
 ## Step 2
 
-- [x] docs: overview, protocol, design notes per package
-- [ ] proto, config, tmux, stream, transport, client
-- [ ] harness and fake ssh
-- [ ] towerd
-- [ ] relay, loop, standbys
-- [ ] picker (Bubble Tea)
+- [x] docs: overview, protocol, design notes per package (`docs/design/`)
+- [x] proto, config, tmux, stream, transport, client, with unit tests
+- [x] harness and fake ssh (`test/scenario`, `mise run scenarios`)
+- [ ] towerd (an agent is building it in a worktree)
+- [ ] relay (an agent is building it in a worktree), then loop and standbys
+- [ ] picker (Bubble Tea; `docs/design/ui.md`)
 - [ ] scenarios (see scenarios.md for the per-scenario status)
 
 ## Blocked
@@ -28,4 +28,5 @@ Nothing yet.
 
 ## Next
 
-Write the `proto` package and its tests.
+Merge the towerd and relay agents' branches (review the diffs, run their
+scenarios), then the loop, standbys and the picker.
