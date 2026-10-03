@@ -14,7 +14,7 @@ a scenario measures what a user would see.
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
 | S00 | Happy path: the picker attaches to B; the dashboard hands off B → A; a local switch on A; previous is A:apple | towerd, loop | pass |
-| S01 | B is its own home while A's home includes B: one towerd on B plays both roles (one `_tower`, one control client); each client on B is tagged with its home and sees that home's view; A's hand-off relayed through B leaves B's own loop alone | towerd | todo |
+| S01 | B is its own home while A's home includes B: one towerd on B plays both roles (one `_tower`, one control client); each client on B is tagged with its home and sees that home's view; A's hand-off relayed through B leaves B's own loop alone | towerd | pass |
 | S02 | Two homes for one host, one crashes, one exits: one stream per home id; the crashed home dropped at once; its `_tower` gone within 0.5s and its server exits with its last session; B's towerd then idles out, no `_tower` left | towerd | pass |
 | S03 | Two aliases of one server and another user on the machine: one linked, the other `dup: same towerd as …`; one control client and one stream on B | towerd | pass |
 | S04 | A server restarts and reuses `$0`: prepare refuses ("restarted since it was listed"); an attach in flight exits 43; no client on the impostor | towerd, loop | pass |
@@ -22,17 +22,17 @@ a scenario measures what a user would see.
 | S06 | Exit 42 from elsewhere: a bare exit 42, a stale dashboard (its switch refused before anything detaches), a planted switch for another generation, ssh exiting 42: each ignored with its reason | towerd, loop | pass |
 | S07 | The dashboard dies after its switch was stored: the switch completes (committed once stored); with `TOWER_EAGER=0` a normal detach discards it and says so; a later exit 42 finds it too old | towerd, loop | pass |
 | S08 | Three terminals on one session (two homes); one hands off: only the pressing terminal moves | towerd, loop | pass |
-| S09 | Target killed or renamed between listing and ⏎: "selection is gone"; attach by id fails visibly; a renamed session is still reached | towerd, ui | todo |
+| S09 | Target killed or renamed between listing and ⏎: "selection is gone"; attach by id fails visibly; a renamed session is still reached | towerd, ui | pass |
 | S10 | `prefix d` versus hand-off: tower exits like tmux, the session keeps running, the registration is dropped, the next `tower` reattaches | loop | pass |
-| S11 | `tower` inside tmux is the dashboard, never a nested attach; dashboards in clients no loop owns (on the home and on a remote) see every host and switch locally but cannot hand off | ui, towerd | todo |
+| S11 | `tower` inside tmux is the dashboard, never a nested attach; dashboards in clients no loop owns (on the home and on a remote) see every host and switch locally but cannot hand off | ui, towerd | pass |
 | S12 | base-index 0 and 1: windows reached by id | loop | pass |
 | S13 | Sleep (every connection half-open), then back: detected within seconds; back fast; B replaces the stale stream (never two); B's control client unaffected; the loop is restored | towerd, loop | pass |
 | S14 | A tunnel flapping 0.6s/0.6s for 12s: few ssh calls (backoff), up once steady, the local link untouched | towerd | pass |
 | S15 | ssh would prompt (host key, password, locked key, unresolvable, Tailscale check, timeout): each down with its reason and fix, fast; every call `BatchMode=yes`; `tower host add` reports the same | transport, towerd | pass |
 | S16 | 104-byte socket paths: the run dir falls back to a short one; one control path value in every call; a stale control socket removed, a busy one kept; no `ssh -O check` | config, transport | pass |
-| S17 | No server: towerd polls and never starts one; `^n` starts one, waiting for a slow config with "starting tmux on N…"; `_tower` never keeps a server alive; towerd outlives its server | towerd, ui | pass (towerd part) |
+| S17 | No server: towerd polls and never starts one; `^n` starts one, waiting for a slow config with "starting tmux on N…"; `_tower` never keeps a server alive; towerd outlives its server | towerd, ui | pass |
 | S18 | No binary (`tower is not installed on M`), protocol 0 only (`incompatible protocol … 0-0 … 1-1`), newer peers (1–2) and one sending unknown messages: the right outcome each; hand-off to the newer peer works | towerd | pass |
-| S19 | 16 hostile names: created, relayed B → home → C, renamed, picked, handed off to, all exact; no name on any ssh command line | towerd, ui | todo |
+| S19 | 16 hostile names: created, relayed B → home → C, renamed, picked, handed off to, all exact; no name on any ssh command line | towerd, ui | pass |
 | S20 | 300 windows; state and view padded to 2 MB: a new session on B reaches the view held on C fast; C's dashboard reads its rows fast | towerd, stream | pass |
 | S21 | A remote's clock an hour ahead: the offset measured; ages right; a 1.5s-deadline request runs there | stream, towerd | pass |
 | S22 | Control-mode side effects: `session_last_attached` untouched; attached 0; window sizes unaffected; little traffic while a pane prints megabytes; 400 concurrent commands matched; `_tower` ends with the last session | tmux, towerd | pass |
@@ -59,7 +59,7 @@ a scenario measures what a user would see.
 | V01 | 8 concurrent first calls start one towerd; SIGKILL leaves a stale socket the next call replaces; stop leaves nothing | client, towerd | pass |
 | V02 | Upgrading the home with a loop attached: replaced fast; the old loop re-registers by heartbeat; an older binary never downgrades it; hand-off from an old dashboard binary works | client, towerd | pass |
 | V03 | Upgrading a remote with a loop's client attached there: the next bridge replaces its towerd, which restores the client from disk; hand-off works | towerd | pass |
-| V04 | Two machines sharing one home directory: two towerds, separate run and state dirs; hand-off between them | config, towerd | pass (towerd part) |
+| V04 | Two machines sharing one home directory: two towerds, separate run and state dirs; hand-off between them | config, towerd | pass |
 | V05 | A remote whose own `hosts.toml` lists another host stays remote-only while only a bridge started it; an attach loop there makes it a home | towerd | pass |
 | V06 | A dashboard on a remote: its rows fast; a session on C shows on B fast; a preview of C's pane from B fast | towerd, ui | pass |
 | V07 | The home dies while a loop's client is on a remote: B keeps the last view, marked not connected; ⏎ to A refused before detaching; a local switch works; the restarted home relearns the loop and hand-off works | towerd | pass |
@@ -86,19 +86,19 @@ a scenario measures what a user would see.
 | LC04 | A 20s blackout: the loop's reattach does not sleep through the link's return | loop, towerd | pass |
 | LC05 | A slow but live link (200–800ms each way, 30s) is never dropped | stream, towerd | pass |
 | LC06 | A switch to a host half-open 1s ago lands in seconds | towerd, loop | pass |
-| LC07 | Spawn cost: tower runs tmux past version-manager shims, and passes the machine key down | tmux, config | todo |
+| LC07 | Spawn cost: tower runs tmux past version-manager shims, and passes the machine key down | tmux, config | pass |
 | LC08 | A switch's critical path at 0/50/150/400ms round trips: the loop ends the old client itself; with standbys laptop → remote 0.5r, remote → remote 1r | loop, towerd | pass |
 
 ## Freshness and dashboards
 
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
-| LV01 | A change on one remote reaches another's view in about one round trip; a bell in one round trip (alert hooks) | towerd | pass (towerd part) |
+| LV01 | A change on one remote reaches another's view in about one round trip; a bell in one round trip (alert hooks) | towerd | pass |
 | LV02 | A burst of 40 switches and 40 new windows costs the home about 17 states | towerd | pass |
-| LV04 | An open dashboard follows the view within a round trip plus its redraw | ui, towerd | todo |
-| LD01 | Dashboard requests at 150 and 400ms: rows right after every answer; a kill's row gone before the answer; a preview's windows before the capture | ui, towerd | todo |
+| LV04 | An open dashboard follows the view within a round trip plus its redraw | ui, towerd | pass |
+| LD01 | Dashboard requests at 150 and 400ms: rows right after every answer; a kill's row gone before the answer; a preview's windows before the capture | ui, towerd | pass |
 | LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | pass |
-| LD03 | `^x` three times fast kills three sessions | ui | todo |
+| LD03 | `^x` three times fast kills three sessions | ui | pass |
 
 ## Standbys and the relay
 

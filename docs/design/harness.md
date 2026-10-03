@@ -75,7 +75,11 @@ pipe fills); the connection family (LC) and LH06 with `ProductionTimings`.
 `w.Loop(name, home, extra)` starts the attach loop in a terminal of its
 own (`-L tt-<id>-term-<name>`, 110×32). `t.Pick(query)` types a query into
 the dashboard and presses Enter; `t.DashTo(query)` opens the dashboard with
-`M-o` first. The dashboard's prompt is `sessions>`.
+`M-o` first. The dashboard's prompt is `sessions>`. `t.Until(re, present,
+d)` polls the screen every 3ms (the dashboard's timings), `t.CloseDash()`
+closes an open popup, and `rowRe(host, name)` matches a session's row.
+`h.UI(client, extra, args…)` runs `tower _ui …` on a host as the dashboard
+of a client would (`TMUX` and `TOWER_CLIENT` set).
 
 ## Knobs for tower (test timings)
 
@@ -101,7 +105,8 @@ dashboard claims that attach generation), `TOWER_TEST_PROTO=lo-hi`,
 Timing marks the suite reads: `prepare`, `prepared <host>`, `attach`,
 `attach: standby`, `attach: session`, `standby did not answer`, `exited
 <code>`, `after <do>`, `switch stored: hold`, `end attach`, `home sees the
-new client`, `shim: exec tmux`, `dash: enter`, `standby: start <host>`,
+new client`, `shim: exec tmux`, `dash: enter`, `dash: kill`, `dash: kill
+answered` (LD01: a row goes before its answer), `standby: start <host>`,
 `standby: ready <host>`, `standby: go`, `standby: taken`, `standby: drop
 <host>`.
 

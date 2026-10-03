@@ -29,14 +29,16 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 - [x] picker (Bubble Tea; `docs/design/ui.md`): the popup, `ui.Pick` for the loop, `tower _ui`
 - [x] the attach loop (`tower`, `tower dash`), standbys
   (`internal/loop`, docs/design/loop.md)
-- [ ] scenarios (see scenarios.md for the per-scenario status): the
-  loop's pass; the UI-centred ones remain
+- [x] scenarios (see scenarios.md): every simulated one passes (69 tests,
+  13 minutes); R01 and R02 are run by hand on real hosts
 
-## Scenarios waiting for the dashboard
+## Step 2 scenarios
 
-The loop's scenarios and the loop parts of towerd's pass (scenarios.md).
-The UI-centred ones remain: S09, S11, S19, LV04, LD01, LD03, and the UI
-parts of S17, V04, V06 and LV01 (still `pass (towerd part)` or `todo`).
+The dashboard's scenarios (S01, S09, S11, S19, LV04, LD01, LD03, LC07,
+and the dashboard parts of S17, V04, V06, LV01) run through the real loop,
+the popup and `tower _ui`; LH06 too runs the real loop. The picker ranks
+its matches (exact name first), so the LC hosts' sessions are s0 … s400
+again.
 
 ## Blocked
 
@@ -44,5 +46,5 @@ Nothing.
 
 ## Next
 
-The UI-centred scenarios above (S09, S11, S19, LV04, LD01, LD03, the UI
-parts of S17, V04, V06, LV01), then step 3, install on connect.
+Step 3, install on connect (in progress in its own branch), then the real
+hosts (R01, R02, by hand).

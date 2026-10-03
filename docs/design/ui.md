@@ -1,6 +1,7 @@
 # ui
 
-The dashboard: tower's own terminal UI, in Bubble Tea v2 and Lip Gloss v2.
+The dashboard: tower's own terminal UI, in Bubble Tea v2 (styles are its
+own SGR sequences; see Start-up for why not Lip Gloss).
 It runs in three places with one model and one set of actions:
 
 - **the popup** (`tower` inside tmux): `prefix o` or `M-o` runs it in a
@@ -91,8 +92,12 @@ hand-off → B:bravo                    ⏎ attach  - prev  ^x kill  esc quit
   one there). The view's own note (`home A not connected (2m)`) shows on
   the prompt line. The prompt is `sessions>`; typing filters fzf-style
   (characters in order, case-insensitive, spaces ignored) over `host name`
-  and the session name, keeping the rows' order; matched characters are
-  marked. Columns are sized over every row, so they do not move while
+  and the session name, best match first: the name itself, then a name
+  starting with the query, then one containing it (at a word start before
+  inside a word, earlier before later), then `host name` containing it
+  (spaces aside), then the characters scattered (a tighter span first);
+  ties keep the rows' order. So `s50` puts s50 above s150, and `⏎` takes
+  the top row. Matched characters are marked. Columns are sized over every row, so they do not move while
   typing.
 - **Current and previous** come from the loop in the view (the client's
   loop, or the picker's own); a client no loop owns marks its own session
@@ -182,8 +187,9 @@ type Model struct {
   select-window -t <window id>` for a window, in the same tmux call), then
   quit.
 - **Requests** carry a fresh id and a deadline of `TOWER_ACK_TIMEOUT`
-  (5s); the call waits a second longer so towerd's own refusal, which says
-  why, is what the user sees.
+  (5s; 15s for a new session on a host with no server, as towerd allows
+  for the user's config); the call waits a second longer so towerd's own
+  refusal, which says why, is what the user sees.
 
 ## The loop's side
 
@@ -242,18 +248,25 @@ The popup is on the hand-off's critical path, so its start is kept short:
   manager's shim and no `ioreg` on the way.
 - The first view is read before the program starts, so the first frame has
   the rows; the client's tty and session are read after it.
-- Inside tmux the colour profile is given, which keeps Bubble Tea's
-  detection (`tmux info` through `PATH`) off the start.
+- No colour detection runs `tmux info`. Colour detection inside tmux
+  (`colorprofile.Detect`) runs `tmux info` through `PATH`: a process
+  start, 60–80ms through a version manager's shim. Bubble Tea is given the
+  profile inside tmux (true colour; tmux maps it to the terminal outside),
+  and the UI draws with plain SGR sequences instead of Lip Gloss, whose
+  package-level writer runs the detection as the process starts, in every
+  tower process whose stdout is a terminal (found by LC07, which puts a
+  logging tmux shim first on `PATH`).
 - Bubble Tea flushes frames on a ticker; at its maximum of 120 fps a frame
   (the first, and each key's echo) waits at most 8.3ms.
 
 Measured on a pty against a stand-in towerd (macOS, M-series): process
-start to the first frame on the terminal about 18ms median, of which the
-process exec is about 7–8ms, tower's own work (ensure, view, model, first
-draw) about 0.7ms, and the renderer's tick about 8ms. Before the colour
-profile was given it was about 40ms. Timing marks: `dash: open` (the
-typed opener), `dash: start`, `dash: connected`, `dash: view`, `dash:
-frame`, `dash: enter`.
+start to the first frame on the terminal about 14ms median: process exec
+to `main` about 3ms, tower's own work (ensure, view, model, first draw)
+about 0.6ms, then the renderer's first tick and the pty. Before the colour
+fixes it was about 40ms (Bubble Tea's detection) and then 18ms (Lip
+Gloss's, at init). Timing marks: `dash: open` (the typed opener), `dash:
+start`, `dash: connected`, `dash: view`, `dash: frame`, `dash: enter`,
+`dash: kill`, `dash: <op> answered`.
 
 ## Concurrency
 
