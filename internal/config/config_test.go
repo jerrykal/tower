@@ -149,7 +149,9 @@ func TestDefaultName(t *testing.T) {
 		"me@box.lan:2222":       "box",
 		"box":                   "box",
 		"ssh://me@box.lan:2222": "box",
-		"me@10.0.0.5":           "10.0.0.5",
+		// An address stays whole rather than cut at its first dot or
+		// colon; loopback, as the repo names no host's address.
+		"me@[::1]:2222":         "::1",
 		"gb200":                 "gb200",
 		"user@host.example.com": "host",
 	}
