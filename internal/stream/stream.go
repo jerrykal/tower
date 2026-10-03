@@ -117,20 +117,11 @@ func New(r io.Reader, w io.Writer, o Options) *Conn {
 
 // Interval is the keepalive interval: TOWER_PING (a Go duration or
 // milliseconds), else 1s.
-func Interval() time.Duration { return envDuration("TOWER_PING", time.Second) }
-
-func envDuration(name string, def time.Duration) time.Duration {
-	v := os.Getenv(name)
-	if v == "" {
-		return def
-	}
-	if d, err := time.ParseDuration(v); err == nil && d > 0 {
+func Interval() time.Duration {
+	if d := config.Duration("TOWER_PING", time.Second); d > 0 {
 		return d
 	}
-	if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
-		return time.Duration(ms) * time.Millisecond
-	}
-	return def
+	return time.Second
 }
 
 // Now is tower's wall clock in unix milliseconds. TOWER_TEST_SKEW (ms)
