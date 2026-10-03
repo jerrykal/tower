@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jerrykal/tower/internal/relay"
 	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
@@ -247,5 +248,75 @@ func TestMasterCostAndExit(t *testing.T) {
 	// A new master works.
 	if out, _, code, _ := f.ssh(run("h", "echo ok")...); out != "ok\n" || code != 0 {
 		t.Fatalf("new master: %q %d", out, code)
+	}
+}
+
+// TestPtySession: ssh -t to a host with a pty gives the remote command a
+// pty with the terminal's size and modes, makes the terminal raw while it
+// runs, passes every byte both ways, and restores the terminal after.
+func TestPtySession(t *testing.T) {
+	f := newFake(t)
+	f.set("h", Knobs{Pty: true})
+	p, err := relay.OpenPty()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	sfd := int(p.Slave.Fd())
+	relay.SetSize(sfd, 33, 101)
+	before, err := relay.GetModes(sfd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, append(append([]string{"-t"}, opts...), "h", "--", "stty size; stty raw -echo; printf R; exec cat")...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Slave, p.Slave, p.Slave
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer cmd.Process.Kill()
+	got := make(chan []byte, 1024)
+	go func() {
+		for {
+			b := make([]byte, 4096)
+			n, err := p.Master.Read(b)
+			if n > 0 {
+				got <- b[:n]
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	var have []byte
+	read := func(until func() bool) {
+		t.Helper()
+		timeout := time.After(5 * time.Second)
+		for !until() {
+			select {
+			case b := <-got:
+				have = append(have, b...)
+			case <-timeout:
+				t.Fatalf("got %q", have)
+			}
+		}
+	}
+	read(func() bool { return bytes.Contains(have, []byte("R")) })
+	if !bytes.Contains(have, []byte("33 101")) {
+		t.Fatalf("the host's pty did not get the terminal's size: %q", have)
+	}
+	all := make([]byte, 256)
+	for i := range all {
+		all[i] = byte(i)
+	}
+	have = nil
+	go p.Master.Write(all)
+	read(func() bool { return len(have) >= len(all) })
+	if !bytes.Equal(have, all) {
+		t.Fatalf("bytes through the pty session: %q", have)
+	}
+	cmd.Process.Signal(os.Interrupt)
+	cmd.Wait()
+	if after, _ := relay.GetModes(sfd); after != before {
+		t.Fatal("the terminal's modes were not restored")
 	}
 }

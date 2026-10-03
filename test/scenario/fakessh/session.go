@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/jerrykal/tower/internal/relay"
 )
 
 // conn is one ssh connection: its own, or a session on the host's master.
@@ -418,11 +418,11 @@ func (c *conn) resizes(master *os.File) {
 	ch := make(chan os.Signal, 8)
 	signal.Notify(ch, syscall.SIGWINCH)
 	for range ch {
-		ws, err := unix.IoctlGetWinsize(int(os.Stdin.Fd()), unix.TIOCGWINSZ)
+		rows, cols, err := relay.GetSize(int(os.Stdin.Fd()))
 		if err != nil {
 			continue
 		}
 		d := time.Duration(c.w.get().DelayMs) * time.Millisecond
-		time.AfterFunc(d, func() { unix.IoctlSetWinsize(int(master.Fd()), unix.TIOCSWINSZ, ws) })
+		time.AfterFunc(d, func() { relay.SetSize(int(master.Fd()), rows, cols) })
 	}
 }
