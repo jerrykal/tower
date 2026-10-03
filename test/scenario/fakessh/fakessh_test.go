@@ -206,8 +206,9 @@ func TestMasterCostAndExit(t *testing.T) {
 	f.set("h", Knobs{Mux: true, DelayMs: 40})
 	_, _, _, first := f.ssh(run("h", "true")...)
 	_, _, _, second := f.ssh(run("h", "true")...)
-	// A new master costs 5.5 RTT + ½ + ½; a session on it 1.5 + 1.
-	if first < 500*time.Millisecond || second > first*3/4 {
+	// A new master costs 5.5 RTT, a session on it 1.5; then the output
+	// and the exit status ½ each, overlapping.
+	if first < 470*time.Millisecond || second > first*3/4 {
 		t.Fatalf("first %v second %v", first, second)
 	}
 	done := make(chan string, 1)
