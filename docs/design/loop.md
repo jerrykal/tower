@@ -56,21 +56,26 @@ for {
 
 ## Attach shim
 
-`tower attach --loop L --gen G --home H --inst I --mkey K [--standby] $3
-[@7] --tmux …`:
+`internal/loop/shim.go`: `tower attach --loop L --gen G --home H --inst I
+--mkey K [--standby] --tmux ARGS $3 [@7]` (flags first; Go's flag parsing
+stops at the first positional argument):
 
-1. With `--mkey` matching a towerd that answers, `register` is the only
-   call; otherwise ensure first.
+1. With `--mkey` and a towerd answering under it with that key,
+   `register` is the only call (its answer carries the key and the tmux
+   binary); otherwise ensure first. A towerd the shim starts is
+   remote-only (`--bridged`): an attach never makes a machine a home.
 2. Exec `tmux <args> attach-session -t $3 ; if-shell -F
    '#{!=:#{pid}:#{start_time},<inst>}' "detach-client -E 'exit 43'" ;
-   select-window -t @7`.
+   select-window -t @7` (`AttachCommand`), with `TOWER_CLIENT` and
+   `TOWER_MKEY` dropped from its environment.
 
-As a standby (`--standby`): ensure the towerd, set the pty's modes (echo
-and canonical off), write the ready marker (`relay.MarkerReady`, `ESC ]
-7193 ; tower-standby-ready BEL`), read one JSON line a byte at a time (the
-go line: loop, gen, home, inst, mkey, session, window), restore the modes,
-write the answer marker (`relay.MarkerGo`, `ESC ] 7193 ; tower-standby-go
-BEL`), then continue as above. A standby nobody used exits after 12h.
+As a standby (`--standby`, no target): ensure the towerd, turn the pty's
+echo and line editing off, write the ready marker (`relay.MarkerReady`,
+`ESC ] 7193 ; tower-standby-ready BEL`), read one JSON line a byte at a
+time (the go line: loop, gen, home, inst, mkey, session, window), restore
+the modes, write the answer marker (`relay.MarkerGo`, `ESC ] 7193 ;
+tower-standby-go BEL`), then continue as above. A standby nobody used
+exits after 12h.
 
 ## Standbys
 
