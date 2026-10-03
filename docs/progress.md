@@ -21,7 +21,7 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 - [x] relay (LS06, LS07 and LS08 as package tests; LS08 also through the
   fake ssh, which now uses the relay's pty and mode helpers)
 - [ ] loop, standbys
-- [ ] picker (Bubble Tea; `docs/design/ui.md`; an agent is building it)
+- [x] picker (Bubble Tea; `docs/design/ui.md`): the popup, `ui.Pick` for the loop, `tower _ui`; its scenarios (S09, S11, S19, LV04, LD01, LD03, V06) wait for towerd
 - [ ] scenarios (see scenarios.md for the per-scenario status)
 
 ## Blocked
