@@ -65,8 +65,8 @@ Unknown types are logged once per type and dropped.
 After `Live`, a ticker sends a ping every `o.Ping` and checks:
 
 - **Silence**: no byte for `o.Silence` → `Close(ErrSilent)`.
-- **Stall**: no byte for `1s + 3 × SlowRTT` (the hello's round trip before
-  the first pong) → mark stalled and call `OnStall(true)`; the next byte
+- **Stall**: no byte for one ping interval plus `max(1s, 3 × SlowRTT)` (the
+  hello's round trip before the first pong) → mark stalled and call `OnStall(true)`; the next byte
   clears it and calls `OnStall(false)`.
 
 `towerd` decides what a stall means (probe, give up); the stream only marks

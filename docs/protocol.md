@@ -201,9 +201,9 @@ merely slow to accept is another host's healthy master and stays (S16).
   1s (`TOWER_PING`), and gives up after 15s (home) or 35s (remote) of
   silence. Any byte read counts, so a large message crawling over a slow
   link is not silence.
-- **Stalled.** A peer silent for longer than 1s plus three of its slow
-  recent round trips (the second slowest of the last 8, at least 1s; the
-  hello's before the first pong) is marked `stalled`; any byte clears it.
+- **Stalled.** A peer silent for longer than one ping interval plus three
+  of its slow recent round trips, at least 1s of them (a slow round trip
+  is the second slowest of the last 8; the hello's before the first pong) is marked `stalled`; any byte clears it.
   While a host is stalled dashboards show it and refuse `⏎` to it; a
   request or a hand-off to it fails at once, and a pending one is aborted;
   a refused hand-off leaves the loop where it was, with a note. An attach
