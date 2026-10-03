@@ -59,6 +59,7 @@ type loopRec struct {
 	sw        *pendingSwitch
 	waiters   []chan struct{} // wait-switch calls of the current attach
 	seen      bool            // the home has seen this attach's client
+	picking   bool            // at the picker: attached nowhere
 	beat      time.Time
 }
 
@@ -505,7 +506,7 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	if !l.cur.IsZero() && !l.cur.SameSession(t) {
 		l.prev = l.cur
 	}
-	l.cur, l.sw, l.seen = t, nil, false
+	l.cur, l.sw, l.seen, l.picking = t, nil, false, false
 	for _, w := range l.waiters {
 		close(w)
 	}
@@ -681,6 +682,13 @@ func (h *homeRole) after(ctx context.Context, a proto.AfterArgs) *proto.Next {
 	h.d.bump()
 	h.d.mu.Unlock()
 	next := h.decide(ctx, a, gen, cur, sw)
+	if next.Do == proto.NextPicker {
+		h.d.mu.Lock()
+		if l := h.loops[a.Loop]; l != nil && l.gen == gen {
+			l.picking = true
+		}
+		h.d.mu.Unlock()
+	}
 	config.Mark("after " + next.Do)
 	h.d.logf("home: loop %s gen %d exited %d (ended %v): %s %s %s", a.Loop, a.Gen, a.Code, a.Ended, next.Do, next.Target.String(), next.Note)
 	return next
@@ -783,7 +791,7 @@ func (h *homeRole) standby(loop string) []proto.Offer {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
 	cur := ""
-	if l := h.loops[loop]; l != nil {
+	if l := h.loops[loop]; l != nil && !l.picking {
 		cur = l.cur.Host
 	}
 	out := []proto.Offer{}
