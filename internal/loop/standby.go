@@ -44,6 +44,9 @@ type standbys struct {
 	byHost  map[string]*standby // towerd id → standby
 	backoff map[string]*hostBackoff
 	closed  bool
+	// reserved is the host an attach is being prepared for: its standby
+	// stays, though the home stops offering one there once prepared.
+	reserved string
 }
 
 func newStandbys(l *attachLoop) *standbys {
@@ -89,13 +92,8 @@ func (s *standbys) refresh(ctx context.Context) {
 		return
 	}
 	d, _ := s.l.views.get()
-	name := func(id string) string {
-		if d != nil {
-			if h := d.View.HostByID(id); h != nil {
-				return h.Name
-			}
-		}
-		return id
+	if d == nil {
+		return // the hosts' names come with the first view
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,6 +101,9 @@ func (s *standbys) refresh(ctx context.Context) {
 		return
 	}
 	for host, sb := range s.byHost {
+		if host == s.reserved {
+			continue
+		}
 		if !slices.ContainsFunc(offers, func(o proto.Offer) bool { return o.Host == host && o.Key == sb.key }) {
 			s.dropLocked(sb)
 		}
@@ -114,7 +115,11 @@ func (s *standbys) refresh(ctx context.Context) {
 		if b := s.backoff[o.Host]; b != nil && time.Now().Before(b.until) {
 			continue
 		}
-		s.startLocked(o, name(o.Host))
+		h := d.View.HostByID(o.Host)
+		if h == nil {
+			continue // not in the view yet
+		}
+		s.startLocked(o, h.Name)
 	}
 }
 
@@ -191,6 +196,16 @@ func (s *standbys) dropLocked(sb *standby) {
 	}()
 }
 
+// reserve keeps host's standby for the attach being prepared ("": none).
+func (s *standbys) reserve(host string) {
+	s.mu.Lock()
+	s.reserved = host
+	s.mu.Unlock()
+	if host == "" {
+		s.kick()
+	}
+}
+
 // take hands the host's standby to an attach: it must be ready, have the
 // key the home gave the attach, and have been made for this terminal (the
 // same environment and modes). A standby made for another terminal is
@@ -199,11 +214,24 @@ func (s *standbys) take(host, key string) *relay.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sb := s.byHost[host]
-	if sb == nil || !sb.ready || sb.key != key {
+	why := ""
+	switch {
+	case sb == nil:
 		return nil
+	case !sb.ready:
+		why = "not ready"
+	case sb.key != key:
+		why = "made for another link"
+	case !slices.Equal(sb.env, towerless(os.Environ())):
+		why = "another environment"
+	case !sameModes(s.l.tty, sb.modes):
+		why = "other terminal modes"
 	}
-	if !slices.Equal(sb.env, towerless(os.Environ())) || !sameModes(s.l.tty, sb.modes) {
-		s.dropLocked(sb)
+	if why != "" {
+		config.Mark("standby: not used " + sb.name + ": " + why)
+		if sb.ready {
+			s.dropLocked(sb)
+		}
 		return nil
 	}
 	delete(s.byHost, host)

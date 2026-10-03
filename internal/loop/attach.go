@@ -25,10 +25,11 @@ func standbyWait(p *proto.Prepared) time.Duration {
 
 // attachResult is how an attach ended.
 type attachResult struct {
-	code  int
-	ended bool          // the loop ended the client for a stored switch
-	took  time.Duration // how long it ran
-	err   error         // it could not start
+	code   int
+	ended  bool          // the loop ended the client for a stored switch
+	took   time.Duration // how long it ran
+	err    error         // it could not start
+	gaveUp string        // its host stopped answering before its client was seen
 }
 
 // running is one attach in progress, whatever runs it.
@@ -58,6 +59,9 @@ func (l *attachLoop) attach(ctx context.Context, p *proto.Prepared, note string)
 	default:
 		r, err = l.startRelayed(p, note)
 	}
+	if l.sb != nil {
+		l.sb.reserve("")
+	}
 	if err != nil {
 		return attachResult{err: err}
 	}
@@ -70,14 +74,31 @@ func (l *attachLoop) attach(ctx context.Context, p *proto.Prepared, note string)
 		go l.releaseLater(actx, hold, p.Gen)
 	}
 	sw := make(chan struct{}, 1)
-	go l.waitSwitch(actx, p.Gen, sw)
+	if l.eager {
+		// With nobody waiting, the home leaves ending the client to the
+		// dashboard.
+		go l.waitSwitch(actx, p.Gen, sw)
+	}
+	lost := make(chan string, 1)
+	if !p.Local {
+		go l.watchHost(actx, p, lost)
+	}
 
 	ended := false
+	gaveUp := ""
 	var code int
 wait:
 	for {
 		select {
 		case code = <-r.done:
+			break wait
+		case why := <-lost:
+			// Its host stalled or went down before the client came up:
+			// the attach would hang; give it up now.
+			config.Mark("attach given up: " + why)
+			gaveUp = why
+			r.kill()
+			code = <-r.done
 			break wait
 		case <-sw:
 			n := l.holdFrame()
@@ -115,7 +136,36 @@ wait:
 	if ended {
 		code = 42
 	}
-	return attachResult{code: code, ended: ended, took: time.Since(start)}
+	return attachResult{code: code, ended: ended, took: time.Since(start), gaveUp: gaveUp}
+}
+
+// watchHost says why, should the attach's host stop answering (stalled,
+// down) before the home has seen the attach's client.
+func (l *attachLoop) watchHost(ctx context.Context, p *proto.Prepared, lost chan<- string) {
+	for {
+		d, changed := l.views.get()
+		if d != nil {
+			if lp := d.View.LoopByID(l.id); lp != nil && lp.Gen == p.Gen && lp.Seen {
+				return
+			}
+			if h := d.View.HostByID(p.Target.Host); h != nil && !h.Reachable() {
+				why := h.Name + " is " + h.Status
+				switch {
+				case h.Status == proto.StatusStalled:
+					why = h.Name + " is not responding"
+				case h.Reason != "":
+					why += ": " + h.Reason
+				}
+				lost <- why
+				return
+			}
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // waitDone waits d for the attach to end, then kills it.

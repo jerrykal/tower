@@ -69,6 +69,7 @@ type attachLoop struct {
 	last proto.Ref   // the home's last target when the loop started
 
 	sync    bool // TOWER_SYNC: frame holds
+	eager   bool // TOWER_EAGER: the loop ends the old client of a switch itself
 	relayOn bool // TOWER_RELAY: remote attaches on a pty of the loop's own
 
 	views *viewer
@@ -105,6 +106,7 @@ func start(ctx context.Context, o Options) (*attachLoop, error) {
 	l := &attachLoop{
 		env: o.Env, c: c, id: config.NewID(), term: term, tty: tty, orig: orig,
 		sync:    config.Flag("TOWER_SYNC", true),
+		eager:   config.Flag("TOWER_EAGER", true),
 		relayOn: config.Flag("TOWER_RELAY", true),
 		beat:    make(chan struct{}, 1),
 	}
@@ -305,6 +307,15 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 			note, st = res.err.Error(), stepPicker
 			continue
 		}
+		if res.gaveUp != "" {
+			// Back where the terminal was, saying why; or the picker.
+			if handoff && !from.IsZero() && !from.SameSession(target) {
+				target, note, handoff, retry = from, res.gaveUp, false, false
+				continue
+			}
+			note, st, retry = res.gaveUp, stepPicker, false
+			continue
+		}
 		from = p.Target
 		next := l.after(ctx, p.Gen, res)
 		switch next.Do {
@@ -344,8 +355,14 @@ func nextBackoff(d time.Duration) time.Duration {
 func (l *attachLoop) prepare(ctx context.Context, target proto.Ref) (*proto.Prepared, error) {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	if l.sb != nil {
+		l.sb.reserve(target.Host)
+	}
 	var p proto.Prepared
 	if err := l.call(cctx, proto.CallPrepare, proto.PrepareArgs{Loop: l.id, Target: target}, &p); err != nil {
+		if l.sb != nil {
+			l.sb.reserve("")
+		}
 		return nil, err
 	}
 	l.mu.Lock()
@@ -355,9 +372,6 @@ func (l *attachLoop) prepare(ctx context.Context, target proto.Ref) (*proto.Prep
 	}
 	l.cur = p.Target
 	l.mu.Unlock()
-	if l.sb != nil {
-		l.sb.kick()
-	}
 	return &p, nil
 }
 
