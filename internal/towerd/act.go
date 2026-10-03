@@ -155,9 +155,10 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 			err = errors.New("a name is needed")
 			break
 		}
-		line := "rename-session -t " + tmux.Quote(t.Session) + " " + tmux.Arg(req.Name)
+		// "--": a name may start with "-".
+		line := "rename-session -t " + tmux.Quote(t.Session) + " -- " + tmux.Arg(req.Name)
 		if req.Kind == proto.KindWindow {
-			line = "rename-window -t " + tmux.Quote(t.Window) + " " + tmux.Arg(req.Name)
+			line = "rename-window -t " + tmux.Quote(t.Window) + " -- " + tmux.Arg(req.Name)
 		}
 		_, err = do(line)
 	case proto.OpNew:

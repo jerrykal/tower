@@ -283,6 +283,11 @@ func TestHomeAndRemote(t *testing.T) {
 	if !viewHas(b.d.view(proto.ViewArgs{Client: cl}).View, "A", "apricot") {
 		t.Fatal("B's view after the answer lacks A:apricot")
 	}
+	// A name that looks like a flag is a name.
+	ack = b.d.act(context.Background(), &proto.Request{Op: proto.OpRename, Client: cl, Target: a.ref(a, "apricot"), Name: "-apricot"})
+	if !ack.OK || !viewHas(b.d.view(proto.ViewArgs{Client: cl}).View, "A", "-apricot") {
+		t.Fatalf("rename to -apricot: %+v", ack)
+	}
 	// A repeat of a request id runs once.
 	req := &proto.Request{ID: "same-id", Op: proto.OpNew, Target: proto.Ref{Host: b.d.id}, Name: "once"}
 	a1 := a.d.act(context.Background(), req)
