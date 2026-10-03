@@ -5,48 +5,84 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
+// Styles are plain SGR sequences, in true colour; Bubble Tea's renderer
+// maps them to the terminal's colour profile. (Lip Gloss is not used: its
+// package-level writer detects a colour profile as the process starts,
+// which inside tmux runs `tmux info` through PATH, in every tower process
+// whose stdout is a terminal.)
+type style struct {
+	fg, bg          ansi.Color
+	bold, underline bool
+}
+
+func fg(c ansi.Color) style { return style{fg: c} }
+
+func (s style) Bold() style                    { s.bold = true; return s }
+func (s style) Underline() style               { s.underline = true; return s }
+func (s style) Background(c ansi.Color) style { s.bg = c; return s }
+
+// Render styles t, resetting after it.
+func (s style) Render(t string) string {
+	if t == "" {
+		return ""
+	}
+	var st ansi.Style
+	if s.fg != nil {
+		st = st.ForegroundColor(s.fg)
+	}
+	if s.bg != nil {
+		st = st.BackgroundColor(s.bg)
+	}
+	if s.bold {
+		st = st.Bold()
+	}
+	if s.underline {
+		st = st.Underline(true)
+	}
+	return st.Styled(t)
+}
+
 // Rosé Pine.
 var (
-	cMuted   = lipgloss.Color("#6e6a86")
-	cSubtle  = lipgloss.Color("#908caa")
-	cText    = lipgloss.Color("#e0def4")
-	cLove    = lipgloss.Color("#eb6f92")
-	cGold    = lipgloss.Color("#f6c177")
-	cFoam    = lipgloss.Color("#9ccfd8")
-	cRose    = lipgloss.Color("#ebbcba")
-	cIris    = lipgloss.Color("#c4a7e7")
-	cOverlay = lipgloss.Color("#26233a")
+	cMuted   = ansi.TrueColor(0x6e6a86)
+	cSubtle  = ansi.TrueColor(0x908caa)
+	cText    = ansi.TrueColor(0xe0def4)
+	cLove    = ansi.TrueColor(0xeb6f92)
+	cGold    = ansi.TrueColor(0xf6c177)
+	cFoam    = ansi.TrueColor(0x9ccfd8)
+	cRose    = ansi.TrueColor(0xebbcba)
+	cIris    = ansi.TrueColor(0xc4a7e7)
+	cOverlay = ansi.TrueColor(0x26233a)
 )
 
 var (
-	sPlain  = lipgloss.NewStyle().Foreground(cText)
-	sMuted  = lipgloss.NewStyle().Foreground(cMuted)
-	sSubtle = lipgloss.NewStyle().Foreground(cSubtle)
-	sPrompt = lipgloss.NewStyle().Foreground(cIris).Bold(true)
-	sHit    = lipgloss.NewStyle().Foreground(cRose).Bold(true).Underline(true)
-	sErr    = lipgloss.NewStyle().Foreground(cLove)
-	sBar    = lipgloss.NewStyle().Foreground(cIris)
-	sActive = lipgloss.NewStyle().Foreground(cFoam).Bold(true)
+	sPlain  = fg(cText)
+	sMuted  = fg(cMuted)
+	sSubtle = fg(cSubtle)
+	sPrompt = fg(cIris).Bold()
+	sHit    = fg(cRose).Bold().Underline()
+	sErr    = fg(cLove)
+	sBar    = fg(cIris)
+	sActive = fg(cFoam).Bold()
 )
 
 func width(s string) int { return ansi.StringWidth(s) }
 
 // partStyle is how a cell kind looks; the host column takes the host's
 // colour: rose for this machine, foam for others, muted when it is not up.
-func partStyle(k part, r *row) lipgloss.Style {
+func partStyle(k part, r *row) style {
 	switch k {
 	case partHost:
 		switch {
 		case !r.host.Reachable():
 			return sMuted
 		case r.local:
-			return lipgloss.NewStyle().Foreground(cRose)
+			return fg(cRose)
 		}
-		return lipgloss.NewStyle().Foreground(cFoam)
+		return fg(cFoam)
 	case partName:
 		if !r.host.Reachable() {
 			return sSubtle
@@ -55,9 +91,9 @@ func partStyle(k part, r *row) lipgloss.Style {
 	case partCount, partAge, partNone, partMark:
 		return sMuted
 	case partCur, partAct:
-		return lipgloss.NewStyle().Foreground(cFoam)
+		return fg(cFoam)
 	case partClients, partBell:
-		return lipgloss.NewStyle().Foreground(cGold)
+		return fg(cGold)
 	case partStatus:
 		return sErr
 	}
@@ -188,7 +224,7 @@ func (m *Model) drawRow(i, w int) string {
 	for _, p := range m.hits[i] {
 		hit[p] = true
 	}
-	bg := func(s lipgloss.Style) lipgloss.Style {
+	bg := func(s style) style {
 		if sel {
 			return s.Background(cOverlay)
 		}
