@@ -19,9 +19,13 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return usage()
+		return towerCmd(false)
 	}
 	switch args[0] {
+	case "dash":
+		return towerCmd(true)
+	case "_ui":
+		return uiScript(args[1:])
 	case "version", "--version", "-V":
 		fmt.Println(version.Version)
 		return nil
