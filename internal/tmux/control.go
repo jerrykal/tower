@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -49,6 +50,8 @@ type Control struct {
 	lost  bool // a notification was dropped since the last Lost call
 	done  chan struct{}
 	err   error
+
+	bytes atomic.Int64 // read from tmux so far
 }
 
 // noteBuffer is how many notifications wait for the reader of Notes.
@@ -149,12 +152,63 @@ func (c *Control) DoTimeout(line string, d time.Duration) (Reply, error) {
 	}
 }
 
+// DoMany sends lines back to back and waits for every reply, in order:
+// one round trip to the server for a batch of reads. It gives up after d
+// (0: never); replies not yet in are then missing from the result.
+func (c *Control) DoMany(lines []string, d time.Duration) ([]Reply, error) {
+	chans := make([]chan Reply, len(lines))
+	var buf strings.Builder
+	for i, l := range lines {
+		if strings.ContainsAny(l, "\n\r") {
+			return nil, errors.New("tmux: a control command must be one line")
+		}
+		chans[i] = make(chan Reply, 1)
+		buf.WriteString(l)
+		buf.WriteByte('\n')
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrClosed
+	}
+	c.waiting = append(c.waiting, chans...)
+	_, err := io.WriteString(c.in, buf.String())
+	c.mu.Unlock()
+	if err != nil {
+		return nil, ErrClosed
+	}
+	var timeout <-chan time.Time
+	if d > 0 {
+		t := time.NewTimer(d)
+		defer t.Stop()
+		timeout = t.C
+	}
+	out := make([]Reply, 0, len(lines))
+	for _, ch := range chans {
+		select {
+		case r, ok := <-ch:
+			if !ok {
+				return out, ErrClosed
+			}
+			out = append(out, r)
+		case <-timeout:
+			return out, fmt.Errorf("tmux: no reply to %d commands within %v", len(lines)-len(out), d)
+		}
+	}
+	return out, nil
+}
+
+// Bytes is how much the client has read from tmux: what the server sends
+// a control client with no pane output.
+func (c *Control) Bytes() int64 { return c.bytes.Load() }
+
 func (c *Control) read(out io.Reader) {
 	br := bufio.NewReaderSize(out, 64<<10)
 	var block *Reply // inside a %begin block
 	var ours bool
 	for {
 		line, err := br.ReadString('\n')
+		c.bytes.Add(int64(len(line)))
 		if err != nil {
 			break
 		}

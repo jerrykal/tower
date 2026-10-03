@@ -176,3 +176,23 @@ func TestResolvePassesShims(t *testing.T) {
 		t.Fatal("tmux resolves to an absolute path")
 	}
 }
+
+func TestControlDoMany(t *testing.T) {
+	s := testServer(t)
+	c, err := Attach(s, "base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	before := c.Bytes()
+	reps, err := c.DoMany([]string{"display-message -p one", "show -gv @missing", "display-message -p three"}, 5*time.Second)
+	if err != nil || len(reps) != 3 {
+		t.Fatalf("%v %d replies", err, len(reps))
+	}
+	if reps[0].Text() != "one" || !reps[1].Err || reps[2].Text() != "three" {
+		t.Fatalf("replies out of order: %+v", reps)
+	}
+	if c.Bytes() <= before {
+		t.Fatal("bytes read not counted")
+	}
+}

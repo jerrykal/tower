@@ -54,6 +54,8 @@ type Control struct { ... }
 
 func Attach(s Server, session string) (*Control, error) // tmux -C attach -f no-output,ignore-size -t session
 func (c *Control) Do(cmd string) (Reply, error)         // one command line, matched FIFO
+func (c *Control) DoMany(lines []string, d time.Duration) ([]Reply, error) // a batch written at once
+func (c *Control) Bytes() int64                          // read from tmux so far
 func (c *Control) Notes() <-chan Note                   // %session-changed, %message, %exit …
 func (c *Control) Name() string                          // its client name
 func (c *Control) Pid() int
@@ -67,6 +69,8 @@ func (c *Control) Close()                                // detach-client -t <ow
   Notifications outside a block go to `Notes` (a buffered channel; when it
   is full the oldest is dropped and a `Lost` flag is set, which the watch
   takes as "re-read everything").
+- **Batches.** `DoMany` writes several lines in one write and waits for
+  each reply in order: towerd's re-read costs one round trip to the server.
 - **No output.** `-f no-output` keeps pane output off the client;
   `ignore-size` keeps its size out of window sizing.
 - **Ending.** `Close` detaches the client by name (a bare `detach-client`
