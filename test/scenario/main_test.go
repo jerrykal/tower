@@ -28,6 +28,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	if h := os.Getenv(helperVar); h != "" {
+		// A program run on a simulated host (see load_test.go).
+		os.Exit(runHelper(h))
+	}
 	if os.Getenv("TOWER_SCENARIOS") != "1" {
 		// Part of `go test ./...` only on request: the suite takes minutes
 		// and needs an isolated environment (mise run scenarios).
