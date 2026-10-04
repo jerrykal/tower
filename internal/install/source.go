@@ -107,25 +107,34 @@ func (s *Source) download(ctx context.Context, name string) error {
 	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
 		return err
 	}
-	if err := writeAtomic(filepath.Join(s.Dir, "checksums.txt"), sums, 0o644); err != nil {
+	// Its own checksum file: the cache's checksums.txt may list archives
+	// built here (mise run dist), whose bytes differ from the release's.
+	if err := writeAtomic(filepath.Join(s.Dir, name+".sha256"), []byte(want+"  "+name+"\n"), 0o644); err != nil {
 		return err
 	}
 	return writeAtomic(filepath.Join(s.Dir, name), data, 0o644)
 }
 
-// verifyCached checks a cached archive against the cache's checksums.txt
-// when there is one.
+// verifyCached checks a cached archive against its checksum: its own
+// <name>.sha256 (a download), else the cache's checksums.txt (mise run
+// dist). An archive with neither is refused: nothing unverified is run on
+// a host.
 func (s *Source) verifyCached(name string) error {
-	sums, err := os.ReadFile(filepath.Join(s.Dir, "checksums.txt"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+	want, ok := "", false
+	for _, f := range []string{name + ".sha256", "checksums.txt"} {
+		sums, err := os.ReadFile(filepath.Join(s.Dir, f))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if want, ok = checksum(sums, name); ok {
+			break
+		}
 	}
-	if err != nil {
-		return err
-	}
-	want, ok := checksum(sums, name)
 	if !ok {
-		return nil
+		return fmt.Errorf("%s in %s has no checksum (checksums.txt or %s.sha256): refused", name, s.Dir, name)
 	}
 	data, err := os.ReadFile(filepath.Join(s.Dir, name))
 	if err != nil {

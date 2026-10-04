@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
+	"github.com/jerrykal/tower/internal/transport"
 )
 
 // world is a few towerds in this process, each on a tmux server of its
@@ -607,5 +609,39 @@ func TestSSHReasonKept(t *testing.T) {
 			t.Fatalf("attempt %d: pc is down for %q, want ssh's reason and its fix", a.link("pc").Attempts, r)
 		}
 		seen++
+	}
+}
+
+// A note for the new client's status line goes into the attach the home
+// builds: the shim's arguments (inside the remote line), and the go line
+// a standby reads.
+func TestPrepareCarriesTheNote(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	b := w.node("B", "", "bravo")
+	a.hosts(b.remote())
+	a.start(false)
+	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	note := "it's ended; now on B:bravo"
+	p, err := a.d.home.prepare(context.Background(), proto.PrepareArgs{Loop: "L1", Target: a.ref(b, "bravo"), Note: note})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g proto.GoLine
+	if err := json.Unmarshal([]byte(p.Go), &g); err != nil || g.Note != note {
+		t.Fatalf("go line %q: %v", p.Go, err)
+	}
+	// The remote line gives the shim the note as one quoted argument.
+	line := p.Argv[len(p.Argv)-1]
+	if !strings.Contains(line, "--note "+transport.ShellQuote(note)) {
+		t.Fatalf("no note in %q", line)
+	}
+	pl, err := a.d.home.prepare(context.Background(), proto.PrepareArgs{Loop: "L1", Target: a.ref(a, "alpha"), Note: note})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.Index(pl.Argv, "--note")
+	if i < 0 || pl.Argv[i+1] != note {
+		t.Fatalf("local argv %q", pl.Argv)
 	}
 }

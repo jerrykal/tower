@@ -411,7 +411,7 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 		}
 
 		pctx, stop := l.interruptible(ctx, retry)
-		p, err := l.prepare(pctx, target)
+		p, err := l.prepare(pctx, target, note)
 		if stop() {
 			// ctrl-c: the picker.
 			st = stepPicker
@@ -440,7 +440,7 @@ func (l *attachLoop) run(ctx context.Context, dash bool) (int, string) {
 			continue
 		}
 
-		res := l.attach(ctx, p, note)
+		res := l.attach(ctx, p)
 		note = ""
 		if res.err != nil {
 			l.release()
@@ -506,14 +506,14 @@ func nextBackoff(d time.Duration) time.Duration {
 }
 
 // prepare asks the home for the attach to target.
-func (l *attachLoop) prepare(ctx context.Context, target proto.Ref) (*proto.Prepared, error) {
+func (l *attachLoop) prepare(ctx context.Context, target proto.Ref, note string) (*proto.Prepared, error) {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if l.sb != nil {
 		l.sb.reserve(target.Host)
 	}
 	var p proto.Prepared
-	if err := l.call(cctx, proto.CallPrepare, proto.PrepareArgs{Loop: l.id, Target: target}, &p); err != nil {
+	if err := l.call(cctx, proto.CallPrepare, proto.PrepareArgs{Loop: l.id, Target: target, Note: note}, &p); err != nil {
 		if l.sb != nil {
 			l.sb.reserve("")
 		}

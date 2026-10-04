@@ -143,7 +143,7 @@ type link struct {
 	rx, tx               atomic.Int64
 
 	installed string // "installed <version>" once this home installed its build here
-	installs  int    // installs since the host last came up; a second means it does not take
+	installs  int    // successful installs since the host last came up; one that did not take fails the host
 
 	givenUp  string        // why the home gave the current stream up
 	resetC   chan struct{} // closed when a master reset under way is done
@@ -599,11 +599,10 @@ func (l *link) install() bool {
 	v := l.h.inst.Version
 	d := l.h.d
 	d.mu.Lock()
-	l.installs++
-	again := l.installs > 1
-	if again {
-		l.installs = 0
-	}
+	// A build installed once and still missing (a full disk, a noexec
+	// root) fails the host until it comes up or its entry changes; a
+	// failed install is simply tried again at the backoff cap.
+	again := l.installs > 0
 	d.mu.Unlock()
 	if again {
 		l.down(transport.Failed, fmt.Sprintf("tower is not installed on %s: installing %s there did not take", l.cfg.Name, v))
@@ -627,6 +626,7 @@ func (l *link) install() bool {
 	}
 	l.logf("installed tower %s in %v", v, time.Since(start).Round(time.Millisecond))
 	d.mu.Lock()
+	l.installs++
 	l.installed = "installed " + v
 	d.mu.Unlock()
 	return true

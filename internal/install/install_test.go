@@ -58,31 +58,67 @@ func TestParsePlatform(t *testing.T) {
 	}
 }
 
+// plat is this machine's directory name under a version: $(uname -sm).
+func plat(t *testing.T) string {
+	out, err := exec.Command("uname", "-sm").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Replace(strings.TrimSpace(string(out)), " ", "-", 1)
+}
+
+// fakeTower is a binary that says it is version v, padded to about n
+// bytes.
+func fakeTower(v string, n int) []byte {
+	b := []byte("#!/bin/sh\nif [ \"$1\" = version ]; then echo " + v + "; else echo running " + v + "; fi\nexit 0\n")
+	for len(b) < n {
+		b = append(b, "# padding to the size of a build\n"...)
+	}
+	return b
+}
+
+func upload(r localRunner, root, v string, bin []byte) error {
+	_, err := r.Run(context.Background(), UploadScript(root, v, int64(len(bin))), bytes.NewReader(bin))
+	return err
+}
+
 func TestPathOnTheHost(t *testing.T) {
 	home := t.TempDir()
 	r := localRunner{home: home}
+	p := plat(t)
 	echo := func(root string, env ...string) string {
 		rr := r
 		rr.env = env
-		out, err := rr.Run(context.Background(), `printf '%s' `+Path(root, "0.0.2-dev+abc"), nil)
+		out, err := rr.Run(context.Background(), Locate(root, "0.0.2-dev+abc")+`; printf '%s' "$b"`, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return out
 	}
-	if got := echo(DefaultRoot); got != home+"/.local/share/tower/0.0.2-dev+abc/tower" {
+	if got := echo(DefaultRoot); got != home+"/.local/share/tower/0.0.2-dev+abc/"+p+"/tower" {
 		t.Fatalf("default root: %q", got)
 	}
-	odd := `/tmp/a b/"q"/$x/` + "`b`"
-	if got := echo(odd); got != odd+"/0.0.2-dev+abc/tower" {
-		t.Fatalf("a root with odd characters: %q", got)
+	for _, odd := range []string{`/tmp/a b/"q"/$x/` + "`b`", `/tmp/x}y`, `/tmp/it's`} {
+		if got := echo(odd); got != odd+"/0.0.2-dev+abc/"+p+"/tower" {
+			t.Fatalf("a root with odd characters %q: %q", odd, got)
+		}
 	}
-	if got := echo(DefaultRoot, "TOWER_INSTALL_DIR=/elsewhere"); got != "/elsewhere/0.0.2-dev+abc/tower" {
+	if got := echo(DefaultRoot, "TOWER_INSTALL_DIR=/elsewhere"); got != "/elsewhere/0.0.2-dev+abc/"+p+"/tower" {
 		t.Fatalf("the host's own TOWER_INSTALL_DIR: %q", got)
 	}
-	cmd := Command("~/x", "1.0", "towerd", "--tmux", "-L a b")
-	out, _ := localRunner{home: home}.Run(context.Background(), "set -- "+strings.TrimPrefix(cmd, Path("~/x", "1.0"))+`; printf '%s|' "$@"`, nil)
-	if out != "towerd|--tmux|-L a b|" {
+	// A missing build is 127 in every sh (exec of a missing file is 126
+	// in macOS's).
+	if _, err := r.Run(context.Background(), Command("~/none", "1.0", "version"), nil); err == nil || !strings.Contains(err.Error(), "exit status 127") {
+		t.Fatalf("a missing build: %v", err)
+	}
+	// The arguments survive, through the platform directory.
+	bin := fakeTower("1.0", 0)
+	if err := upload(r, "~/x", "1.0", bin); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(home, "x", "1.0", p, "tower"), []byte("#!/bin/sh\nprintf '%s|' \"$@\"\n"), 0o755)
+	out, _ := r.Run(context.Background(), Command("~/x", "1.0", "towerd", "--tmux", "-L a b", "it's"), nil)
+	if out != "towerd|--tmux|-L a b|it's|" {
 		t.Fatalf("arguments: %q", out)
 	}
 }
@@ -90,16 +126,15 @@ func TestPathOnTheHost(t *testing.T) {
 func TestUploadIsAtomicAndSwapsCurrent(t *testing.T) {
 	home := t.TempDir()
 	r := localRunner{home: home}
-	ctx := context.Background()
-	bin := bytes.Repeat([]byte("tower-binary\n"), 200_000) // 2.6 MB
+	p := plat(t)
+	bin := fakeTower("0.1.0", 2_600_000)
 	var wg sync.WaitGroup
 	errs := make(chan error, 4)
 	for range 4 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := r.Run(ctx, UploadScript("~/t", "0.1.0"), bytes.NewReader(bin))
-			errs <- err
+			errs <- upload(r, "~/t", "0.1.0", bin)
 		}()
 	}
 	wg.Wait()
@@ -109,29 +144,64 @@ func TestUploadIsAtomicAndSwapsCurrent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := os.ReadFile(filepath.Join(home, "t", "0.1.0", "tower"))
+	installed := filepath.Join(home, "t", "0.1.0", p, "tower")
+	got, err := os.ReadFile(installed)
 	if err != nil || !bytes.Equal(got, bin) {
 		t.Fatalf("four installs at once left %d bytes (want %d): %v", len(got), len(bin), err)
 	}
-	if st, _ := os.Stat(filepath.Join(home, "t", "0.1.0", "tower")); st.Mode()&0o111 == 0 {
+	if st, _ := os.Stat(installed); st.Mode()&0o111 == 0 {
 		t.Fatal("not executable")
 	}
-	if l, _ := os.Readlink(filepath.Join(home, "t", "current")); l != "0.1.0" {
+	if l, _ := os.Readlink(filepath.Join(home, "t", "current")); l != "0.1.0/"+p {
 		t.Fatalf("current → %q", l)
 	}
-	if _, err := r.Run(ctx, UploadScript("~/t", "0.2.0"), strings.NewReader("v2")); err != nil {
+	if err := upload(r, "~/t", "0.2.0", fakeTower("0.2.0", 100)); err != nil {
 		t.Fatal(err)
 	}
-	if l, _ := os.Readlink(filepath.Join(home, "t", "current")); l != "0.2.0" {
+	if l, _ := os.Readlink(filepath.Join(home, "t", "current")); l != "0.2.0/"+p {
 		t.Fatalf("current after a newer install → %q", l)
 	}
-	if _, err := os.Stat(filepath.Join(home, "t", "0.1.0", "tower")); err != nil {
+	if _, err := os.Stat(installed); err != nil {
 		t.Fatal("the older build went")
 	}
+	// An older version installed later (a home not upgraded yet) leaves
+	// current on the newer one.
+	if err := upload(r, "~/t", "0.1.5", fakeTower("0.1.5", 100)); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := os.Readlink(filepath.Join(home, "t", "current")); l != "0.2.0/"+p {
+		t.Fatalf("an older install moved current to %q", l)
+	}
 	left, _ := filepath.Glob(filepath.Join(home, "t", ".current.*"))
-	tmp, _ := filepath.Glob(filepath.Join(home, "t", "*", ".tower.*"))
+	tmp, _ := filepath.Glob(filepath.Join(home, "t", "*", "*", ".tower.*"))
 	if len(left)+len(tmp) != 0 {
 		t.Fatalf("temporary files left: %v %v", left, tmp)
+	}
+}
+
+// An upload cut short, or a binary that is not the version it is
+// installed as, is refused: nothing goes in place.
+func TestUploadRefusesABadBuild(t *testing.T) {
+	home := t.TempDir()
+	r := localRunner{home: home}
+	p := plat(t)
+	bin := fakeTower("0.3.0", 100_000)
+	_, err := r.Run(context.Background(), UploadScript("~/t", "0.3.0", int64(len(bin))), bytes.NewReader(bin[:len(bin)/2]))
+	if err == nil || !strings.Contains(err.Error(), "upload cut short") {
+		t.Fatalf("a short upload: %v", err)
+	}
+	if err := upload(r, "~/t", "0.3.0", fakeTower("0.4.0", 100)); err == nil || !strings.Contains(err.Error(), "not 0.3.0") {
+		t.Fatalf("a build of another version: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "t", "0.3.0", p, "tower")); err == nil {
+		t.Fatal("a refused build was put in place")
+	}
+	if _, err := os.Lstat(filepath.Join(home, "t", "current")); err == nil {
+		t.Fatal("current points at a refused build")
+	}
+	tmp, _ := filepath.Glob(filepath.Join(home, "t", "*", "*", ".tower.*"))
+	if len(tmp) != 0 {
+		t.Fatalf("temporary files left: %v", tmp)
 	}
 }
 
@@ -187,6 +257,12 @@ func TestSourceFromTheCache(t *testing.T) {
 	if _, err := s.Binary(context.Background(), p); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("a tampered cache: %v", err)
 	}
+	// So is one that no checksum lists.
+	os.WriteFile(filepath.Join(dir, "checksums.txt"), []byte(sumLine(data, "something-else.tar.gz")), 0o644)
+	os.WriteFile(filepath.Join(dir, name), data, 0o644)
+	if _, err := s.Binary(context.Background(), p); err == nil || !strings.Contains(err.Error(), "has no checksum") {
+		t.Fatalf("an unlisted archive: %v", err)
+	}
 }
 
 func TestSourceDevBuildNeedsTheCache(t *testing.T) {
@@ -217,6 +293,12 @@ func TestSourceDownloadsAndVerifies(t *testing.T) {
 	}))
 	defer srv.Close()
 	dir := t.TempDir()
+	// A cache filled by mise run dist: its checksums.txt lists a local
+	// build, which a download must leave alone.
+	local := archive(t, "built here")
+	localName := Archive("1.2.3", Local())
+	os.WriteFile(filepath.Join(dir, localName), local, 0o644)
+	os.WriteFile(filepath.Join(dir, "checksums.txt"), []byte(sumLine(local, localName)), 0o644)
 	s := &Source{Version: "1.2.3", Dir: dir, ReleaseURL: srv.URL, HTTP: srv.Client()}
 
 	// A bad checksum is refused, and nothing is kept.
@@ -235,6 +317,9 @@ func TestSourceDownloadsAndVerifies(t *testing.T) {
 	if got, _ := os.ReadFile(b); string(got) != "released build" {
 		t.Fatalf("%q", got)
 	}
+	if err := s.verifyCached(localName); err != nil {
+		t.Fatalf("a download broke the local build's checksum: %v", err)
+	}
 	// Kept: the next install needs no network.
 	srv.Close()
 	if _, err := s.Binary(context.Background(), p); err != nil {
@@ -250,14 +335,14 @@ func TestSourceDownloadsAndVerifies(t *testing.T) {
 func TestInstallerInstalls(t *testing.T) {
 	home := t.TempDir()
 	self := filepath.Join(t.TempDir(), "tower")
-	os.WriteFile(self, []byte("#!/bin/sh\necho self\n"), 0o755)
+	os.WriteFile(self, fakeTower("0.5.0", 0), 0o755)
 	in := &Installer{Version: "0.5.0", Root: "~/r", Source: &Source{Version: "0.5.0", Self: self, Dir: t.TempDir()}}
 	r := localRunner{home: home, uname: map[string]string{"darwin/arm64": "Darwin arm64", "darwin/amd64": "Darwin x86_64", "linux/amd64": "Linux x86_64", "linux/arm64": "Linux aarch64"}[Local().String()]}
 	if err := in.Install(context.Background(), r, "B"); err != nil {
 		t.Fatal(err)
 	}
 	out, err := r.Run(context.Background(), in.Command(), nil)
-	if err != nil || out != "self\n" {
+	if err != nil || out != "running 0.5.0\n" {
 		t.Fatalf("the installed build: %q %v", out, err)
 	}
 	r.uname = "SunOS sparc"

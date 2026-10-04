@@ -38,7 +38,7 @@ func (w *World) uploads(host string) int {
 // binary (the built one) and that current points at want.
 func installed(t *testing.T, h *Host, version, want string) {
 	t.Helper()
-	bin := filepath.Join(h.InstallDir(), version, "tower")
+	bin := filepath.Join(h.InstallDir(), version, h.PlatformDir(), "tower")
 	got, err := os.ReadFile(bin)
 	if err != nil {
 		t.Fatalf("%s has no %s build: %v", h.Name, version, err)
@@ -53,11 +53,11 @@ func installed(t *testing.T, h *Host, version, want string) {
 	if st, _ := os.Stat(bin); st.Mode()&0o111 == 0 {
 		t.Fatalf("%s's %s build is not executable", h.Name, version)
 	}
-	if cur, err := os.Readlink(filepath.Join(h.InstallDir(), "current")); err != nil || cur != want {
+	if cur, err := os.Readlink(filepath.Join(h.InstallDir(), "current")); err != nil || cur != want+"/"+h.PlatformDir() {
 		t.Fatalf("%s's current → %q (%v), want %s", h.Name, cur, err, want)
 	}
 	left, _ := filepath.Glob(filepath.Join(h.InstallDir(), ".current.*"))
-	tmp, _ := filepath.Glob(filepath.Join(h.InstallDir(), "*", ".tower.*"))
+	tmp, _ := filepath.Glob(filepath.Join(h.InstallDir(), "*", "*", ".tower.*"))
 	if len(left)+len(tmp) > 0 {
 		t.Fatalf("temporary files left on %s: %v %v", h.Name, left, tmp)
 	}
@@ -83,7 +83,7 @@ func TestI01(t *testing.T) {
 	}
 	streams := 0
 	for _, c := range w.SSHLog() {
-		if cmd, _ := c["cmd"].(string); c["host"] == "B" && strings.Contains(cmd, "/"+Version+"/tower towerd --stdio") {
+		if cmd, _ := c["cmd"].(string); c["host"] == "B" && strings.Contains(cmd, "/"+Version+"/") && strings.Contains(cmd, `exec "$b" towerd --stdio`) {
 			streams++
 		}
 	}

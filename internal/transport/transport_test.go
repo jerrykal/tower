@@ -137,3 +137,23 @@ func TestWithHome(t *testing.T) {
 		t.Fatalf("%s gave %q", line, out)
 	}
 }
+
+// A remote line goes through the user's login shell first; Sh makes
+// tower's POSIX lines read the same in csh, zsh or fish.
+func TestShUnderOtherLoginShells(t *testing.T) {
+	line := `r=${TOWER_X_UNSET:-"$HOME"/'a b}c'}; printf '%s|' "$r" "it's" ` + ShellQuote("q'uote")
+	want, err := exec.Command("/bin/sh", "-c", line).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sh := range []string{"/bin/csh", "/bin/zsh", "/bin/bash", "fish"} {
+		p, err := exec.LookPath(sh)
+		if err != nil {
+			continue
+		}
+		got, err := exec.Command(p, "-c", Sh(line)).Output()
+		if err != nil || string(got) != string(want) {
+			t.Errorf("%s: %q %v, want %q", sh, got, err, want)
+		}
+	}
+}

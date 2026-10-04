@@ -464,12 +464,23 @@ func (h *Host) Unpinned() config.Host {
 // (TOWER_INSTALL_DIR there).
 func (h *Host) InstallDir() string { return filepath.Join(h.w.Dir, "install-"+h.Machine) }
 
+// PlatformDir is the directory of the host's platform under a version in
+// its install root: its uname -sm (the shim's, for a simulated platform).
+func (h *Host) PlatformDir() string {
+	u := h.uname
+	if u == "" {
+		out, _ := exec.Command("uname", "-sm").Output()
+		u = strings.TrimSpace(string(out))
+	}
+	return strings.Replace(u, " ", "-", 1)
+}
+
 // unameShim writes the host's uname shim and returns its directory.
 func (h *Host) unameShim() string {
 	dir := filepath.Join(h.w.Dir, "plat-"+h.Name)
 	s, m, _ := strings.Cut(h.uname, " ")
 	script := "#!/bin/sh\ncase \"$*\" in\n" +
-		"\"-s -m\") echo '" + h.uname + "' ;;\n" +
+		"\"-s -m\"|-sm|-ms) echo '" + h.uname + "' ;;\n" +
 		"\"-s\") echo '" + s + "' ;;\n" +
 		"\"-m\") echo '" + m + "' ;;\n" +
 		"*) exec /usr/bin/uname \"$@\" ;;\nesac\n"

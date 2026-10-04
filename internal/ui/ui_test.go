@@ -181,7 +181,7 @@ func TestOpen(t *testing.T) {
 	if !strings.HasPrefix(strings.Join(args, " "), "display-popup -E -c /dev/ttys042 ") {
 		t.Fatalf("popup %q", args)
 	}
-	for _, s := range []string{"TOWER_CLIENT=" + testClient, "TOWER_TMUX='-L work'", `TOWER_HOME='/h o'\''me'`, "exec /bin/tower dash"} {
+	for _, s := range []string{"TOWER_CLIENT=" + testClient, "TOWER_TMUX='-L work'", `TOWER_HOME='/h o'"'"'me'`, "exec /bin/tower dash"} {
 		if !strings.Contains(cmd, s) {
 			t.Errorf("popup command lacks %s: %s", s, cmd)
 		}

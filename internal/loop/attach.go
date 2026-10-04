@@ -2,7 +2,6 @@ package loop
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -15,7 +14,6 @@ import (
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/relay"
 	"github.com/jerrykal/tower/internal/tmux"
-	"github.com/jerrykal/tower/internal/transport"
 )
 
 // standbyWait is how long a standby has to answer its go line: 300ms plus
@@ -47,18 +45,18 @@ type running struct {
 // stored for it holds the frame, confirms, and (when the home says so)
 // ends the client here. The old client gone, the frame is held again for
 // whatever comes next.
-func (l *attachLoop) attach(ctx context.Context, p *proto.Prepared, note string) attachResult {
+func (l *attachLoop) attach(ctx context.Context, p *proto.Prepared) attachResult {
 	config.Mark("attach")
 	start := time.Now()
 	var r *running
 	var err error
 	switch {
 	case p.Local:
-		r, err = l.startChild(withNoteArgv(p.Argv, note, false), true)
+		r, err = l.startChild(p.Argv, true)
 	case !l.relayOn:
-		r, err = l.startChild(withNoteArgv(p.Argv, note, true), false)
+		r, err = l.startChild(p.Argv, false)
 	default:
-		r, err = l.startRelayed(p, note)
+		r, err = l.startRelayed(p)
 	}
 	if l.sb != nil {
 		l.sb.reserve("")
@@ -312,7 +310,7 @@ func (l *attachLoop) detachLocal(pid int) {
 // startRelayed runs a remote attach on a pty of the loop's own, relayed:
 // the host's standby when it is ready and made for this terminal, else a
 // new session with the attach's command.
-func (l *attachLoop) startRelayed(p *proto.Prepared, note string) (*running, error) {
+func (l *attachLoop) startRelayed(p *proto.Prepared) (*running, error) {
 	rows, cols := l.size()
 	var s *relay.Session
 	if l.sb != nil {
@@ -320,7 +318,7 @@ func (l *attachLoop) startRelayed(p *proto.Prepared, note string) (*running, err
 			config.Mark("attach: standby")
 			sb.SetSize(rows, cols)
 			config.Mark("standby: go")
-			err := sb.Send([]byte(withNoteGo(p.Go, note)))
+			err := sb.Send([]byte(p.Go))
 			if err == nil {
 				_, err = sb.ReadUntil([]byte(relay.MarkerGo), standbyWait(p))
 			}
@@ -337,7 +335,7 @@ func (l *attachLoop) startRelayed(p *proto.Prepared, note string) (*running, err
 	if s == nil {
 		config.Mark("attach: session")
 		var err error
-		s, err = relay.Start(withNoteArgv(p.Argv, note, true), os.Environ(), l.orig, rows, cols)
+		s, err = relay.Start(p.Argv, os.Environ(), l.orig, rows, cols)
 		if err != nil {
 			return nil, err
 		}
@@ -379,30 +377,3 @@ func reap(s *relay.Session) {
 	s.Close()
 }
 
-// withNoteArgv adds the note to an attach command: the shim's own argv
-// (local), or the remote command after ssh's "--" (its last word).
-func withNoteArgv(argv []string, note string, remote bool) []string {
-	if note == "" {
-		return argv
-	}
-	out := append([]string(nil), argv...)
-	if remote {
-		out[len(out)-1] += " --note " + transport.ShellQuote(note)
-		return out
-	}
-	return append(out, "--note", note)
-}
-
-// withNoteGo adds the note to a standby's go line.
-func withNoteGo(line, note string) string {
-	if note == "" {
-		return line
-	}
-	var g proto.GoLine
-	if json.Unmarshal([]byte(line), &g) != nil {
-		return line
-	}
-	g.Note = note
-	b, _ := json.Marshal(g)
-	return string(b)
-}

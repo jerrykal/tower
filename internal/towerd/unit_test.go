@@ -363,7 +363,9 @@ func TestCacheAgesOnce(t *testing.T) {
 // target, whichever order the clients come in.
 func TestLastFollowsTheClientThatMoved(t *testing.T) {
 	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{}), env: &config.Env{StateDir: t.TempDir()}}
-	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}}
+	// savedAt now: the save applyClients starts writes nothing (it would
+	// race the test's temporary directory going away).
+	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, savedAt: time.Now()}
 	d.home = h
 	s1 := proto.Ref{Host: "home0001", Session: "$1", Label: "s1"}
 	h.loops["LA"] = &loopRec{id: "LA", gen: 1, cur: s1, seen: true}

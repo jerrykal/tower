@@ -58,7 +58,7 @@ func (s *SSH) Options(h config.Host) []string {
 // command after "--".
 func (s *SSH) Stream(h config.Host, remote string) *exec.Cmd {
 	args := append([]string{"-T"}, s.Options(h)...)
-	args = append(args, h.Target(), "--", remote)
+	args = append(args, h.Target(), "--", Sh(remote))
 	return exec.Command(s.Bin, args...)
 }
 
@@ -66,7 +66,7 @@ func (s *SSH) Stream(h config.Host, remote string) *exec.Cmd {
 // standby).
 func (s *SSH) Attach(h config.Host, remote string) []string {
 	args := append([]string{s.Bin, "-t"}, s.Options(h)...)
-	return append(args, h.Target(), "--", remote)
+	return append(args, h.Target(), "--", Sh(remote))
 }
 
 // Probe opens a fresh session on h's master and runs true: whether ssh
@@ -97,11 +97,26 @@ func (s *SSH) Exit(ctx context.Context, h config.Host) error {
 // *Error with ssh's exit code and stderr.
 func (s *SSH) Run(ctx context.Context, h config.Host, remote string, stdin io.Reader) (string, error) {
 	args := append([]string{"-T"}, s.Options(h)...)
-	args = append(args, h.Target(), "--", remote)
+	args = append(args, h.Target(), "--", Sh(remote))
 	cmd := exec.CommandContext(ctx, s.Bin, args...)
 	cmd.Stdin = stdin
 	cmd.WaitDelay = waitDelay
 	return output(cmd)
+}
+
+// On is h's runner: Run without the host argument, the shape an install
+// takes.
+func (s *SSH) On(h config.Host) HostRunner { return HostRunner{s, h} }
+
+// HostRunner runs commands on one host.
+type HostRunner struct {
+	s *SSH
+	h config.Host
+}
+
+// Run runs remote on the host with stdin and returns its stdout.
+func (r HostRunner) Run(ctx context.Context, remote string, stdin io.Reader) (string, error) {
+	return r.s.Run(ctx, r.h, remote, stdin)
 }
 
 // Error is a failed ssh call.
@@ -181,6 +196,11 @@ func RemoteCommand(tower string, args ...string) string {
 	return b.String()
 }
 
+// Sh is a remote command line run by sh: ssh hands the line to the
+// user's login shell, which may be fish or csh, while tower's lines are
+// POSIX shell. `sh -c '<line>'` reads the same in all of them.
+func Sh(line string) string { return "sh -c " + ShellQuote(line) }
+
 // WithHome prefixes a remote command line with TOWER_HOME=home (a path
 // starting with ~/ is the host's home), or returns it as it is when home
 // is empty.
@@ -199,10 +219,13 @@ func WithHome(home, line string) string {
 
 var plainArg = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
 
-// ShellQuote quotes s for a POSIX shell.
+// ShellQuote quotes s for a POSIX shell. A single quote inside is written
+// '"'"' (close, a double-quoted quote, reopen) rather than '\'': fish
+// reads a backslash before a quote as an escape even inside single
+// quotes, and remote lines pass through the user's login shell (see Sh).
 func ShellQuote(s string) string {
 	if plainArg.MatchString(s) {
 		return s
 	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }

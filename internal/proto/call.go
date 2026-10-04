@@ -213,6 +213,7 @@ type LoopArgs struct {
 type PrepareArgs struct {
 	Loop   string `json:"loop"`
 	Target Ref    `json:"target"`
+	Note   string `json:"note,omitempty"` // for the new client's status line ("now on B:spare")
 }
 
 // Prepared is the attach to run.

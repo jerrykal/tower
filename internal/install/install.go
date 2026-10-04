@@ -36,32 +36,24 @@ func Root() string {
 	return DefaultRoot
 }
 
-// rootExpr is the root as a word for the host's shell: the host's own
-// TOWER_INSTALL_DIR when its environment sets one (the scenario suite
-// gives every simulated host its own), else root, with ~/ as $HOME.
-func rootExpr(root string) string {
-	var b strings.Builder
-	b.WriteString(`"${TOWER_INSTALL_DIR:-`)
+// Locate is shell statements that set $b to version's binary on a host,
+// under root or the host's own TOWER_INSTALL_DIR when its environment
+// sets one (the scenario suite gives each simulated host its own), in a
+// directory of the host's platform ($(uname -sm), e.g. Linux-x86_64):
+// hosts of two architectures sharing one home directory each get their
+// own build. Root's default is a plain assignment, so no character in it
+// means something to the shell.
+func Locate(root, version string) string {
+	var def string
 	if rest, ok := strings.CutPrefix(root, "~/"); ok {
-		b.WriteString("$HOME/")
-		root = rest
+		def = `"$HOME"/` + transport.ShellQuote(rest)
 	} else if root == "~" {
-		b.WriteString("$HOME")
-		root = ""
+		def = `"$HOME"`
+	} else {
+		def = transport.ShellQuote(root)
 	}
-	for _, r := range root {
-		if strings.ContainsRune("\\\"$`}", r) {
-			b.WriteByte('\\')
-		}
-		b.WriteRune(r)
-	}
-	b.WriteString(`}"`)
-	return b.String()
-}
-
-// Path is the shell word for version's binary under root on a host.
-func Path(root, version string) string {
-	return rootExpr(root) + "/" + transport.ShellQuote(version) + "/tower"
+	return `r=${TOWER_INSTALL_DIR:-}; [ -n "$r" ] || r=` + def +
+		`; u=$(uname -sm); p="${u% *}-${u#* }"; b="$r"/` + transport.ShellQuote(version) + `/"$p"/tower`
 }
 
 // Command is a shell line on a host running version's binary with args,
@@ -69,7 +61,10 @@ func Path(root, version string) string {
 // never runs and two homes of different versions each run their own.
 func Command(root, version string, args ...string) string {
 	var b strings.Builder
-	b.WriteString(Path(root, version))
+	b.WriteString(Locate(root, version))
+	// A missing build is exit 127 (what the link installs on) in every
+	// sh: exec of a missing file exits 126 in macOS's.
+	b.WriteString(`; [ -x "$b" ] || { echo "tower: $b: not found" >&2; exit 127; }; exec "$b"`)
 	for _, a := range args {
 		b.WriteByte(' ')
 		b.WriteString(transport.ShellQuote(a))
@@ -142,42 +137,51 @@ func (in *Installer) Install(ctx context.Context, r Runner, host string) error {
 		return err
 	}
 	defer f.Close()
-	if _, err := r.Run(ctx, UploadScript(in.root(), in.Version), f); err != nil {
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if _, err := r.Run(ctx, UploadScript(in.Root, in.Version, st.Size()), f); err != nil {
 		return fmt.Errorf("cannot install tower %s on %s: %w", in.Version, host, err)
 	}
 	return nil
 }
 
-func (in *Installer) root() string {
-	if in.Root != "" {
-		return in.Root
-	}
-	return Root()
-}
-
-// Path is the shell word for this version's binary on a host.
-func (in *Installer) Path() string { return Path(in.root(), in.Version) }
-
 // Command is a shell line running this version on a host.
-func (in *Installer) Command(args ...string) string { return Command(in.root(), in.Version, args...) }
+func (in *Installer) Command(args ...string) string { return Command(in.Root, in.Version, args...) }
 
-// UploadScript is the one remote command of an upload: the binary comes
-// on stdin into a temporary name, and renames put it and the current
-// symlink in place, so two homes installing at once leave one whole
-// binary and a valid current.
-func UploadScript(root, version string) string {
+// UploadScript is the one remote command of an upload. The binary comes
+// on stdin into a temporary name; it goes in place only if all size bytes
+// arrived and it says it is this version (an upload cut short, or a
+// binary replaced on the home since towerd started, is refused rather
+// than installed). Renames put it and the current symlink in place, so
+// two homes installing at once leave one whole binary and a valid
+// current. current only moves to a newer version: a home of an older
+// one installing there never downgrades the host's tower.
+func UploadScript(root, version string, size int64) string {
 	v := transport.ShellQuote(version)
 	return strings.Join([]string{
 		"set -e",
-		"r=" + rootExpr(root),
-		`mkdir -p "$r"/` + v,
-		`t="$r"/` + v + `/.tower.$$`,
+		Locate(root, version),
+		`d="$r"/` + v + `/"$p"`,
+		`mkdir -p "$d"`,
+		`t="$d/.tower.$$"`,
+		`trap 'rm -f "$t"' EXIT`,
 		`cat > "$t"`,
+		`n=$(wc -c < "$t" | tr -d ' ')`,
+		`[ "$n" = ` + fmt.Sprint(size) + ` ] || { echo "upload cut short: $n of ` + fmt.Sprint(size) + ` bytes" >&2; exit 1; }`,
 		`chmod 755 "$t"`,
-		`mv -f "$t" "$r"/` + v + `/tower`,
-		`ln -sfn ` + v + ` "$r/.current.$$"`,
+		`got=$("$t" version 2>/dev/null || true)`,
+		`[ "$got" = ` + v + ` ] || { echo "the uploaded build says it is \"$got\", not ` + version + `" >&2; exit 1; }`,
+		`mv -f "$t" "$b"`,
+		`trap - EXIT`,
+		`c=$(readlink "$r/current" 2>/dev/null || true); c=${c%%/*}`,
+		`top=$(printf '%s\n%s\n' "$c" ` + v + ` | sort -V 2>/dev/null | tail -n 1)`,
+		`if [ -z "$c" ] || [ -z "$top" ] || [ "$top" = ` + v + ` ]; then`,
+		`  ln -sfn ` + v + `/"$p" "$r/.current.$$"`,
 		// Rename the link over current without following it (GNU -T, BSD -h).
-		`mv -fT "$r/.current.$$" "$r/current" 2>/dev/null || mv -fh "$r/.current.$$" "$r/current"`,
+		`  mv -fT "$r/.current.$$" "$r/current" 2>/dev/null || mv -fh "$r/.current.$$" "$r/current"`,
+		`fi`,
 	}, "\n")
 }
 

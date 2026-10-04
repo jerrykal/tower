@@ -101,7 +101,7 @@ func hostAdd(env *config.Env, args []string, out io.Writer) error {
 	if last := &checks[len(checks)-1]; last.Name == "tower" && !last.OK && h.Tower == "" {
 		// The last check: put this build there, as the home would on connect.
 		ictx, icancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		err := inst.Install(ictx, sshRunner{ssh, h}, h.Name)
+		err := inst.Install(ictx, ssh.On(h), h.Name)
 		icancel()
 		if err != nil {
 			last.Detail = err.Error()
@@ -154,15 +154,6 @@ func hostEdit(env *config.Env, args []string, out io.Writer, did string, edit fu
 	return nil
 }
 
-// sshRunner runs commands on one host over ssh (an install's).
-type sshRunner struct {
-	ssh *transport.SSH
-	h   config.Host
-}
-
-func (r sshRunner) Run(ctx context.Context, remote string, stdin io.Reader) (string, error) {
-	return r.ssh.Run(ctx, r.h, remote, stdin)
-}
 
 // reloadHome tells a running towerd to read hosts.toml again; one that
 // starts later reads it anyway.
