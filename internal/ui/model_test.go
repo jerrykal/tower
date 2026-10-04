@@ -294,9 +294,10 @@ func TestKillQuestion(t *testing.T) {
 	if q := m.confirm.text(); !strings.Contains(q, "detaches 2 other clients") || !strings.Contains(q, "grouped: its windows stay with banana 2") {
 		t.Fatalf("question %q", q)
 	}
-	// A session's last window: the session goes too.
+	// A grouped session's last window: the group shares it, so every
+	// member goes too.
 	press(t, m, "n", "tab", "down", "ctrl+x")
-	if q := m.confirm.text(); !strings.HasPrefix(q, "kill window B:banana:1:top?") || !strings.Contains(q, "the session goes too") {
+	if q := m.confirm.text(); !strings.HasPrefix(q, "kill window B:banana:1:top?") || !strings.Contains(q, "its group goes too (banana, banana 2)") {
 		t.Fatalf("question %q", q)
 	}
 }

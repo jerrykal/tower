@@ -252,7 +252,18 @@ func (m *Model) follow(old *world) {
 	}
 	h := m.sel.host
 	if k, ok := m.sel.entry[h]; ok && m.w.find(k) == nil {
-		if n := neighbour(old.entries(h, m.allDirs), m.w.entries(h, m.allDirs), k, keyOf); n != nil {
+		before, now := old.entries(h, m.allDirs), m.w.entries(h, m.allDirs)
+		// A session that went hands its place to another session, while
+		// there is one: landing on a dir would turn the next ⏎ into a new
+		// session.
+		n := (*item)(nil)
+		if gone := old.find(k); gone != nil {
+			n = neighbour(ofKind(before, gone.kind), ofKind(now, gone.kind), k, keyOf)
+		}
+		if n == nil {
+			n = neighbour(before, now, k, keyOf)
+		}
+		if n != nil {
 			m.sel.entry[h] = n.key
 		} else {
 			delete(m.sel.entry, h)
@@ -274,6 +285,17 @@ func (m *Model) follow(old *world) {
 }
 
 func keyOf(it item) rowKey { return it.key }
+
+// ofKind is the items of one kind, in order.
+func ofKind(its []item, k itemKind) []item {
+	var out []item
+	for _, it := range its {
+		if it.kind == k {
+			out = append(out, it)
+		}
+	}
+	return out
+}
 
 // neighbour is the row of now nearest to k's place in before: after it,
 // else before it.

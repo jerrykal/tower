@@ -294,7 +294,11 @@ func (m *Model) askKill() tea.Cmd {
 		c.question = "kill window " + it.host.Name + ":" + it.sess.Name + ":" + winLabel(it) + "?"
 		c.stakes = append(c.stakes, plural(max(it.win.Panes, 1), "pane"))
 		if len(m.w.windows[it.key.sessionKey()]) <= 1 {
-			c.stakes = append(c.stakes, "its last window: the session goes too")
+			if peers := m.w.groupPeers(it); len(peers) > 0 {
+				c.stakes = append(c.stakes, "its last window: its group goes too ("+strings.Join(append([]string{it.sess.Name}, peers...), ", ")+")")
+			} else {
+				c.stakes = append(c.stakes, "its last window: the session goes too")
+			}
 		}
 	} else {
 		c.question = "kill session " + it.host.Name + ":" + it.sess.Name + "?"

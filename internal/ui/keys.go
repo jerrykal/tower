@@ -9,6 +9,15 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	if m.note.kind == noteErr {
 		m.note = message{} // an error stays until the next key
 	}
+	if m.width > 0 && m.height > 0 && m.layout().small {
+		// Nothing is drawn but the size: no key acts on what is not seen
+		// (a size not yet known leaves the keys alone).
+		switch k.String() {
+		case "q", "esc", "ctrl+c":
+			return m.leave(k.String() == "esc")
+		}
+		return nil
+	}
 	switch m.mode {
 	case modeHelp:
 		m.mode = m.back
@@ -68,9 +77,12 @@ func (m *Model) normalKey(k tea.KeyPressMsg) tea.Cmd {
 	s := k.String()
 	if m.pendingG {
 		m.pendingG = false
-		if s == "g" {
+		switch s {
+		case "g":
 			m.moveTo(m.focus, 0)
 			return m.moved()
+		case "esc":
+			return nil // cancels the g
 		}
 	}
 	switch s {
@@ -118,6 +130,9 @@ func (m *Model) normalKey(k tea.KeyPressMsg) tea.Cmd {
 	case "1", "2", "3":
 		c := col(s[0] - '1')
 		if c == colWindows && !m.hasWindows() {
+			if e := m.curEntry(); e != nil && e.kind == kDir {
+				m.setErr("a dir has no windows")
+			}
 			return nil
 		}
 		m.focus = c
@@ -378,12 +393,28 @@ func (m *Model) expand() tea.Cmd {
 		m.find.expanded = rowKey{}
 		m.find.build(m.w, m.allDirs, false)
 		m.find.cursor = sk
-	} else {
-		m.find.expanded = sk
-		m.find.build(m.w, m.allDirs, false)
-		if m.find.index(m.find.cursor) < 0 {
-			m.find.cursor = sk
+		return m.moved()
+	}
+	// From "+N more", the cursor goes on to the first window it stood for.
+	more := r.kind == fMore
+	shown := map[rowKey]bool{}
+	for _, o := range m.find.rows {
+		if o.it == r.it && o.kind == fWindow {
+			shown[o.key] = true
 		}
+	}
+	m.find.expanded = sk
+	m.find.build(m.w, m.allDirs, false)
+	if more {
+		for _, o := range m.find.rows {
+			if o.it != nil && o.it.key == sk && o.kind == fWindow && !o.dim && !shown[o.key] {
+				m.find.cursor = o.key
+				return m.moved()
+			}
+		}
+	}
+	if m.find.index(m.find.cursor) < 0 {
+		m.find.cursor = sk
 	}
 	return m.moved()
 }

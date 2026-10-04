@@ -340,6 +340,20 @@ func (w *world) groupPeers(it *item) []string {
 	return out
 }
 
+// groupPeerItems are the rows of the other members of s's group.
+func (w *world) groupPeerItems(it *item) []*item {
+	var out []*item
+	ss := w.sessions[it.host.Name]
+	for _, n := range w.groupPeers(it) {
+		for i := range ss {
+			if ss[i].sess.Name == n {
+				out = append(out, &ss[i])
+			}
+		}
+	}
+	return out
+}
+
 // groupLeader reports whether s lists its group's windows in the finder:
 // the session the others were made from (its name is the group's), or
 // the first member when it is gone.
@@ -413,18 +427,27 @@ func freeName(h *proto.Host, name string) string {
 }
 
 // dupName is the name of session s's grouped duplicate on h: "<name> 2",
-// or the next "<name> <n>" free. A session of that name already in s's
-// group is the duplicate made before, and is returned as found; one of
-// that name not in the group (made by hand, or a dir's session) is passed
-// over, never attached as if it were the duplicate.
+// or the next "<name> <n>" free, <name> being the group's origin (a
+// duplicate's duplicate is "train 3", not "train 2 2"). A session of that
+// name already in s's group, other than s, is the duplicate made before,
+// and is returned as found; one of that name not in the group (made by
+// hand, or a dir's session) is passed over, never attached as if it were
+// the duplicate.
 func dupName(h *proto.Host, s *proto.Session) (name string, found bool) {
+	base := s.Name
+	if s.Group != "" {
+		base = s.Group
+	}
 	for n := 2; ; n++ {
-		c := s.Name + " " + strconv.Itoa(n)
+		c := base + " " + strconv.Itoa(n)
 		i := slices.IndexFunc(h.Sessions, func(o proto.Session) bool { return o.Name == c })
 		if i < 0 {
 			return c, false
 		}
 		o := h.Sessions[i]
+		if o.Name == s.Name {
+			continue
+		}
 		if o.Group != "" && (o.Group == s.Group || o.Group == s.Name) {
 			return c, true
 		}

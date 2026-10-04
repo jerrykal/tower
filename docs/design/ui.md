@@ -178,7 +178,8 @@ every entry), then unreachable hosts' cached sessions and dirs, dimmed.
   on its row by identity while rows come and go.
 - `tab` shows every window of the session (the ones the query does not
   match dimmed) or folds them back; it resets when the query changes. ⏎ on
-  `+N more` is `tab`. ⏎ on a session attaches it at its remembered window.
+  `+N more` is `tab`, the cursor on the first window that row stood for.
+  ⏎ on a session attaches it at its remembered window.
 
 ### The columns
 
@@ -219,7 +220,8 @@ Below 120 columns the preview goes: sessions keep their width and windows
 take the rest, or both shrink in proportion. The focused column borrows up
 to 8 cells from the preview while its visible rows are cut. The finder
 gives its list its widest row (at least 44) and the preview the rest when
-that leaves 40. Under 40×8 the dashboard says it needs more room.
+that leaves 40. Under 40×8 the dashboard says it needs more room, and only `q`, `esc`
+and `^c` act: no key acts on rows it cannot show.
 
 Every cut counts terminal cells: names lose their middle (sliding to show
 the first matched character when the cut would hide it), worktree names
@@ -282,9 +284,10 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   two commands other than a shell still running (`panes`, asked as the
   question opens and added when it answers), the other clients it
   detaches, that a grouped session's windows stay with the group, that a
-  session's last window takes the session, that you are attached to it.
+  session's last window takes the session (a grouped session's, every
+  member of the group, named), that you are attached to it.
   `y` hides the row at once and sends `act kill` (a last window hides its
-  session too); the hide survives every rebuild until the answer; a
+  session and its group's too); the hide survives every rebuild until the answer; a
   failure brings the row back with the error; a success keeps it until a
   view read started after the answer lands. The cursor moves to the
   nearest row.
@@ -295,7 +298,8 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   prompt with the first free `<name>_<n>` (the fzf picker's spelling);
   `r` on a dir asks the name first.
 - **Duplicate** (`D`): `act dup` named `<name> 2` (or the next free
-  `<name> <n>`), then ⏎ on what it made; a session of that name already
+  `<name> <n>`, `<name>` being the group's origin: `D` on `train 2` makes
+  `train 3`), then ⏎ on what it made; a session of that name already
   in the session's group is the duplicate made before and is attached as
   it is, while one of that name outside the group is passed over.
 - **Rename**: prefilled; a session name another session on the host has
@@ -356,8 +360,9 @@ type Model struct {
   that hides the remembered row puts the cursor on the first match
   without forgetting it; memory changes only when a cursor moves. After
   a rebuild a remembered row that went hands its place to the nearest row
-  after it in the old list that is still there, else before it; the
-  finder's cursor the same.
+  after it in the old list that is still there, else before it, a session
+  preferring a session to a dir (the next ⏎ would otherwise make a
+  session); the finder's cursor the same.
 - **Live.** A `watch` command waits on towerd and returns when the
   generation moves; the model then reads `view` and rebuilds, at most once
   per 50ms in a burst, one read in flight at a time. Reads run as

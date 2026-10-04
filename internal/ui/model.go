@@ -177,8 +177,8 @@ type (
 	actMsg        struct {
 		op   string
 		host string
-		key  rowKey // the row a kill hid
-		also rowKey // and its session, for a session's last window
+		key  rowKey   // the row a kill hid
+		also []rowKey // and its session (with its group's), for a session's last window
 		ack  proto.Ack
 		err  error
 		then func(*Model, proto.Ack) tea.Cmd // after a success

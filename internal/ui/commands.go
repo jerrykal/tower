@@ -58,6 +58,9 @@ func (m *Model) enterColumn() tea.Cmd {
 	if w := m.curWindow(); w != nil {
 		return m.enterItem(w)
 	}
+	if len(m.cs[colWindows].in.text) > 0 {
+		m.setErr("no window matches · esc clears")
+	}
 	return nil
 }
 
@@ -270,10 +273,18 @@ func (m *Model) dupSelected() tea.Cmd {
 func (m *Model) kill(it *item) tea.Cmd {
 	t := rowTarget(it)
 	op, host, key := "kill", it.host.Name, it.key
-	var also rowKey
+	var also []rowKey
 	if it.kind == kWindow && len(m.w.windows[it.key.sessionKey()]) <= 1 {
-		also = it.key.sessionKey()
-		m.hidden[also] = hide{}
+		// The group shares its windows: every member goes with the last.
+		also = append(also, it.key.sessionKey())
+		if s := m.w.session(it.key); s != nil {
+			for _, p := range m.w.groupPeerItems(s) {
+				also = append(also, p.key)
+			}
+		}
+		for _, k := range also {
+			m.hidden[k] = hide{}
+		}
 	}
 	config.Mark("dash: kill")
 	m.hidden[key] = hide{}
@@ -291,18 +302,16 @@ func (m *Model) kill(it *item) tea.Cmd {
 func (m *Model) gotAct(msg actMsg) tea.Cmd {
 	config.Mark("dash: " + msg.op + " answered")
 	if msg.err != nil {
-		for _, k := range []rowKey{msg.key, msg.also} {
-			if k != (rowKey{}) {
-				delete(m.hidden, k)
-			}
+		for _, k := range append([]rowKey{msg.key}, msg.also...) {
+			delete(m.hidden, k)
 		}
 		m.setErr(failed(msg.op, msg.host, msg.err))
 		m.rebuild()
 		return m.wantCapture()
 	}
 	note := m.setNote(done(msg.op, msg.host, msg.ack.Note))
-	for _, k := range []rowKey{msg.key, msg.also} {
-		if _, ok := m.hidden[k]; ok && k != (rowKey{}) {
+	for _, k := range append([]rowKey{msg.key}, msg.also...) {
+		if _, ok := m.hidden[k]; ok {
 			// A read in flight may have started before the answer: only
 			// the next one is sure to show the row gone.
 			m.hidden[k] = hide{clearAt: m.seq + 1}
@@ -357,6 +366,10 @@ func (m *Model) toggleHost() tea.Cmd {
 	}
 	h := m.curHost()
 	if h == nil {
+		return nil
+	}
+	if c := m.checks[h.host.Name]; c != nil && c.running {
+		m.setErr(h.host.Name + " is being checked")
 		return nil
 	}
 	if why := m.hostEditable(h); why != "" {
