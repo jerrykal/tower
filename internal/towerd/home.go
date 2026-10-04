@@ -132,14 +132,19 @@ func (h *homeRole) stop() {
 // link, removed ones lose theirs, turned off ones are closed.
 func (h *homeRole) reload() {
 	path := h.d.env.HostsFile()
-	hosts, err := config.LoadHosts(path)
-	if err != nil {
-		h.d.logf("home: %v", err)
-		return
-	}
 	var mod time.Time
 	if st, err := os.Stat(path); err == nil {
 		mod = st.ModTime()
+	}
+	hosts, err := config.LoadHosts(path)
+	if err != nil {
+		// Noted as read, so a file that does not parse is read again only
+		// once it changes, not on every dashboard's view.
+		h.d.mu.Lock()
+		h.hostsMod = mod
+		h.d.mu.Unlock()
+		h.d.logf("home: %v", err)
+		return
 	}
 	var start, stop []*link
 	h.d.mu.Lock()
@@ -150,7 +155,7 @@ func (h *homeRole) reload() {
 		seen[cfg.Name] = true
 		h.order = append(h.order, cfg.Name)
 		l := h.links[cfg.Name]
-		if l != nil && l.cfg != cfg {
+		if l != nil && !l.cfg.Same(cfg) {
 			stop = append(stop, l)
 			l = nil
 		}

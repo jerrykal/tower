@@ -30,6 +30,15 @@ func (h Host) On() bool { return h.Enabled == nil || *h.Enabled }
 // StandbyOn reports whether standby sessions are allowed (the default).
 func (h Host) StandbyOn() bool { return h.Standby == nil || *h.Standby }
 
+// Same reports whether h and o say the same: the optional settings are
+// compared by value (two loads of one file give different pointers).
+func (h Host) Same(o Host) bool {
+	a, b := h, o
+	a.Enabled, b.Enabled = nil, nil
+	a.Standby, b.Standby = nil, nil
+	return a == b && h.On() == o.On() && h.StandbyOn() == o.StandbyOn()
+}
+
 // Target is what ssh is given: SSH, or the name when SSH is empty.
 func (h Host) Target() string {
 	if h.SSH != "" {

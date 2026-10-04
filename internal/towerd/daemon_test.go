@@ -495,3 +495,49 @@ func TestNoServerNeverStarted(t *testing.T) {
 	})
 	w.eventually(3*time.Second, "polling again", func() bool { return n.d.snapshotNow().NoServer })
 }
+
+// A reload rebuilds only the links whose host entry changed: an entry
+// with optional settings (pointers in config.Host) is unchanged when
+// loaded again. A hosts.toml that does not parse is read once, not on
+// every view.
+func TestReloadKeepsUnchangedLinks(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	b := w.node("B", "", "bravo")
+	off := false
+	rb := b.remote()
+	rb.Standby = &off
+	a.hosts(rb)
+	a.start(false)
+	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	linkB := func() *link {
+		a.d.mu.Lock()
+		defer a.d.mu.Unlock()
+		return a.d.home.links["B"]
+	}
+	before := linkB()
+
+	// The same entries written again: a new file, new pointers.
+	time.Sleep(20 * time.Millisecond)
+	a.hosts(rb)
+	a.d.view(proto.ViewArgs{})
+	if linkB() != before {
+		t.Fatal("an unchanged host's link was rebuilt by a reload")
+	}
+	if a.link("B").Status != proto.StatusUp {
+		t.Fatal("B is no longer up")
+	}
+
+	// A file that does not parse: logged once, however many views read.
+	time.Sleep(20 * time.Millisecond)
+	os.WriteFile(a.env.HostsFile(), []byte("[[host]\nname = \n"), 0o600)
+	for range 20 {
+		a.d.view(proto.ViewArgs{})
+	}
+	if n := strings.Count(a.log.String(), "hosts.toml"); n != 1 {
+		t.Fatalf("a bad hosts.toml was read %d times:\n%s", n, a.log.String())
+	}
+	if a.link("B").Status != proto.StatusUp {
+		t.Fatal("a bad hosts.toml dropped the links")
+	}
+}

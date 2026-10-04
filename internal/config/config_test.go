@@ -161,3 +161,21 @@ func TestDefaultName(t *testing.T) {
 		}
 	}
 }
+
+func TestHostSame(t *testing.T) {
+	f1, f2, tr := false, false, true
+	a := Host{Name: "pc", SSH: "pc", Standby: &f1}
+	b := Host{Name: "pc", SSH: "pc", Standby: &f2}
+	if !a.Same(b) {
+		t.Fatal("equal settings behind different pointers are the same")
+	}
+	if a.Same(Host{Name: "pc", SSH: "pc", Standby: &tr}) {
+		t.Fatal("standby differs")
+	}
+	if !(Host{Name: "pc", Enabled: &tr}).Same(Host{Name: "pc"}) {
+		t.Fatal("enabled = true is the default")
+	}
+	if a.Same(Host{Name: "pc", SSH: "pc", Standby: &f1, Tmux: "-L x"}) {
+		t.Fatal("tmux differs")
+	}
+}
