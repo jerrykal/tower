@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // Env is where one towerd (one user, machine and tmux server) keeps its
@@ -192,38 +193,45 @@ func machineID(getenv func(string) string) (string, error) {
 	return "host:" + h, nil
 }
 
-// runDir picks where sockets go: $XDG_RUNTIME_DIR/tower/<machine key>
-// unless TOWER_HOME is set (it is per user, while a TOWER_HOME is one
-// simulated machine of several on one box), else the first candidate short
-// enough for every socket it will hold, each keyed by the state root and
-// machine key.
+// runDir picks where sockets go: the first candidate short enough for every
+// socket it will hold and private to this user, each keyed by the state root
+// and machine key. Session variables (XDG_RUNTIME_DIR, TMPDIR) count only
+// under a TOWER_HOME: an ssh command, a login shell and a tmux server each
+// see their own, and every tower process for one tmux server must reach the
+// same towerd.
 func runDir(getenv func(string) string, e *Env) (string, error) {
-	if x := getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) && e.Home == "" {
-		d := filepath.Join(x, "tower", e.MKey)
-		if fits(d, e.Tag) {
-			return d, os.MkdirAll(d, 0o700)
-		}
-	}
 	uid := strconv.Itoa(os.Getuid())
 	h := shortHash(e.StateRoot+"|"+e.MKey, 8)
-	tmp := getenv("TMPDIR")
-	if tmp == "" {
-		tmp = "/tmp"
+	cands := []string{filepath.Join(e.StateRoot, "run-"+e.MKey)}
+	if tmp := getenv("TMPDIR"); e.Home != "" && filepath.IsAbs(tmp) {
+		cands = append(cands, filepath.Join(tmp, "tower-"+uid, h))
 	}
-	cands := []string{
-		filepath.Join(e.StateRoot, "run-"+e.MKey),
-		filepath.Join(tmp, "tower-"+uid, h),
-		filepath.Join("/tmp", "tower-"+uid, h),
-	}
+	cands = append(cands, filepath.Join("/tmp", "tower-"+uid, h))
 	for _, d := range cands {
-		if fits(d, e.Tag) {
-			if err := os.MkdirAll(d, 0o700); err != nil {
-				continue
-			}
+		if fits(d, e.Tag) && private(d) {
 			return d, nil
 		}
 	}
-	return "", fmt.Errorf("no run directory short enough for a %d-byte socket path (tried %s)", sockMax, strings.Join(cands, ", "))
+	return "", fmt.Errorf("no private run directory short enough for a %d-byte socket path (tried %s)", sockMax, strings.Join(cands, ", "))
+}
+
+// private makes d (0700) and reports whether it and its parent are
+// directories of this user, no symlinks: under /tmp another user could have
+// made either first.
+func private(d string) bool {
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return false
+	}
+	for _, p := range []string{filepath.Dir(d), d} {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.IsDir() {
+			return false
+		}
+		if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != os.Getuid() {
+			return false
+		}
+	}
+	return os.Chmod(d, 0o700) == nil
 }
 
 // fits reports whether every socket under d fits: the towerd socket, and a

@@ -30,12 +30,15 @@ func (e *Env) CMDir() string  // RunDir/cm
   taken as is.
 - **Tag** from the tmux arguments: `-L name` → `L-name`, `-S path` →
   `S-` + 8 hex of the path's hash, nothing → `default`.
-- **Run dir**: `$XDG_RUNTIME_DIR/tower/<mkey>` if set and `TOWER_HOME` is
-  not (several simulated machines on one box must not share it); otherwise the first of
-  `StateRoot/run-<mkey>`, `$TMPDIR/tower-<uid>/<hash>`,
+- **Run dir**: the first of `StateRoot/run-<mkey>`,
+  `$TMPDIR/tower-<uid>/<hash>` (only under a `TOWER_HOME`) and
   `/tmp/tower-<uid>/<hash>` whose longest socket path fits in 104 bytes,
   the longest being a control path (`cm/` + 40 hex for `%C`) plus ssh's 17
-  temporary bytes. Directories are made 0700.
+  temporary bytes, and which is this user's own (it and its parent owned by
+  us, no symlinks; made 0700). Session variables such as `XDG_RUNTIME_DIR`
+  differ between an ssh command, a login shell and the tmux server's
+  environment, and every tower process for one tmux server must reach the
+  same towerd, so only a `TOWER_HOME` (tests, demos) reads `TMPDIR`.
 
 ## Identity
 

@@ -57,6 +57,7 @@ func TestLoadRunDirFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { os.RemoveAll(e.RunDir) })
 	if strings.HasPrefix(e.RunDir, long) {
 		t.Fatalf("run dir %s is too long for sockets", e.RunDir)
 	}
@@ -71,44 +72,58 @@ func TestLoadRunDirFallsBack(t *testing.T) {
 	}
 }
 
-// TestRunDirXDG: $XDG_RUNTIME_DIR holds the sockets of a user's own
-// towerds, one directory per machine key; a TOWER_HOME (one of several
-// machines simulated on one box) never shares it.
-func TestRunDirXDG(t *testing.T) {
-	// Short, as /run/user/<uid> is: sockets have a 104-byte limit.
-	xdg, err := os.MkdirTemp("/tmp", "x")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(xdg) })
-	t.Setenv("XDG_RUNTIME_DIR", xdg)
+// TestRunDirIgnoresSession: an ssh command, a login shell and a tmux
+// server see different XDG_RUNTIME_DIR and TMPDIR, and must still reach one
+// towerd; two TOWER_HOMEs (two machines simulated on one box) never share.
+func TestRunDirIgnoresSession(t *testing.T) {
 	t.Setenv("TOWER_MKEY", "")
-	t.Setenv("TMPDIR", "/tmp")
-	load := func(home, machine string) *Env {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
+	load := func(home, machine, xdg, tmp string) *Env {
 		t.Helper()
 		t.Setenv("TOWER_HOME", home)
 		t.Setenv("TOWER_MACHINE_ID", machine)
-		t.Setenv("HOME", t.TempDir())
-		t.Setenv("XDG_CONFIG_HOME", "")
-		t.Setenv("XDG_STATE_HOME", "")
+		t.Setenv("XDG_RUNTIME_DIR", xdg)
+		t.Setenv("TMPDIR", tmp)
 		e, err := Load([]string{"-L", "x"})
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { os.RemoveAll(e.RunDir) })
 		return e
 	}
-	a, b := load(t.TempDir(), "ma"), load(t.TempDir(), "mb")
+	short, err := os.MkdirTemp("/tmp", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(short) })
+	ssh := load("", "m", "", "")
+	shell := load("", "m", short, short)
+	if ssh.RunDir != shell.RunDir || ssh.Socket() != shell.Socket() || ssh.LockPath() != shell.LockPath() {
+		t.Fatalf("one machine, two run dirs: %s and %s", ssh.RunDir, shell.RunDir)
+	}
+	if other := load("", "m2", "", ""); other.RunDir == ssh.RunDir {
+		t.Fatal("two machine keys share a run dir")
+	}
+	a, b := load(t.TempDir(), "ma", short, "/tmp"), load(t.TempDir(), "mb", short, "/tmp")
 	if a.Socket() == b.Socket() || a.CMDir() == b.CMDir() || a.LockPath() == b.LockPath() {
 		t.Fatalf("two TOWER_HOMEs share %s", a.RunDir)
 	}
-	for _, e := range []*Env{a, b} {
-		if strings.HasPrefix(e.RunDir, xdg) {
-			t.Fatalf("a TOWER_HOME's run dir %s is under XDG_RUNTIME_DIR", e.RunDir)
-		}
+}
+
+// TestRunDirNotASymlink: a run dir candidate someone made a symlink is
+// passed over.
+func TestRunDirNotASymlink(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "run")
+	if err := os.Symlink(t.TempDir(), d); err != nil {
+		t.Fatal(err)
 	}
-	u1, u2 := load("", "m1"), load("", "m2")
-	if u1.RunDir != filepath.Join(xdg, "tower", u1.MKey) || u2.RunDir == u1.RunDir {
-		t.Fatalf("run dirs without TOWER_HOME: %s and %s", u1.RunDir, u2.RunDir)
+	if private(d) {
+		t.Fatal("a symlinked run dir was taken")
+	}
+	if !private(filepath.Join(t.TempDir(), "run")) {
+		t.Fatal("a fresh run dir was refused")
 	}
 }
 
