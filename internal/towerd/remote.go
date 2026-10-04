@@ -288,7 +288,9 @@ func (d *Daemon) expireHomes() {
 // whose loop owns its client, or for a client no loop owns, this
 // machine's home (or the home that connected last).
 func (d *Daemon) view(a proto.ViewArgs) *proto.Dash {
-	d.look(nil)
+	if a.Look {
+		d.look(nil)
+	}
 	g := d.clientReg(a.Client)
 	h := d.homeRole()
 	if h != nil {

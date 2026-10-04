@@ -36,6 +36,7 @@ type Calls struct{ C *client.Client }
 
 func (t Calls) View(ctx context.Context, a proto.ViewArgs) (proto.Dash, error) {
 	var d proto.Dash
+	a.Look = true // a dashboard reading: towerd refreshes git and dirs
 	err := t.C.Call(ctx, proto.CallView, a, &d)
 	return d, err
 }

@@ -73,7 +73,7 @@ func (h *Host) HiddenSessions() []string {
 // TOWER_CLIENT value, or "").
 func (h *Host) View(client string) *proto.Dash {
 	var d proto.Dash
-	if err := h.Call(proto.CallView, proto.ViewArgs{Client: client}, &d); err != nil {
+	if err := h.Call(proto.CallView, proto.ViewArgs{Client: client, Look: true}, &d); err != nil { // as a dashboard reads
 		return nil
 	}
 	return &d

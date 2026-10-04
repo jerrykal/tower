@@ -142,11 +142,23 @@ func TestGitAndDirsReachTheView(t *testing.T) {
 	os.WriteFile(filepath.Join(wt, "b"), []byte("b"), 0o644)
 	start = time.Now()
 	w.eventually(5*time.Second, "B:fix dirty in the home's view", func() bool {
-		b.d.view(proto.ViewArgs{})
+		b.d.view(proto.ViewArgs{Look: true}) // a dashboard on B reading
 		s := sessionIn(a.d.view(proto.ViewArgs{}).View, "B", "fix")
 		return s != nil && s.Git != nil && s.Git.Dirty
 	})
 	t.Logf("a dirty tree on B in the home's view %v after a look", time.Since(start).Round(time.Millisecond))
+	// The loop's own reads (no Look) follow every tmux change and cost no
+	// refresh.
+	b.d.mu.Lock()
+	b.d.lookAt = time.Time{}
+	b.d.mu.Unlock()
+	b.d.view(proto.ViewArgs{Loop: "L"})
+	b.d.mu.Lock()
+	looked := !b.d.lookAt.IsZero()
+	b.d.mu.Unlock()
+	if looked {
+		t.Fatal("a view without Look started a look")
+	}
 	// And B's own dashboards read it from the home's view.
 	w.eventually(2*time.Second, "B:fix dirty on B", func() bool {
 		s := sessionIn(b.d.view(proto.ViewArgs{}).View, "B", "fix")

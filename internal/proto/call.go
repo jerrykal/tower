@@ -180,6 +180,11 @@ type Registered struct {
 type ViewArgs struct {
 	Client string `json:"client,omitempty"`
 	Loop   string `json:"loop,omitempty"`
+	// Look: a dashboard is open and reading. Its towerd refreshes git
+	// state and zoxide dirs (at most every 10s) and tells the other hosts
+	// to. The attach loop's own reads leave it unset: they follow every
+	// tmux change and must not cost a refresh.
+	Look bool `json:"look,omitempty"`
 }
 
 // Dash is what a dashboard shows: the view to draw, where it runs, and the
