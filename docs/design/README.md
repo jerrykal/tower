@@ -15,6 +15,7 @@ internal/stream      one JSON-lines peer: queued writer, requests, ping, stall, 
 internal/transport   ssh: options, commands, failure classes, probe, masters, network watch
 internal/client      calls to the local towerd, ensure (start, upgrade, replace)
 internal/install     install on connect: platform, build source, upload
+internal/dirs        git state of directories, zoxide directories, network mounts
 internal/towerd      the daemon: watch, registrations, keys, remote and home roles
 internal/relay       terminal modes, ptys, the relay, frame writes between sequences
 internal/loop        the attach loop, the attach shim, standbys
@@ -35,6 +36,7 @@ towerd only through `client`.
 | [transport.md](transport.md) | `transport` |
 | [client.md](client.md) | `client` |
 | [install.md](install.md) | `install` |
+| [dirs.md](dirs.md) | `dirs` |
 | [towerd.md](towerd.md) | `towerd` |
 | [relay.md](relay.md) | `relay` |
 | [loop.md](loop.md) | `loop` |
