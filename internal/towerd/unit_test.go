@@ -377,7 +377,7 @@ func TestCacheAgesOnce(t *testing.T) {
 // Of two loops on one host, the one whose client moved becomes the last
 // target, whichever order the clients come in.
 func TestLastFollowsTheClientThatMoved(t *testing.T) {
-	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{})}
+	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{}), env: &config.Env{StateDir: t.TempDir()}}
 	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}}
 	d.home = h
 	s1 := proto.Ref{Host: "home0001", Session: "$1", Label: "s1"}
