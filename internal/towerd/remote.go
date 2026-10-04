@@ -164,13 +164,13 @@ func (d *Daemon) pushState(rec *homeRec) bool {
 		d.mu.Unlock()
 		return false
 	}
-	st := d.stateFor(rec.id)
-	body, _ := json.Marshal(st)
-	if string(body) == rec.lastState {
+	key, _ := json.Marshal(d.stateAt(rec.id, ageRef))
+	if string(key) == rec.lastState {
 		d.mu.Unlock()
 		return false
 	}
-	rec.lastState = string(body)
+	rec.lastState = string(key)
+	st := d.stateFor(rec.id)
 	rec.stateSeq++
 	st.Seq = rec.stateSeq
 	d.mu.Unlock()
@@ -196,9 +196,9 @@ func (d *Daemon) execFor(rec *homeRec, conn *stream.Conn, req *proto.Request) {
 	ack := d.runLocal(req)
 	if mutates(req.Op) && ack.OK {
 		d.mu.Lock()
+		key, _ := json.Marshal(d.stateAt(rec.id, ageRef))
+		rec.lastState = string(key)
 		st := d.stateFor(rec.id)
-		body, _ := json.Marshal(st)
-		rec.lastState = string(body)
 		rec.stateSeq++
 		st.Seq = rec.stateSeq
 		d.mu.Unlock()

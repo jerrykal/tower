@@ -541,3 +541,38 @@ func TestReloadKeepsUnchangedLinks(t *testing.T) {
 		t.Fatal("a bad hosts.toml dropped the links")
 	}
 }
+
+// A re-read that finds nothing new publishes nothing: no watch bump, no
+// state to the home, no view back. Ages counted from read times made
+// every re-read look new.
+func TestUnchangedRereadsSendNothing(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	b := w.node("B", "", "bravo")
+	// A named window keeps its name: tmux's automatic rename (sh → bash
+	// as the shell starts) is a real change.
+	b.tmux("rename-window", "-t", "bravo", "main")
+	a.hosts(b.remote())
+	a.start(false)
+	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	time.Sleep(500 * time.Millisecond) // let the start-up pushes settle
+	states := a.link("B").States
+	b.d.mu.Lock()
+	gen := b.d.gen
+	b.d.mu.Unlock()
+	for range 5 {
+		b.d.w.kick()
+		time.Sleep(150 * time.Millisecond)
+	}
+	b.d.mu.Lock()
+	bumped := b.d.gen - gen
+	b.d.mu.Unlock()
+	if got := a.link("B").States - states; got != 0 || bumped != 0 {
+		t.Fatalf("5 unchanged re-reads sent %d states and bumped B's watchers %d times", got, bumped)
+	}
+	// A real change still goes out.
+	b.tmux("new-session", "-d", "-s", "made")
+	w.eventually(2*time.Second, "the new session reaches the home", func() bool {
+		return viewHas(a.d.view(proto.ViewArgs{}).View, "B", "made")
+	})
+}

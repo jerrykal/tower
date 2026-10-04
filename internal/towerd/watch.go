@@ -42,14 +42,15 @@ type tclient struct {
 }
 
 // key is what a re-read is compared on: an unchanged one is not
-// published again.
+// published again. Ages go in as of ageRef, so the time between two reads
+// is no change.
 func (s *snapshot) key() string {
 	b, _ := json.Marshal(struct {
 		I string
 		N bool
 		S []proto.Session
 		C []tclient
-	}{s.Inst, s.NoServer, s.Sessions, s.Clients})
+	}{s.Inst, s.NoServer, sessionsAt(s, ageRef), s.Clients})
 	return string(b)
 }
 

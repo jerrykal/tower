@@ -64,6 +64,13 @@ func (d *Daemon) snapshotNow() *snapshot {
 func (d *Daemon) firstLook() <-chan struct{} { return d.lookedC }
 
 // sessionsAt are s's sessions with ages moved to at.
+// ageRef is the moment comparison keys evaluate ages at. Evaluated at the
+// epoch, an age is minus the absolute time it counts from, which stays the
+// same from one read to the next while nothing changes; evaluated at
+// time.Now it grows by the milliseconds between reads, so every key would
+// differ and every unchanged re-read, state and view would go out again.
+var ageRef = time.UnixMilli(0)
+
 func sessionsAt(s *snapshot, at time.Time) []proto.Session {
 	out := slices.Clone(s.Sessions)
 	shift := at.Sub(s.At).Milliseconds()
@@ -88,12 +95,15 @@ func (d *Daemon) localHost(now time.Time) proto.Host {
 
 // stateFor is the state message for one home: the sessions, and the
 // clients of that home's loops. Call with mu held.
-func (d *Daemon) stateFor(home string) *proto.State {
+func (d *Daemon) stateFor(home string) *proto.State { return d.stateAt(home, time.Now()) }
+
+// stateAt is stateFor with ages as of at (ageRef for a comparison key).
+func (d *Daemon) stateAt(home string, at time.Time) *proto.State {
 	s := d.snap
 	if s == nil {
-		s = &snapshot{At: time.Now()}
+		s = &snapshot{At: at}
 	}
-	st := &proto.State{Inst: s.Inst, NoServer: s.NoServer, Sessions: sessionsAt(s, time.Now())}
+	st := &proto.State{Inst: s.Inst, NoServer: s.NoServer, Sessions: sessionsAt(s, at)}
 	for _, c := range d.regs.forHome(home) {
 		st.Clients = append(st.Clients, c)
 	}

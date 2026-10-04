@@ -716,12 +716,12 @@ func (l *link) pushView() bool {
 // viewMsgLocked builds the view message for this host; nil when it is
 // unchanged since the last one sent (unless always). Call with mu held.
 func (l *link) viewMsgLocked(always bool) *proto.Msg {
-	v := l.h.buildView(time.Now())
-	body, _ := json.Marshal(v)
-	if !always && string(body) == l.lastView {
+	key, _ := json.Marshal(l.h.buildView(ageRef))
+	if !always && string(key) == l.lastView {
 		return nil
 	}
-	l.lastView = string(body)
+	l.lastView = string(key)
+	v := l.h.buildView(time.Now())
 	l.h.viewSeq++
 	v.Seq = l.h.viewSeq
 	v.Pad = testPad()
