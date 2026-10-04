@@ -44,6 +44,7 @@ type Shim struct {
 	Tmux    []string // nil: TOWER_TMUX
 	Session string
 	Window  string
+	Pane    string // "%1": the pane picked in the dashboard, selected after the window
 	Standby bool
 	Version string
 	Note    string // shown in the new client's status line as it attaches
@@ -63,7 +64,7 @@ func RunShim(s Shim, tty *os.File) error {
 		if err != nil {
 			return err
 		}
-		s.Loop, s.Gen, s.Home, s.Inst, s.Session, s.Window = g.Loop, g.Gen, g.Home, g.Inst, g.Session, g.Window
+		s.Loop, s.Gen, s.Home, s.Inst, s.Session, s.Window, s.Pane = g.Loop, g.Gen, g.Home, g.Inst, g.Session, g.Window, g.Pane
 		if g.MKey != "" {
 			s.MKey = g.MKey
 		}
@@ -151,7 +152,7 @@ func attach(c *client.Client, s Shim) error {
 	tmux.UseBin(reg.TmuxBin)
 	bin := tmux.Bin()
 	argv := append([]string{bin}, c.Env.Tmux...)
-	argv = append(argv, AttachCommand(s.Session, s.Window, s.Inst, s.Note)...)
+	argv = append(argv, AttachCommand(s.Session, s.Window, s.Pane, s.Inst, s.Note)...)
 	config.Mark("shim: exec tmux")
 	env := os.Environ()
 	env = filterEnv(env, "TOWER_CLIENT", "TOWER_MKEY")
@@ -166,15 +167,19 @@ const noteTime = "4000"
 // session killed meanwhile fails visibly; the instance check right
 // after, since tmux skips the rest of a list after a failing command (a
 // restarted server that reused the id detaches at once with exit 43); the
-// window selected by id, so base-index never matters; and the loop's
-// note, if any, in the new client's status line.
-func AttachCommand(session, window, inst, note string) []string {
+// window selected by id, so base-index never matters, then the pane
+// picked, if any; and the loop's note, if any, in the new client's status
+// line.
+func AttachCommand(session, window, pane, inst, note string) []string {
 	a := []string{"attach-session", "-t", session}
 	if inst != "" {
 		a = append(a, ";", "if-shell", "-F", "#{!=:#{pid}:#{start_time},"+inst+"}", "detach-client -E 'exit 43'")
 	}
 	if window != "" {
 		a = append(a, ";", "select-window", "-t", window)
+	}
+	if pane != "" {
+		a = append(a, ";", "select-pane", "-t", pane)
 	}
 	if note != "" {
 		a = append(a, ";", "display-message", "-d", noteTime, tmux.Literal(note))

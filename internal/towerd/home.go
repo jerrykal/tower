@@ -529,6 +529,9 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	if a.Note != "" {
 		shimArgs = append(shimArgs, "--note", a.Note)
 	}
+	if t.Pane != "" {
+		shimArgs = append(shimArgs, "--pane", t.Pane)
+	}
 	if hs.local {
 		p.Argv = append(append([]string{h.d.self}, shimArgs...), "--tmux", strings.Join(h.d.env.Tmux, " "), t.Session)
 		if t.Window != "" {
@@ -541,7 +544,7 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 			args = append(args, t.Window)
 		}
 		p.Argv = h.tr.AttachArgv(lk.cfg, h.towerCommand(lk.cfg, args...))
-		goLine, _ := json.Marshal(proto.GoLine{Loop: l.id, Gen: gen, Home: h.d.id, Inst: hs.inst, MKey: hs.mkey, Session: t.Session, Window: t.Window, Note: a.Note})
+		goLine, _ := json.Marshal(proto.GoLine{Loop: l.id, Gen: gen, Home: h.d.id, Inst: hs.inst, MKey: hs.mkey, Session: t.Session, Window: t.Window, Pane: t.Pane, Note: a.Note})
 		p.Go = string(goLine)
 		p.Key = lk.standbyKey()
 		p.Link = lk.gen

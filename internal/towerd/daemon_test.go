@@ -626,17 +626,19 @@ func TestPrepareCarriesTheNote(t *testing.T) {
 	a.start(false)
 	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
 	note := "it's ended; now on B:bravo"
-	p, err := a.d.home.prepare(context.Background(), proto.PrepareArgs{Loop: "L1", Target: a.ref(b, "bravo"), Note: note})
+	target := a.ref(b, "bravo")
+	target.Pane = "%0" // a pane picked in the dashboard
+	p, err := a.d.home.prepare(context.Background(), proto.PrepareArgs{Loop: "L1", Target: target, Note: note})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var g proto.GoLine
-	if err := json.Unmarshal([]byte(p.Go), &g); err != nil || g.Note != note {
+	if err := json.Unmarshal([]byte(p.Go), &g); err != nil || g.Note != note || g.Pane != "%0" {
 		t.Fatalf("go line %q: %v", p.Go, err)
 	}
 	// The remote line gives the shim the note as one quoted argument.
 	line := p.Argv[len(p.Argv)-1]
-	if !strings.Contains(line, "--note "+transport.ShellQuote(note)) {
+	if !strings.Contains(line, "--note "+transport.ShellQuote(note)) || !strings.Contains(line, "--pane %0") {
 		t.Fatalf("no note in %q", line)
 	}
 	pl, err := a.d.home.prepare(context.Background(), proto.PrepareArgs{Loop: "L1", Target: a.ref(a, "alpha"), Note: note})

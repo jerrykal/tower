@@ -260,8 +260,8 @@ func TestNewInDirDupAndWindows(t *testing.T) {
 	// A new window starts in its session's directory.
 	proj := a.ref(b, "proj")
 	ack = a.d.act(ctx, &proto.Request{Op: proto.OpNew, Kind: proto.KindWindow, Target: proj, Name: "edit"})
-	if !ack.OK || ack.Ref == nil || ack.Ref.Window == "" {
-		t.Fatalf("new window: %+v", ack)
+	if !ack.OK || ack.Ref == nil || ack.Ref.Window == "" || ack.Ref.Session != proj.Session || ack.Ref.Label != "edit" {
+		t.Fatalf("new window: %+v (its ref must name its session, for the dashboard to select it)", ack.Ref)
 	}
 	win := ack.Ref.Window
 	w.eventually(3*time.Second, "the window's shell in the session's directory", func() bool {

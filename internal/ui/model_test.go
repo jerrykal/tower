@@ -585,6 +585,19 @@ func TestPrompts(t *testing.T) {
 		case proto.OpRename:
 			f.update(func(d *proto.Dash) { d.View.Hosts[1].Sessions[0].Name = r.Name })
 		case proto.OpNew:
+			if r.Kind == proto.KindWindow {
+				// As towerd answers: the window's ref names its session.
+				ref := proto.Ref{Host: r.Target.Host, Inst: r.Target.Inst, Session: r.Target.Session, Window: "@9", Label: r.Name}
+				f.update(func(d *proto.Dash) {
+					h := d.View.HostByID(r.Target.Host)
+					for i := range h.Sessions {
+						if h.Sessions[i].ID == r.Target.Session {
+							h.Sessions[i].Windows = append(h.Sessions[i].Windows, proto.Window{ID: "@9", Index: 9, Name: r.Name})
+						}
+					}
+				})
+				return proto.Ack{OK: true, Ref: &ref}
+			}
 			ref := proto.Ref{Host: r.Target.Host, Inst: r.Target.Inst, Session: "$7"}
 			f.update(func(d *proto.Dash) {
 				h := d.View.HostByID(r.Target.Host)
@@ -638,6 +651,10 @@ func TestPrompts(t *testing.T) {
 	press(t, m, "h", "k", "k", "l", "l", "n", "w", "enter")
 	if n := f.actsOf(proto.OpNew); len(n) != 2 || n[1].Kind != proto.KindWindow || n[1].Name != "w" || n[1].Target.Session != "$0" {
 		t.Fatalf("new window %+v", n)
+	}
+	// The new window is selected once a read has it.
+	if w := m.curWindow(); w == nil || w.win.ID != "@9" {
+		t.Fatalf("after a new window the cursor is on %+v", w)
 	}
 }
 

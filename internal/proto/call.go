@@ -315,6 +315,7 @@ type GoLine struct {
 	MKey    string `json:"mkey,omitempty"`
 	Session string `json:"s"`
 	Window  string `json:"w,omitempty"`
+	Pane    string `json:"p,omitempty"`
 	Note    string `json:"note,omitempty"` // the loop's note for the new client's status line
 }
 

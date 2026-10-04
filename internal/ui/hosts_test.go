@@ -19,6 +19,7 @@ import (
 // fakeHosts is a host list in memory whose checks pass unless the host
 // is named in fail.
 type fakeHosts struct {
+	slow    time.Duration // Add takes this long, past its context (an install runs on its own)
 	mu      sync.Mutex
 	list    []config.Host
 	aliases []string
@@ -46,6 +47,7 @@ func (f *fakeHosts) Check(ctx context.Context, h config.Host, step func(hosts.St
 
 func (f *fakeHosts) Add(ctx context.Context, h config.Host, step func(hosts.Step)) ([]transport.Check, error) {
 	c := f.Check(ctx, h, step)
+	time.Sleep(f.slow)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.list = append(f.list, h)
@@ -114,6 +116,24 @@ func TestAddHost(t *testing.T) {
 	press(t, m, "ctrl+u", "enter")
 	if !slices.Contains(fh.edits, "add box me@box.lan:2222") {
 		t.Fatalf("edits %q", fh.edits)
+	}
+}
+
+// A host whose checks end after their 15s (an install runs on a context
+// of its own) still gets its result: the row stops checking.
+func TestAddHostSlowerThanTheChecks(t *testing.T) {
+	old := checkWait
+	checkWait = 20 * time.Millisecond
+	defer func() { checkWait = old }()
+	for i := range 10 {
+		m, _, _ := newTestModel(t, testDash(), false)
+		fh := &fakeHosts{list: []config.Host{{Name: "B"}, {Name: "C"}, {Name: "D"}}, aliases: []string{"workbox"}, slow: 80 * time.Millisecond}
+		m.c.Hosts = fh
+		press(t, m, "ctrl+l", "a", "w", "o", "r", "k", "enter")
+		drive(t, m, nil)
+		if c := m.checks["workbox"]; c == nil || c.running {
+			t.Fatalf("run %d: the row is still checking: %+v", i, c)
+		}
 	}
 }
 

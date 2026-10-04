@@ -305,7 +305,7 @@ func (d *Daemon) newLocal(req *proto.Request, ctl *tmux.Control, left time.Durat
 	if ctl != nil {
 		var line string
 		if window {
-			line = "new-window -d -P -F " + tmux.Quote("#{window_id}\t#{window_name}") + " -t " + tmux.Quote(req.Target.Session+":")
+			line = "new-window -d -P -F " + tmux.Quote("#{session_id}\t#{window_id}\t#{window_name}") + " -t " + tmux.Quote(req.Target.Session+":")
 			if req.Name != "" {
 				line += " -n " + tmux.Arg(req.Name)
 			}
@@ -374,15 +374,20 @@ func (d *Daemon) startDir(dir string, window bool) (string, error) {
 	return dir, nil
 }
 
-// madeRef turns "<id>\t<name>" from new-session or new-window into a ref.
+// madeRef turns new-session's "<session id>\t<name>", or new-window's
+// "<session id>\t<window id>\t<name>", into a ref: a window's names its
+// session too, so the dashboard can find and select its row.
 func (d *Daemon) madeRef(out string, window bool) *proto.Ref {
-	id, name, _ := strings.Cut(strings.TrimSpace(out), "\t")
-	r := &proto.Ref{Host: d.id, Name: d.name, Inst: d.snapshotNow().Inst, Label: name}
+	r := &proto.Ref{Host: d.id, Name: d.name, Inst: d.snapshotNow().Inst}
+	out = strings.TrimSpace(out)
 	if window {
-		r.Window = id
-	} else {
-		r.Session = id
+		f := strings.SplitN(out, "\t", 3)
+		if len(f) == 3 {
+			r.Session, r.Window, r.Label = f[0], f[1], f[2]
+		}
+		return r
 	}
+	r.Session, r.Label, _ = strings.Cut(out, "\t")
 	return r
 }
 

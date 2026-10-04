@@ -13,15 +13,15 @@ import (
 )
 
 func TestAttachCommand(t *testing.T) {
-	got := AttachCommand("$3", "@7", "123:456", "")
+	got := AttachCommand("$3", "@7", "", "123:456", "")
 	want := []string{"attach-session", "-t", "$3", ";", "if-shell", "-F", "#{!=:#{pid}:#{start_time},123:456}", "detach-client -E 'exit 43'", ";", "select-window", "-t", "@7"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("%q", got)
 	}
-	if got := AttachCommand("$3", "", "", ""); !slices.Equal(got, []string{"attach-session", "-t", "$3"}) {
+	if got := AttachCommand("$3", "", "", "", ""); !slices.Equal(got, []string{"attach-session", "-t", "$3"}) {
 		t.Fatalf("%q", got)
 	}
-	got = AttachCommand("$3", "", "", "tower: C:#1 ended")
+	got = AttachCommand("$3", "", "", "", "tower: C:#1 ended")
 	want = []string{"attach-session", "-t", "$3", ";", "display-message", "-d", "4000", "tower: C:##1 ended"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("%q", got)
@@ -145,5 +145,13 @@ func TestStandbyExitsWithoutHeartbeats(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("a standby without heartbeats kept waiting")
+	}
+}
+
+func TestAttachCommandSelectsThePane(t *testing.T) {
+	got := AttachCommand("$3", "@7", "%12", "", "")
+	want := []string{"attach-session", "-t", "$3", ";", "select-window", "-t", "@7", ";", "select-pane", "-t", "%12"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("%q", got)
 	}
 }

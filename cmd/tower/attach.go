@@ -21,6 +21,7 @@ func cmdAttach(args []string) error {
 	fs.StringVar(&s.MKey, "mkey", "", "this machine's key, as its towerd told the home")
 	fs.BoolVar(&s.Standby, "standby", false, "wait for the attach's go line first")
 	fs.StringVar(&s.Note, "note", "", "a note for the new client's status line")
+	fs.StringVar(&s.Pane, "pane", "", "the pane to select (%id)")
 	var tm tmuxFlag
 	fs.Var(&tm, "tmux", "tmux arguments selecting the server")
 	pos, err := parseFlags(fs, args)
