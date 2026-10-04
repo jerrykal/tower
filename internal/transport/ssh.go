@@ -219,10 +219,11 @@ func WithHome(home, line string) string {
 
 var plainArg = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
 
-// ShellQuote quotes s for a POSIX shell. A single quote inside is written
-// '"'"' (close, a double-quoted quote, reopen) rather than '\”: fish
-// reads a backslash before a quote as an escape even inside single
-// quotes, and remote lines pass through the user's login shell (see Sh).
+// ShellQuote quotes s for a POSIX shell. A single quote inside closes the
+// quoting, comes as a double-quoted quote, and reopens it, with no
+// backslash: fish reads a backslash before a quote as an escape even
+// inside single quotes, and remote lines pass through the user's login
+// shell (see Sh).
 func ShellQuote(s string) string {
 	if plainArg.MatchString(s) {
 		return s
