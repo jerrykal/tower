@@ -899,6 +899,23 @@ func (h *homeRole) serveRelay(l *link, req *proto.Request) {
 
 // netChanged: a stalled host not heard since is given up at once, and so
 // is one that stalls later without being heard; a down host retries now.
+// retryHost connects to host now (⏎ on it in a dashboard), with its
+// backoff afresh; the other hosts are left as they are.
+func (h *homeRole) retryHost(name string) error {
+	h.d.mu.Lock()
+	l := h.links[name]
+	h.d.mu.Unlock()
+	if l == nil {
+		return fmt.Errorf("no host %q in the list", name)
+	}
+	if !l.cfg.On() {
+		return fmt.Errorf("%s is turned off", name)
+	}
+	l.logf("retry asked")
+	l.retry()
+	return nil
+}
+
 func (h *homeRole) netChanged(why string) {
 	h.d.mu.Lock()
 	h.netAt = time.Now()

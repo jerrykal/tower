@@ -30,6 +30,7 @@ type fakeTowerd struct {
 	views   []proto.ViewArgs
 	watches int
 	retries int
+	retried []string // hosts a retry named
 	// answer answers an act; nil answers OK.
 	answer func(proto.Request) proto.Ack
 	client *client.Client
@@ -109,9 +110,12 @@ func (f *fakeTowerd) serve(c net.Conn, done chan struct{}) {
 			f.mu.Unlock()
 		}
 		result = proto.WatchResult{Gen: gen}
-	case proto.CallNetChange:
+	case proto.CallRetry:
+		var a proto.RetryArgs
+		json.Unmarshal(call.Args, &a)
 		f.mu.Lock()
 		f.retries++
+		f.retried = append(f.retried, a.Host)
 		f.mu.Unlock()
 		result = struct{}{}
 	case proto.CallAct:

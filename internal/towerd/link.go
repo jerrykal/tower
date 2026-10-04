@@ -149,13 +149,14 @@ type link struct {
 	givenUp  string        // why the home gave the current stream up
 	resetC   chan struct{} // closed when a master reset under way is done
 	kickC    chan struct{}
+	retryC   chan struct{} // the user asked: connect now, backoff afresh
 	stopC    chan struct{}
 	stopOnce sync.Once
 	running  bool
 }
 
 func newLink(h *homeRole, cfg config.Host) *link {
-	l := &link{h: h, cfg: cfg, status: proto.StatusConnecting, kickC: make(chan struct{}, 1), stopC: make(chan struct{})}
+	l := &link{h: h, cfg: cfg, status: proto.StatusConnecting, kickC: make(chan struct{}, 1), retryC: make(chan struct{}, 1), stopC: make(chan struct{})}
 	if !cfg.On() {
 		l.status = proto.StatusOff
 	}
@@ -278,6 +279,15 @@ func (l *link) stopped() bool {
 	}
 }
 
+// retry is the user asking for this host now (⏎ on it in the dashboard):
+// the wait ends and the backoff starts afresh.
+func (l *link) retry() {
+	select {
+	case l.retryC <- struct{}{}:
+	default:
+	}
+}
+
 // kick ends a backoff wait at once.
 func (l *link) kick() {
 	select {
@@ -347,6 +357,8 @@ func (l *link) run() {
 			select {
 			case <-t.C:
 			case <-l.kickC:
+			case <-l.retryC:
+				backoff = base
 			case <-l.stopC:
 				t.Stop()
 				return

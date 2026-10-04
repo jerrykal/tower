@@ -650,3 +650,27 @@ func TestPrepareCarriesTheNote(t *testing.T) {
 		t.Fatalf("local argv %q", pl.Argv)
 	}
 }
+
+// retry connects one host now, its backoff afresh, leaving the others.
+func TestRetryOneHost(t *testing.T) {
+	w := newWorld(t)
+	t.Setenv("TOWER_BACKOFF_BASE", "20s")
+	t.Setenv("TOWER_BACKOFF_CAP", "60s")
+	a := w.node("A", "", "alpha")
+	a.hosts(config.Host{Name: "X", SSH: "X"}, config.Host{Name: "Y", SSH: "Y"})
+	a.start(false)
+	w.eventually(3*time.Second, "X and Y down", func() bool {
+		return a.link("X").Status == proto.StatusDown && a.link("Y").Status == proto.StatusDown
+	})
+	x, y := a.link("X").Attempts, a.link("Y").Attempts
+	if err := a.d.home.retryHost("X"); err != nil {
+		t.Fatal(err)
+	}
+	w.eventually(2*time.Second, "X tried again", func() bool { return a.link("X").Attempts > x })
+	if a.link("Y").Attempts != y {
+		t.Fatal("a retry of X tried Y too")
+	}
+	if err := a.d.home.retryHost("nosuch"); err == nil {
+		t.Fatal("a host not in the list")
+	}
+}

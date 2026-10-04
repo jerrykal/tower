@@ -41,6 +41,7 @@ const (
 	CallWake       = "wake"
 	CallNetChange  = "netchange"
 	CallReload     = "reload"
+	CallRetry      = "retry" // RetryArgs: connect to one host now
 	// CallPlant stores a switch as if a dashboard had asked for it; only
 	// with TOWER_TEST_HOOKS set (the scenario suite).
 	CallPlant = "plant"
@@ -295,6 +296,11 @@ type Offer struct {
 	Key  string   `json:"key"`
 	Argv []string `json:"argv"`
 	RTT  int64    `json:"rtt,omitempty"`
+}
+
+// RetryArgs names the host (its label) to connect to now.
+type RetryArgs struct {
+	Host string `json:"host"`
 }
 
 // LastArgs asks where tower last goes for Client.

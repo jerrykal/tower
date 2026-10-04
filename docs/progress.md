@@ -132,8 +132,7 @@ To resume:
    old towerd keeps running (and the same on remote hosts through the
    bridge). Replace when the versions differ and the running one is not
    newer; test it.~~ Done: `proto.Replaces`, V09.
-3. towerd gaps the UI agent named: no call to retry one host (⏎ on a
-   down host uses netchange, which retries all).
+3. ~~A call to retry one host.~~ Done: `retry`, used by ⏎ on a down host.
 4. The final report (here and as an artifact), then step 5 with the user.
 
 ## Blocked

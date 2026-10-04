@@ -23,7 +23,7 @@ type Towerd interface {
 	Watch(ctx context.Context, gen uint64) (uint64, error)
 	Act(ctx context.Context, r proto.Request) (proto.Ack, error)
 	// Retry asks the home to retry every host that is down now.
-	Retry(ctx context.Context) error
+	Retry(ctx context.Context, host string) error
 }
 
 // Tmux runs one tmux command on the dashboard's own server.
@@ -53,8 +53,8 @@ func (t Calls) Act(ctx context.Context, r proto.Request) (proto.Ack, error) {
 	return a, err
 }
 
-func (t Calls) Retry(ctx context.Context) error {
-	return t.C.Call(ctx, proto.CallNetChange, nil, nil)
+func (t Calls) Retry(ctx context.Context, host string) error {
+	return t.C.Call(ctx, proto.CallRetry, proto.RetryArgs{Host: host}, nil)
 }
 
 // Conn is one dashboard's link to the world: its towerd, the tmux server

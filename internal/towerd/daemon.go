@@ -502,6 +502,16 @@ func (d *Daemon) dispatch(ctx context.Context, call *proto.Call) (any, error) {
 			return nil, err
 		}
 		return d.act(ctx, &r), nil
+	case proto.CallRetry:
+		var a proto.RetryArgs
+		if err := decode(call, &a); err != nil {
+			return nil, err
+		}
+		h := d.homeRole()
+		if h == nil {
+			return nil, errors.New("this towerd is not a home: no hosts to retry")
+		}
+		return struct{}{}, h.retryHost(a.Host)
 	case proto.CallWake, proto.CallNetChange, proto.CallReload:
 		h := d.homeRole()
 		if call.Op == proto.CallReload {

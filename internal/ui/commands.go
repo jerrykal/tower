@@ -119,8 +119,8 @@ func (m *Model) enterHost(h *item) tea.Cmd {
 	return nil
 }
 
-// retryHost is ⏎ on a host that is down: every down host is retried now
-// (towerd's network-change nudge).
+// retryHost is ⏎ on a host that is down: that host is tried again now,
+// its backoff afresh.
 func (m *Model) retryHost(h *proto.Host) tea.Cmd {
 	if !m.onHome() {
 		m.setErr(h.Name + " is " + hostStatus(h))
@@ -128,9 +128,9 @@ func (m *Model) retryHost(h *proto.Host) tea.Cmd {
 	}
 	note := h.Name + " is " + hostStatus(h) + " · retrying now"
 	m.setBusy(note)
-	c, ctx := m.c, m.ctx
+	c, ctx, name := m.c, m.ctx, h.Name
 	return func() tea.Msg {
-		return hostEditMsg{note: note, err: c.Towerd.Retry(ctx)}
+		return hostEditMsg{note: note, err: c.Towerd.Retry(ctx, name)}
 	}
 }
 

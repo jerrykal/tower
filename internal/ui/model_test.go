@@ -561,8 +561,8 @@ func TestDownHost(t *testing.T) {
 	m, f, _ := newTestModel(t, testDash(), false)
 	// ⏎ on a down host's cached session retries the host now.
 	press(t, m, "c", "h", "a", "r", "enter")
-	if !strings.Contains(m.note.text, "C is down: timed out") || len(f.actsOf(proto.OpSwitch)) != 0 || f.retries != 1 {
-		t.Fatalf("note %q retries %d", m.note.text, f.retries)
+	if !strings.Contains(m.note.text, "C is down: timed out") || len(f.actsOf(proto.OpSwitch)) != 0 || f.retries != 1 || f.retried[0] != "C" {
+		t.Fatalf("note %q retries %d %v", m.note.text, f.retries, f.retried)
 	}
 	press(t, m, "ctrl+x")
 	if m.note.text != "C is down: timed out" || len(f.actsOf(proto.OpKill)) != 0 || m.mode != modeFind {
