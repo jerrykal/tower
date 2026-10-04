@@ -8,8 +8,8 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 | --- | --- |
 | 1. Skeleton, packaging, v0.0.0 | done |
 | 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; reviewed (`/code-review xhigh`) and every finding fixed |
-| 3. Install on connect | built (I01–I05 pass); `/code-review high` and R03 on real hosts to do |
-| 4. Dashboard (Atlas) | not started |
+| 3. Install on connect | done: reviewed (`/code-review high`), its 10 findings fixed, R03 passes on `pc` and `831` |
+| 4. Dashboard (Atlas) | in progress: two agents (towerd data sources; the Atlas UI) |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
 
 ## Step 2
@@ -80,10 +80,15 @@ Paused here at the user's request, at a clean point: everything on
 `main` is built, tested and pushed. In order:
 
 1. ~~Fix the seven towerd findings.~~ Done.
-2. `/code-review high` for step 3 (install on connect), then fix.
-3. The real hosts from the main session only: R01, R02, and R03 (install
-   into `~/.cache/tower-test/harness/` with `TOWER_INSTALL_DIR`), under
-   CLAUDE.md's safety rules.
+2. ~~`/code-review high` for step 3, then fix.~~ Done (8a3c49d): remote
+   lines through `sh -c` (fish/csh login shells), a verified upload (size
+   and version), a platform directory, `current` never downgraded,
+   checksums per archive, only successful installs counted, a content
+   hash in dirty dev versions, one ssh runner adapter.
+3. ~~The real hosts.~~ Done: R01, R02, R03 pass on `pc` and `831` (see
+   scenarios.md); hosts clean after. R02 found standby shims left waiting
+   behind Tailscale SSH; standbys now exit 30s after their loop's
+   heartbeats stop (37896c5). A host may set `home` (TOWER_HOME there).
 4. Step 4: the Atlas dashboard (`docs/design/ui.md`, stage 2), then
    `/code-review medium`.
 5. The final report (here and as an artifact), then step 5 with the user.
