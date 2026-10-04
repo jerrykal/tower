@@ -376,4 +376,3 @@ func reap(s *relay.Session) {
 	}
 	s.Close()
 }
-
