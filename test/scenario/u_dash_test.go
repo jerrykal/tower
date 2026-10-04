@@ -65,6 +65,9 @@ func TestU01(t *testing.T) {
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	term.OpenDash()
+	// The finder's preview: the window's layout and its pane.
+	term.Wait(`layout · 1:`, 3*time.Second)
+	term.Wait(`active · \d+×\d+`, 3*time.Second)
 	term.Slow("C-l")
 	term.Wait(`NORMAL`, 3*time.Second)
 	for _, re := range []string{`\[1\] hosts`, `\[2\] sessions`, `\[3\] windows`, `local server`} {
@@ -162,14 +165,8 @@ func TestU03(t *testing.T) {
 	// What runs there, when towerd answers panes.
 	b.MustTmux("send-keys", "-t", "victim:2.1", "sleep 300", "Enter")
 	time.Sleep(300 * time.Millisecond)
-	bid := w.Link(a, "B").ID
-	if ack, _ := a.Act("", proto.Request{Op: proto.OpPanes, Target: proto.Ref{Host: bid, Session: b.SessionID("victim")}, Kind: proto.KindSession}, 0); ack != nil && ack.OK {
-		out, _ := b.UI(cl, nil, "ask-kill", "B", "victim")
-		if !strings.Contains(out, "sleep running") {
-			t.Fatalf("ask-kill with a command running: %q", out)
-		}
-	} else {
-		t.Logf("towerd answers no panes yet (%+v): the question leaves out what runs", ack)
+	if out, _ := b.UI(cl, nil, "ask-kill", "B", "victim"); !strings.Contains(out, "sleep running") {
+		t.Fatalf("ask-kill with a command running: %q", out)
 	}
 	// In the popup: n keeps it, y kills it.
 	term.OpenDash()
@@ -245,33 +242,60 @@ func TestU05(t *testing.T) {
 	w.WaitLoop(a, "^B:bravo 2", 6*time.Second)
 }
 
-// U06: a session in a dir: named after it, made there and attached; a
-// taken name takes the first free "<name> <n>". With zoxide dirs in the
-// view, ⏎ on a dir row does the same from the dashboard.
+// U06: zoxide dirs in the dashboard: git roots after the sessions, every
+// entry after ^g; ⏎ on a dir makes a session named after it there and
+// attaches it; a taken name opens the prompt with the first free
+// "<name> <n>"; `tower _ui open` does the same by path.
 func TestU06(t *testing.T) {
 	w := NewWorld(t, "u06")
+	w.repo("src/proj")
+	w.repo("work/proj")
+	os.MkdirAll(filepath.Join(w.UserHome, "notes"), 0o755)
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"proj"})
+	b := w.Host("B", []string{"bravo"}, Zoxide("~/src/proj", "~/work/proj", "~/notes"))
 	stdSetup(w, a, b)
-	w.LoopTo("t", a, nil, "alpha", "^A:alpha")
-	dir := filepath.Join(w.Dir, "work", "proj")
+	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
+	w.Eventually(6*time.Second, "B's dirs", func() bool {
+		h := HostIn(&a.View("").View, "B")
+		return h != nil && len(h.Dirs) == 3
+	})
+	// A git root, typed and ⏎: a session there, attached.
+	term.OpenDash()
+	term.Type("src proj")
+	term.Wait(`B {2,}\x{f114} ~/src/proj +main`, 3*time.Second)
+	term.Slow("Enter")
+	w.WaitLoop(a, "^B:proj(:@|$)", 6*time.Second)
+	if p := sessionFormat(b, "proj", "#{session_path}"); p != filepath.Join(w.UserHome, "src", "proj") {
+		t.Fatalf("proj is in %q", p)
+	}
+	// ~/notes is no git root: listed after ^g only.
+	term.OpenDash()
+	term.Type("notes")
+	term.Wait(`no match`, 3*time.Second)
+	term.Slow("C-g")
+	term.Wait(`B {2,}\x{f114} ~/notes`, 3*time.Second)
+	term.Slow("C-g", "C-u")
+	// A taken name: the prompt, with the first free one.
+	term.Type("work proj")
+	term.Wait(`B {2,}\x{f114} ~/work/proj`, 3*time.Second)
+	term.Slow("Enter")
+	term.Wait(`NEW SESSION`, 3*time.Second)
+	term.Wait(`proj is taken on B`, 3*time.Second)
+	term.Slow("Enter")
+	w.WaitLoop(a, "^B:proj 2(:@|$)", 6*time.Second)
+	if p := sessionFormat(b, "proj 2", "#{session_path}"); p != filepath.Join(w.UserHome, "work", "proj") {
+		t.Fatalf("proj 2 is in %q", p)
+	}
+	// By path, from a script.
+	dir := filepath.Join(w.Dir, "elsewhere", "proj")
 	os.MkdirAll(dir, 0o700)
-	cl := a.ClientIDs("alpha")[0]
-	out, err := a.UI(cl, nil, "open", "B", dir)
-	if err != nil || out != "open on B: done (proj 2)\n" {
+	cl := b.ClientIDs("proj 2")[0]
+	if out, err := b.UI(cl, nil, "open", "B", dir); err != nil || out != "open on B: done (proj 3)\n" {
 		t.Fatalf("open: %v %q", err, out)
 	}
-	w.WaitLoop(a, "^B:proj 2", 6*time.Second)
-	if p := sessionFormat(b, "proj 2", "#{session_path}"); p != dir {
-		t.Fatalf("proj 2 is in %q, want %q", p, dir)
-	}
-	v := a.View("")
-	dirs := 0
-	for _, h := range v.View.Hosts {
-		dirs += len(h.Dirs)
-	}
-	if dirs == 0 {
-		t.Log("towerd lists no zoxide dirs yet: ⏎ on a dir row is covered by the ui package's tests")
+	w.WaitLoop(a, "^B:proj 3(:@|$)", 6*time.Second)
+	if p := sessionFormat(b, "proj 3", "#{session_path}"); p != dir {
+		t.Fatalf("proj 3 is in %q, want %q", p, dir)
 	}
 }
 
