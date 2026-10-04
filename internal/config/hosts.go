@@ -22,6 +22,9 @@ type Host struct {
 	Enabled           *bool  `toml:"enabled,omitempty"`
 	Standby           *bool  `toml:"standby,omitempty"`
 	ObscureKeystrokes bool   `toml:"obscure_keystrokes,omitempty"`
+	// Home is TOWER_HOME for tower on that host: the real-host tests and
+	// demos keep its state apart from the user's own tower there.
+	Home string `toml:"home,omitempty"`
 }
 
 // On reports whether the host is enabled (the default).

@@ -95,6 +95,7 @@ func hostAdd(env *config.Env, args []string, out io.Writer) error {
 	if h.Tower != "" {
 		towerCmd = transport.RemoteCommand(h.Tower)
 	}
+	towerCmd = transport.WithHome(h.Home, towerCmd)
 	failed := false
 	checks := ssh.CheckHost(ctx, h, towerCmd)
 	if last := &checks[len(checks)-1]; last.Name == "tower" && !last.OK && h.Tower == "" {

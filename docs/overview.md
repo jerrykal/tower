@@ -67,8 +67,9 @@ tmux wherever the network allows, and the same habits.
 - `~/.config/tower/hosts.toml` is the list, hand-editable. Per host: `name`
   (label), `ssh` (any target ssh accepts), `enabled`, and the optional
   `tmux` (extra tmux arguments, e.g. `-L work`), `tower` (a binary the user
-  manages there, which turns off install on connect), `standby` and
-  `obscure_keystrokes`. The local server is implicit.
+  manages there, which turns off install on connect), `standby`,
+  `obscure_keystrokes`, and `home` (`TOWER_HOME` for tower on that host,
+  so tests and demos keep its state apart from the user's own). The local server is implicit.
 
   ```toml
   [[host]]

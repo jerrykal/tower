@@ -181,6 +181,22 @@ func RemoteCommand(tower string, args ...string) string {
 	return b.String()
 }
 
+// WithHome prefixes a remote command line with TOWER_HOME=home (a path
+// starting with ~/ is the host's home), or returns it as it is when home
+// is empty.
+func WithHome(home, line string) string {
+	if home == "" {
+		return line
+	}
+	var v string
+	if rest, ok := strings.CutPrefix(home, "~/"); ok {
+		v = `"$HOME"/` + ShellQuote(rest)
+	} else {
+		v = ShellQuote(home)
+	}
+	return "TOWER_HOME=" + v + " " + line
+}
+
 var plainArg = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
 
 // ShellQuote quotes s for a POSIX shell.

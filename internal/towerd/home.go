@@ -983,9 +983,9 @@ func (h *homeRole) abortSwitches(hostID, why string) {
 // by its exact path.
 func (h *homeRole) towerCommand(c config.Host, args ...string) string {
 	if c.Tower != "" {
-		return transport.RemoteCommand(c.Tower, args...)
+		return transport.WithHome(c.Home, transport.RemoteCommand(c.Tower, args...))
 	}
-	return h.inst.Command(args...)
+	return transport.WithHome(c.Home, h.inst.Command(args...))
 }
 
 // sessionOf names r's session (host:session), without its window: what a

@@ -122,3 +122,18 @@ func TestTmuxAtLeast(t *testing.T) {
 		}
 	}
 }
+
+func TestWithHome(t *testing.T) {
+	if got := WithHome("", "tower x"); got != "tower x" {
+		t.Fatal(got)
+	}
+	line := WithHome("~/.cache/tower-test/harness/home", `sh -c 'echo "$TOWER_HOME"'`)
+	out, err := exec.Command("/bin/sh", "-c", line).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	if strings.TrimSpace(string(out)) != home+"/.cache/tower-test/harness/home" {
+		t.Fatalf("%s gave %q", line, out)
+	}
+}
