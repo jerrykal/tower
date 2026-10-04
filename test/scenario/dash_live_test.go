@@ -341,7 +341,7 @@ func TestLD03(t *testing.T) {
 		return n
 	}
 	w.Eventually(3*time.Second, "three spam sessions killed", func() bool { return spam() <= 2 })
-	rows := regexp.MustCompile(`C {2,}spam\d( |$)`)
+	rows := regexp.MustCompile(`C {3,}\S spam\d( |$)`) // as rowRe
 	w.Eventually(3*time.Second, "two spam rows", func() bool { return len(rows.FindAllString(term.Screen(), -1)) == 2 })
 	time.Sleep(500 * time.Millisecond)
 	if n := spam(); n != 2 || !c.hasSession("charlie") {

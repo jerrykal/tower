@@ -217,7 +217,7 @@ every entry), then unreachable hosts' cached sessions and dirs, dimmed.
 - **layout**: the selected window's panes at their real proportions
   (capture's `Panes`), with command, path and size, the picked pane in
   iris; under it the picked pane's capture, its last lines, with `J K
-  picks a pane` when there are several. A dir shows its
+  picks a pane` when there are several. A dir shows, in a box, its
   branch and the session ⏎ would make; a host its OS, tmux, tower and
   status.
 
@@ -247,7 +247,10 @@ Rosé Pine (main). The focused column's cursor is an iris `▌` on the
 overlay colour, its name bold and its icon or window number iris; the
 other columns' remembered rows a grey `▌` on the surface colour. Rules
 and dividers are highlight-med; a column header's label is iris and bold
-when focused. The finder's window rows carry their bell or activity, and
+when focused. Every cell sits on the palette's base colour, whatever the
+terminal's background. The finder's rows lead with the host's OS logo
+(coloured as in the hosts column) and the session's icon; its window
+rows carry their bell or activity, and
 `+N more · tab`. `?` lists keys in bold and the markers in their own
 colours, in two columns from 100 cells wide. Matches rose, bold, underlined; love (red) only for
 problems. Glyphs are JetBrains Mono Nerd Font's: tmux session `` and dir

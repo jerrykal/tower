@@ -291,25 +291,29 @@ func (m *Model) drawPanes(cv *canvas, x, y, w, h int, panes []proto.Pane, picked
 	}
 }
 
-// drawDirPreview is a dir's: its branch and what ⏎ would make.
+// drawDirPreview is a dir's, in a box: its path, branch and what ⏎ would
+// make.
 func (m *Model) drawDirPreview(cv *canvas, x, y, w, h int, d *item) {
-	if h < 1 {
+	type line struct {
+		text string
+		st   style
+	}
+	lines := []line{{glyphDir + " " + fitPath(d.dir.Path, max(w-6, 1), nil).String(), sPlain.Bold()}}
+	if g := gitText(d.dir.Git); g != "" {
+		lines = append(lines, line{glyphBranch + " " + g, sGold})
+	}
+	if d.dir.Net {
+		lines = append(lines, line{"on a network mount: not checked", sMuted})
+	}
+	name := freeName(d.host, dirSessionName(d.dir.Path))
+	lines = append(lines, line{}, line{"⏎ new session " + name + " on " + d.host.Name, sSubtle})
+	bh := min(len(lines)+2, h)
+	if bh < 3 || w < 6 {
 		return
 	}
-	cv.put(x, y, fitPath(d.dir.Path, w, nil).String(), sPlain, w)
-	line := y + 1
-	if g := gitText(d.dir.Git); g != "" && line < y+h {
-		cv.put(x, line, glyphBranch+" "+g, sGold, w)
-		line++
-	}
-	if d.dir.Net && line < y+h {
-		cv.put(x, line, "on a network mount: not checked", sMuted, w)
-		line++
-	}
-	line++
-	if line < y+h {
-		name := freeName(d.host, dirSessionName(d.dir.Path))
-		cv.put(x, line, "⏎ new session "+name+" on "+d.host.Name, sSubtle, w)
+	box(cv, x, y, w, bh, sRule)
+	for i := 0; i < bh-2; i++ {
+		cv.put(x+2, y+1+i, lines[i].text, lines[i].st, w-4)
 	}
 }
 

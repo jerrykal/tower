@@ -39,11 +39,12 @@ func (t *Term) CloseDash() {
 	time.Sleep(300 * time.Millisecond)
 }
 
-// rowRe matches the finder's row of session name on host: the host,
-// padded to its column, then the name. (The breadcrumb puts a glyph
-// between the two, so it never matches.)
+// rowRe matches the finder's row of session name on a host named with
+// one to three characters: the host, padded to its column (at least four
+// cells, then two), the session's icon, then the name. The breadcrumb
+// has the same parts two spaces apart, so it never matches.
 func rowRe(host, name string) string {
-	return `(?m)(^|[\s▌])` + regexp.QuoteMeta(host) + ` {2,}` + regexp.QuoteMeta(name) + `( |$)`
+	return `(?m)(^|[\s▌])` + regexp.QuoteMeta(host) + ` {3,}\S ` + regexp.QuoteMeta(name) + `( |$)`
 }
 
 func (h *Host) hasSession(name string) bool { return slices.Contains(h.Sessions(), name) }

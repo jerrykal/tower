@@ -771,16 +771,23 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		end := s.x + s.w - 1
 		reach := r.it.host.Reachable()
 		cursor := i == at
-		nx := s.x + 2 + hostW + 2
+		nx := s.x + 4 + hostW + 2
 		if r.kind == fSession || r.fold || r.kind == fDir {
-			hst := sFoam
+			hst, logo := sFoam, sFoam
 			switch {
+			case r.it.host.Status == proto.StatusOff:
+				hst, logo = sMuted, sMuted
 			case !reach:
-				hst = sMuted
+				hst, logo = sMuted, sErr
 			case r.it.local:
-				hst = sRose
+				hst, logo = sRose, sRose
 			}
-			cv.putFitted(s.x+2, y, fitMiddle(graphemes(r.it.host.Name), hostW, firstHit(r.hostHits)), hitStyle(hst, r.hostHits))
+			cv.put(s.x+2, y, osGlyph(r.it.host.OS), logo, 1)
+			cv.putFitted(s.x+4, y, fitMiddle(graphemes(r.it.host.Name), hostW, firstHit(r.hostHits)), hitStyle(hst, r.hostHits))
+		}
+		icon := fg(cPine)
+		if cursor {
+			icon = sIris
 		}
 		switch r.kind {
 		case fSession:
@@ -819,7 +826,8 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			if r.it.cur {
 				room -= 2
 			}
-			m.drawName(cv, nx, y, max(room, 1), r.it, r.nameHits, cursor)
+			cv.put(nx, y, glyphSession, icon, 1)
+			m.drawName(cv, nx+2, y, max(room-2, 1), r.it, r.nameHits, cursor)
 		case fWindow:
 			w := r.win.win
 			rx := end
@@ -841,6 +849,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 				base = base.Bold()
 			}
 			if r.fold {
+				x += cv.put(x, y, glyphSession, icon, 1) + 1
 				x += cv.putFitted(x, y, fitMiddle(graphemes(r.it.sess.Name), max((rx-x)/2, 4), -1), func(int) style { return sSubtle })
 				x += cv.put(x, y, " "+glyphCrumbSep+" ", sMuted, -1)
 			} else {

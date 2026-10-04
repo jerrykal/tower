@@ -272,9 +272,15 @@ func (c *canvas) String() string {
 			if cl.g == "" {
 				continue
 			}
-			if cl.st != cur {
-				b.WriteString(cl.st.sgr())
-				cur = cl.st
+			// Every cell sits on the palette's base, whatever the
+			// terminal's own background.
+			st := cl.st
+			if st.bg == nil {
+				st.bg = cBase
+			}
+			if st != cur {
+				b.WriteString(st.sgr())
+				cur = st
 			}
 			b.WriteString(cl.g)
 		}

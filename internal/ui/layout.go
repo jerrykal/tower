@@ -216,14 +216,14 @@ func (m *Model) findNatural() int {
 	n := 0
 	for i := range m.find.rows {
 		r := &m.find.rows[i]
-		w := 2 + hw + 2 + 14
+		w := 2 + 2 + hw + 2 + 14
 		switch r.kind {
 		case fSession:
-			w += width(r.it.sess.Name) + 4
+			w += 2 + width(r.it.sess.Name) + 4
 		case fWindow:
 			w += width(winLabel(r.win)) + 2
 			if r.fold {
-				w += width(r.it.sess.Name) + 3
+				w += 2 + width(r.it.sess.Name) + 3
 			}
 		case fDir:
 			w += width(r.it.dir.Path) + 2 + width(gitText(r.it.dir.Git))
