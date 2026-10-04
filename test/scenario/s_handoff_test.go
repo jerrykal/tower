@@ -59,13 +59,19 @@ func TestS06(t *testing.T) {
 	term.Type("tmux detach-client -E 'exit 42'")
 	term.Keys("Enter")
 	term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
-	if l := w.WaitLoop(a, "^B:bravo", time.Second); l.ID == "" {
+	before := w.WaitLoop(a, "^B:bravo", time.Second)
+	if before.ID == "" {
 		t.Fatal("the loop moved")
 	}
 
-	// (b) A stale dashboard.
+	// (b) A stale dashboard. The loop's target is the same session as
+	// before the pick: wait for the pick's attach, a new generation.
 	term.Pick("bravo")
-	l := w.WaitLoop(a, "^B:bravo", 5*time.Second)
+	var l proto.LoopStatus
+	w.Eventually(5*time.Second, "the pick's attach", func() bool {
+		l = w.WaitLoop(a, "^B:bravo", 5*time.Second)
+		return l.Gen > before.Gen
+	})
 	time.Sleep(300 * time.Millisecond)
 	ids := b.ClientIDs("bravo")
 	if len(ids) != 1 {
