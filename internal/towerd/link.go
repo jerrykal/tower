@@ -461,8 +461,14 @@ func (l *link) connect() outcome {
 	result := outcome{}
 	finish := func(class, reason string) outcome {
 		conn.Close(errors.New(reason))
+		// ssh's last words (the reason it failed) are read before Wait:
+		// Wait closes the stderr pipe, dropping what was not read yet. A
+		// process left holding stderr (a master ssh forked) bounds it.
+		select {
+		case <-stderrDone:
+		case <-time.After(2 * time.Second):
+		}
 		code := p.Wait()
-		<-stderrDone
 		select {
 		case <-tsCheck:
 			class, reason = transport.Down, transport.Classify(l.cfg.Name, code, tail.String()).Reason

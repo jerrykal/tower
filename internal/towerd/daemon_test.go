@@ -576,3 +576,36 @@ func TestUnchangedRereadsSendNothing(t *testing.T) {
 		return viewHas(a.d.view(proto.ViewArgs{}).View, "B", "made")
 	})
 }
+
+// ssh's reason for failing reaches the host's status: its stderr is read
+// to the end before the process is waited for (Wait closes the pipe).
+func TestSSHReasonKept(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	ssh := filepath.Join(w.root, "ssh")
+	// Plenty of noise first, so a reader that stops early misses the end.
+	noise := filepath.Join(w.root, "noise")
+	os.WriteFile(noise, []byte(strings.Repeat("debug1: a line of ssh's chatter to fill the pipe\n", 1200)+"pc: Permission denied (publickey).\n"), 0o600)
+	os.WriteFile(ssh, []byte("#!/bin/sh\ncat "+noise+" >&2\nexit 255\n"), 0o755)
+	t.Setenv("TOWER_SSH", ssh)
+	a.hosts(config.Host{Name: "pc", SSH: "pc"})
+	d, err := Start(Options{Env: a.env, Version: "0.0.1-unit", Transport: newSSHTransport(a.env.CMDir()), Self: w.keep, LogTo: a.log, Name: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.d = d
+	// Several attempts (the backoff starts at 100ms here): each must keep
+	// the reason.
+	seen := 0
+	for seen < 5 {
+		before := a.link("pc").Attempts
+		w.eventually(5*time.Second, "another attempt down", func() bool {
+			l := a.link("pc")
+			return l.Attempts > before && l.Status == proto.StatusDown
+		})
+		if r := a.link("pc").Reason; !strings.Contains(r, "ssh-add") {
+			t.Fatalf("attempt %d: pc is down for %q, want ssh's reason and its fix", a.link("pc").Attempts, r)
+		}
+		seen++
+	}
+}
