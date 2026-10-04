@@ -373,3 +373,24 @@ func TestCacheAgesOnce(t *testing.T) {
 		t.Fatalf("cached again: %+v", back)
 	}
 }
+
+// Of two loops on one host, the one whose client moved becomes the last
+// target, whichever order the clients come in.
+func TestLastFollowsTheClientThatMoved(t *testing.T) {
+	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{})}
+	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}}
+	d.home = h
+	s1 := proto.Ref{Host: "home0001", Session: "$1", Label: "s1"}
+	h.loops["LA"] = &loopRec{id: "LA", gen: 1, cur: s1, seen: true}
+	h.loops["LB"] = &loopRec{id: "LB", gen: 1, cur: s1, seen: true}
+	sessions := []proto.Session{{ID: "$1", Name: "s1"}, {ID: "$2", Name: "s2"}}
+	d.mu.Lock()
+	h.applyClients("home0001", "A", "", sessions, []proto.Client{
+		{Loop: "LA", Gen: 1, Home: "home0001", Session: "$2"}, // moved
+		{Loop: "LB", Gen: 1, Home: "home0001", Session: "$1"}, // stayed, listed after
+	})
+	d.mu.Unlock()
+	if h.last.Session != "$2" {
+		t.Fatalf("last is %+v, want the client that moved, on $2", h.last)
+	}
+}

@@ -289,22 +289,26 @@ func (h *homeRole) applyClients(hostID, hostName, inst string, sessions []proto.
 		if i := slices.IndexFunc(sessions, func(s proto.Session) bool { return s.ID == c.Session }); i >= 0 {
 			label = sessions[i].Name
 		}
+		// moved is this client's own news: only a loop whose client moved
+		// (or was first seen) makes its target the last one.
+		moved := false
 		if !l.seen {
 			l.seen = true
-			changed = true
+			moved = true
 			config.Mark("home sees the new client")
 		}
 		switch {
 		case c.Session != l.cur.Session:
 			l.prev = l.cur
 			l.cur = proto.Ref{Host: hostID, Name: hostName, Inst: inst, Session: c.Session, Window: c.Window, Label: label}
-			changed = true
+			moved = true
 		case c.Window != l.cur.Window || label != l.cur.Label:
 			l.cur.Window, l.cur.Label = c.Window, label
-			changed = true
+			moved = true
 		}
-		if changed {
+		if moved {
 			h.last = l.cur
+			changed = true
 		}
 	}
 	if changed {
