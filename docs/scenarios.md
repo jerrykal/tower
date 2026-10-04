@@ -138,5 +138,6 @@ Run by hand, never by an agent: `TOWER_REAL=pc,831 mise run scenarios -run R0`.
 
 | ID | What must hold | Status |
 | --- | --- | --- |
-| R01 | laptop → `pc` → `831` over real ssh: bridge start, an unresolvable host, control paths, attach, hand-off, a kill relayed, a remote dashboard, a wake reset; teardown leaves nothing | todo |
-| R02 | A hand-off from `pc` to the laptop and back, recorded at the terminal: held across the teardown and the new attach; back through `pc`'s standby | todo |
+| R01 | laptop → `pc` → `831` over real ssh: bridge start, an unresolvable host, control paths, attach, hand-off, a kill relayed, a remote dashboard, a wake reset; teardown leaves nothing | pass (bridges up 0.49s; picker → pc 0.29s; hand-off pc → 831 0.35s; kill relayed 831 → home → pc 131ms, 115ms of it ssh; streams back 0.15s and the client 0.27s after a wake) |
+| R03 | Install on connect over real ssh into `~/.cache/tower-test/harness/install` (`TOWER_INSTALL_DIR`), the linux/amd64 build from a dist cache; up, `current` swapped, no install again on reconnect | pass (installed and up in 1.8–3.8s) |
+| R02 | A hand-off from `pc` to the laptop and back, recorded at the terminal: held across the teardown and the new attach; back through `pc`'s standby | pass (switch stored → new client: pc → laptop 11ms, laptop → pc through its standby 17–23ms; held across the leave and the enter; a standby shim exits 30s after its loop) |

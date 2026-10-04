@@ -476,7 +476,7 @@ func TestR03(t *testing.T) {
 	// A second connect finds the build there and installs nothing.
 	stamp := map[string]string{}
 	for _, h := range hs {
-		stamp[h] = mustSSH(t, h, "stat -c %Y ~/"+realBase+"/install/"+Version+"/tower")
+		stamp[h] = mustSSH(t, h, "stat -c %Y ~/"+realBase+"/install/"+Version+"/Linux-x86_64/tower")
 	}
 	before := map[string]int{}
 	for _, h := range hs {
@@ -490,7 +490,7 @@ func TestR03(t *testing.T) {
 			l := w.Link(a, h)
 			return l.Attempts > before[h] && l.Status == proto.StatusUp
 		})
-		if got := mustSSH(t, h, "stat -c %Y ~/"+realBase+"/install/"+Version+"/tower"); got != stamp[h] {
+		if got := mustSSH(t, h, "stat -c %Y ~/"+realBase+"/install/"+Version+"/Linux-x86_64/tower"); got != stamp[h] {
 			t.Fatalf("%s: the build was installed again on reconnect", h)
 		}
 	}
