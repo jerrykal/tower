@@ -9,7 +9,7 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 | 1. Skeleton, packaging, v0.0.0 | done |
 | 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; reviewed (`/code-review xhigh`) and every finding fixed |
 | 3. Install on connect | done: reviewed (`/code-review high`), its 10 findings fixed, R03 passes on `pc` and `831` |
-| 4. Dashboard (Atlas) | in progress: two agents (towerd data sources; the Atlas UI) |
+| 4. Dashboard (Atlas) | in progress: towerd's data sources done (A01–A05); the Atlas UI under way |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
 
 ## Step 2
@@ -69,6 +69,26 @@ The seven in `internal/towerd`, fixed after step 3 merged (de8b377 …
 Also: towerd parses TOWER_CLIENT with `proto.ParseClient`, and the popup
 and towerd's `M-o` binding share one size (`proto.PopupSize`). Suite after
 the fixes: both shards pass (LC 5.4 min, the rest 7.5 min).
+
+## Step 4: towerd's data for the dashboard
+
+- [x] `internal/dirs` ([design/dirs.md](design/dirs.md)): the git state of
+  directories (branch or short commit, dirt, a linked worktree's repo),
+  zoxide dirs (roots, network mounts listed unchecked, capped at 100 roots
+  and 100 others), refreshed in the background
+- [x] towerd: sessions' git state and the zoxide dirs with no session in
+  states and views; a dashboard's read is a look (`look` message), at
+  most every 10s per towerd; `status --full` shows the refresher and
+  towerd's CPU
+- [x] requests: `panes`, capture's panes, `new` in a dir (`~` on the
+  target host, `#` literal, a gone dir refused), a new window in its
+  session's dir; `dup` and window rename and kill were there (tested now)
+- [x] scenarios A01–A05 pass; both shards pass after the rebase onto
+  15e29ef (LC 5.4 min, the rest 7.8 min)
+- Costs (A05, 40 sessions in 40 repos, a 500-entry zoxide database):
+  a state of 22 KB (8.7 KB without dirs and git state; 200 dirs are
+  12.4 KB); a periodic refresh about 0.3s of CPU a minute, a look 0.8–1s
+  (141 git status runs, 0.2–0.3s wall)
 
 ## Blocked
 
