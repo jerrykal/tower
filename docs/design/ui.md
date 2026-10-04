@@ -451,9 +451,4 @@ time. The `Conn` caches the client's tty under a mutex.
 
 ## Open
 
-- A pane picked with `J` `K` is selected by a local switch only: the
-  hand-off and the loop's attach carry `Ref.Pane`, but the loop's attach
-  command selects the window, not the pane.
-- ⏎ on a host that is down retries every down host (`netchange`); there is
-  no call to retry one.
 - `?` and `-`/`.` type into a finder query that is not empty.
