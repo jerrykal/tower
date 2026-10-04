@@ -97,7 +97,7 @@ func (d *Daemon) localHost(now time.Time) proto.Host {
 		s = &snapshot{At: now}
 	}
 	return proto.Host{
-		ID: d.id, Name: d.name, Status: proto.StatusLocal, OS: d.osName, Tmux: d.tmuxVer,
+		ID: d.id, Name: d.label, Status: proto.StatusLocal, OS: d.osName, Tmux: d.tmuxVer,
 		Version: d.version, MKey: d.env.MKey, Inst: s.Inst, NoServer: s.NoServer,
 		Sessions: d.withGit(sessionsAt(s, now)), Dirs: d.dirs.Dirs(),
 	}

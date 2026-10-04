@@ -44,8 +44,9 @@ type Options struct {
 	Self string
 	// LogTo receives the log; nil: towerd.log in the state directory.
 	LogTo io.Writer
-	// Name is this host's label; empty: TOWER_TEST_NAME, else the short
-	// host name.
+	// Name is this host's name, in views and messages alike; empty:
+	// TOWER_TEST_NAME, else "local" in views and the short host name in
+	// messages.
 	Name string
 }
 
@@ -58,7 +59,8 @@ type Daemon struct {
 	env     *config.Env
 	id      string
 	version string
-	name    string // this host's label
+	name    string // this host's name in messages and hellos
+	label   string // this host's name in views: proto.LocalName unless named
 	self    string
 	tm      tmux.Server
 	log     *log.Logger
@@ -125,9 +127,9 @@ func Start(o Options) (*Daemon, error) {
 		return nil, err
 	}
 	d.id = id
-	d.name = o.Name
+	d.name, d.label = o.Name, o.Name
 	if d.name == "" {
-		d.name = localName()
+		d.name, d.label = localName()
 	}
 	d.self = o.Self
 	if d.self == "" {
@@ -237,20 +239,21 @@ func (d *Daemon) takeEnv() {
 	}
 }
 
-// localName is this host's label: TOWER_TEST_NAME in the scenario suite,
-// else the short host name.
-func localName() string {
+// localName is this host's name in messages and its label in views:
+// TOWER_TEST_NAME for both in the scenario suite, else the short host name
+// and "local".
+func localName() (name, label string) {
 	if n := os.Getenv("TOWER_TEST_NAME"); n != "" {
-		return n
+		return n, n
 	}
 	h, err := os.Hostname()
 	if err != nil {
-		return "local"
+		return proto.LocalName, proto.LocalName
 	}
 	if i := strings.IndexByte(h, '.'); i > 0 {
 		h = h[:i]
 	}
-	return h
+	return h, proto.LocalName
 }
 
 // unameS is `uname -s`: Linux, Darwin.

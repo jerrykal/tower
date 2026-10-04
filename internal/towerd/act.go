@@ -378,7 +378,7 @@ func (d *Daemon) startDir(dir string, window bool) (string, error) {
 // "<session id>\t<window id>\t<name>", into a ref: a window's names its
 // session too, so the dashboard can find and select its row.
 func (d *Daemon) madeRef(out string, window bool) *proto.Ref {
-	r := &proto.Ref{Host: d.id, Name: d.name, Inst: d.snapshotNow().Inst}
+	r := &proto.Ref{Host: d.id, Name: d.label, Inst: d.snapshotNow().Inst}
 	out = strings.TrimSpace(out)
 	if window {
 		f := strings.SplitN(out, "\t", 3)

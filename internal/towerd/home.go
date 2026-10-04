@@ -264,7 +264,7 @@ func (h *homeRole) localChanged() {
 	h.d.mu.Lock()
 	s := h.d.snap
 	if s != nil {
-		h.applyClients(h.d.id, h.d.name, s.Inst, sessionsAt(s, time.Now()), h.d.regs.forHome(h.d.id))
+		h.applyClients(h.d.id, h.d.label, s.Inst, sessionsAt(s, time.Now()), h.d.regs.forHome(h.d.id))
 	}
 	h.d.mu.Unlock()
 	h.kickViews()
@@ -322,7 +322,7 @@ func (h *homeRole) applyClients(hostID, hostName, inst string, sessions []proto.
 // client made meanwhile. Call with mu held.
 func (h *homeRole) replayClients() {
 	for id, cs := range h.clientsB {
-		name, inst := h.d.name, ""
+		name, inst := h.d.label, ""
 		var sessions []proto.Session
 		if id == h.d.id {
 			if s := h.d.snap; s != nil {
@@ -423,7 +423,7 @@ type hostState struct {
 // hostOf finds the host with towerd id id. Call with mu held.
 func (h *homeRole) hostOf(id string) *hostState {
 	if id == h.d.id {
-		hs := &hostState{name: h.d.name, status: proto.StatusLocal, local: true, mkey: h.d.env.MKey}
+		hs := &hostState{name: h.d.label, status: proto.StatusLocal, local: true, mkey: h.d.env.MKey}
 		if s := h.d.snap; s != nil {
 			hs.inst, hs.nosrv, hs.sessions = s.Inst, s.NoServer, s.Sessions
 		}

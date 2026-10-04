@@ -381,3 +381,17 @@ func TestLastFollowsTheClientThatMoved(t *testing.T) {
 		t.Fatalf("last is %+v, want the client that moved, on $2", h.last)
 	}
 }
+
+// Views call this machine local; messages name it by its host name.
+func TestLocalName(t *testing.T) {
+	t.Setenv("TOWER_TEST_NAME", "")
+	h, _ := os.Hostname()
+	h, _, _ = strings.Cut(h, ".")
+	if name, label := localName(); name != h || label != proto.LocalName {
+		t.Fatalf("localName = %q, %q; want %q, %q", name, label, h, proto.LocalName)
+	}
+	t.Setenv("TOWER_TEST_NAME", "A")
+	if name, label := localName(); name != "A" || label != "A" {
+		t.Fatalf("with TOWER_TEST_NAME: %q, %q", name, label)
+	}
+}

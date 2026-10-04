@@ -51,6 +51,7 @@ func TestNames(t *testing.T) {
 		{"other", "me@other", -1, true},
 		{"box", "me@box.lan", 1, true}, // renaming itself
 		{"", "x", -1, false},
+		{"Local", "local", -1, false}, // this machine's name, even as an alias
 	} {
 		err := CheckName(hosts, aliases, c.name, c.target, c.skip)
 		if (err == nil) != c.ok {
@@ -65,6 +66,7 @@ func TestNames(t *testing.T) {
 		"nas":             "nas",   // the alias nas, added as itself
 		"me@nas.lan":      "nas-2", // nas is another host's alias
 		"10.0.0.5":        "10.0.0.5",
+		"local":           "local-2", // this machine is local
 	} {
 		if got := FreeName(hosts, aliases, target); got != want {
 			t.Errorf("FreeName(%q) = %q, want %q", target, got, want)

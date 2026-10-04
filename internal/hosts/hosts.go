@@ -73,12 +73,16 @@ func Clean(name string) string {
 }
 
 // CheckName applies the naming rules to name (already Clean) for a host
-// whose ssh target is target: names are unique regardless of case, and a
-// name equal to an ssh alias is only for the host that alias reaches.
+// whose ssh target is target: names are unique regardless of case, "local"
+// is this machine's, and a name equal to an ssh alias is only for the host
+// that alias reaches.
 // skip is the index of the host being renamed, or -1.
 func CheckName(hosts []config.Host, aliases []string, name, target string, skip int) error {
 	if name == "" {
 		return errors.New("a name is needed")
+	}
+	if strings.EqualFold(name, proto.LocalName) {
+		return fmt.Errorf("%q is this machine's name", proto.LocalName)
 	}
 	if i := Find(hosts, name); i >= 0 && i != skip {
 		return fmt.Errorf("a host named %q already exists", name)

@@ -350,6 +350,10 @@ func ParseClient(s string) (ClientID, error) {
 	return ClientID{}, fmt.Errorf("TOWER_CLIENT %q is not pid:created:name", s)
 }
 
+// LocalName is the name a view gives the machine it is on, whatever its
+// host name; no host in the list may take it.
+const LocalName = "local"
+
 // PopupSize is the dashboard popup's size, as display-popup arguments:
 // the same for the popup tower opens and the M-o binding towerd makes.
 var PopupSize = []string{"-w", "80%", "-h", "80%"}

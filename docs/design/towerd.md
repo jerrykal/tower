@@ -34,7 +34,7 @@ type Options struct {
     Transport Transport // nil: ssh; tests join daemons in process
     Self      string    // the tower binary for _keep, the shim and key bindings
     LogTo     io.Writer // nil: towerd.log
-    Name      string    // this host's label; empty: TOWER_TEST_NAME or the short host name
+    Name      string    // this host's name; empty: TOWER_TEST_NAME, else "local" in views and the short host name in messages
 }
 
 func Start(o Options) (*Daemon, error) // lock, listen, watch; returns once serving
