@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -185,6 +186,9 @@ func waitCheck(ch chan checkMsg) tea.Cmd {
 	}
 }
 
+// checkWait bounds a host's checks.
+const checkWait = 15 * time.Second
+
 // addHost runs the checks of a new host (the same as tower host add),
 // shown in its row as they go, and adds it to the list.
 func (m *Model) addHost(h config.Host) tea.Cmd {
@@ -206,8 +210,11 @@ func (m *Model) recheck(c *hostCheck) tea.Cmd {
 
 func (m *Model) runChecks(h config.Host, add bool) tea.Cmd {
 	ch := make(chan checkMsg, 8)
-	hl, ctx := m.c.Hosts, m.ctx
+	hl := m.c.Hosts
+	// As tower host add: 15s for the checks (an install takes its own).
+	ctx, cancel := context.WithTimeout(m.ctx, checkWait)
 	go func() {
+		defer cancel()
 		defer close(ch)
 		send := func(msg checkMsg) {
 			select {
