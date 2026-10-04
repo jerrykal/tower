@@ -16,7 +16,7 @@ Gloss). It runs in three places with one model and one set of actions:
 
 It reads only its own machine's towerd: `view` for the rows, `watch` for
 changes, `act` for kill, rename, new, dup, panes, capture and switch, and
-`netchange` to retry hosts that are down. On the home's machine it also
+`retry` to connect a host that is down now. On the home's machine it also
 edits the host list (`internal/hosts`).
 
 ## v0.0.1 in two stages
@@ -39,7 +39,7 @@ type Towerd interface {
     View(ctx, proto.ViewArgs) (proto.Dash, error)
     Watch(ctx, gen uint64) (uint64, error)
     Act(ctx, proto.Request) (proto.Ack, error)
-    Retry(ctx) error // netchange: every host that is down retries now
+    Retry(ctx, host string) error // retry: that host connects now
 }
 
 // Tmux runs one command on the dashboard's own server (tmux.Server).
@@ -264,8 +264,8 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   session is still reached; a row gone since it was drawn says
   `selection is gone`; a server restarted since says `<host> restarted
   since it was listed; pick again`; a stalled host `<host> is not
-  responding`. On a host that is down (or failed) ⏎ retries every down
-  host now (`netchange`) and says so.
+  responding`. On a host that is down (or failed) ⏎ retries that host
+  now (`retry`, its backoff afresh) and says so.
 - **Same server**: `switch-client -c <client> -t <id>` (`; select-window`,
   `; select-pane` in the same tmux call), then quit.
 - **Hand-off** (another server, popup): `act switch` with a nonce and the
