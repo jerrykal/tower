@@ -16,7 +16,7 @@
 | `fakenet/` | the knobs contract between the harness and the fake ssh |
 | `fakessh/` | the fake ssh |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
-| `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls08` so far |
+| `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls08`, `a_atlas` so far |
 
 ## Hosts
 
@@ -38,7 +38,14 @@ for it. A host's processes run with:
 Options: `Machine(m)` (several servers on one machine), `HomeName(n)` (a
 shared home directory), `BaseIndex(n)`, `Env(k, v)`, `Platform(uname)` (a
 `uname` shim first on the host's PATH answers `uname -s -m` with another
-platform, for install on connect).
+platform, for install on connect), `Zoxide(dirs…)` (a zoxide first on the
+host's PATH lists these, `~` for the world's home directory) and
+`MountTable(table)` (the host's mount table, in `/proc/self/mounts`
+format, through `TOWER_TEST_MOUNTS`). zoxide's own `_ZO_*` variables are
+dropped, so a host without a fake zoxide reads the empty database of the
+world's home directory, never the user's. `w.repo(rel)` makes a git repo
+with one commit under the world's home directory, without the user's git
+configuration.
 
 Every machine has its own install root, `TOWER_INSTALL_DIR=<dir>/install-<machine>`
 (`h.InstallDir()`). `h.Remote()` pins the built binary (`tower =`);
@@ -106,7 +113,9 @@ request's deadline), `TOWER_TEST_PAD` (pad states and views to n bytes),
 dashboard cannot write its client's tty), `TOWER_TEST_CRASH=after-switch`
 (the dashboard dies once its switch is stored), `TOWER_TEST_GEN` (the
 dashboard claims that attach generation), `TOWER_TEST_PROTO=lo-hi`,
-`TOWER_TEST_FUTURE` (a remote also sends an unknown message type).
+`TOWER_TEST_FUTURE` (a remote also sends an unknown message type),
+`TOWER_TEST_MOUNTS` (a mount table file in place of the machine's),
+`TOWER_DIRS_EVERY` and `TOWER_LOOK_EVERY` (the git and zoxide refreshes).
 
 Timing marks the suite reads: `prepare`, `prepared <host>`, `attach`,
 `attach: standby`, `attach: session`, `standby did not answer`, `exited

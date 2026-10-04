@@ -97,8 +97,20 @@ type Host struct {
 	BaseIndex int
 	extra     map[string]string
 	sockPath  string
-	uname     string // what uname -s -m says on the host; empty: the truth
+	uname     string   // what uname -s -m says on the host; empty: the truth
+	zoxide    []string // what a fake zoxide on the host lists; nil: the PATH's zoxide
+	mounts    string   // the host's mount table (TOWER_TEST_MOUNTS); empty: the real one
 }
+
+// Zoxide puts a zoxide first on the host's PATH that lists dirs (~ for
+// the world's home directory), most frecent first.
+func Zoxide(dirs ...string) HostOpt {
+	return func(h *Host) { h.zoxide = append([]string{}, dirs...) }
+}
+
+// MountTable gives the host a mount table in /proc/self/mounts format
+// (~ for the world's home directory), in place of the machine's own.
+func MountTable(table string) HostOpt { return func(h *Host) { h.mounts = table } }
 
 // HostOpt configures a host.
 type HostOpt func(*Host)
@@ -176,7 +188,8 @@ func (h *Host) EnvMap() map[string]string {
 	m := map[string]string{}
 	for _, kv := range os.Environ() {
 		k, v, _ := strings.Cut(kv, "=")
-		if k == "TMUX" || k == "TMUX_PANE" || strings.HasPrefix(k, "TOWER_") {
+		// _ZO_*: zoxide's own settings could point it at the user's database.
+		if k == "TMUX" || k == "TMUX_PANE" || strings.HasPrefix(k, "TOWER_") || strings.HasPrefix(k, "_ZO_") {
 			continue
 		}
 		m[k] = v
@@ -194,6 +207,12 @@ func (h *Host) EnvMap() map[string]string {
 	m["TOWER_INSTALL_DIR"] = h.InstallDir()
 	if h.uname != "" {
 		m["PATH"] = h.unameShim() + ":" + m["PATH"]
+	}
+	if h.zoxide != nil {
+		m["PATH"] = h.zoxideShim() + ":" + m["PATH"]
+	}
+	if h.mounts != "" {
+		m["TOWER_TEST_MOUNTS"] = h.mountsFile()
 	}
 	if raceBuild {
 		m["GORACE"] = "log_path=" + filepath.Join(h.w.Dir, "race", "report")
@@ -473,6 +492,27 @@ func (h *Host) PlatformDir() string {
 		u = strings.TrimSpace(string(out))
 	}
 	return strings.Replace(u, " ", "-", 1)
+}
+
+// zoxideShim writes the host's fake zoxide and returns its directory.
+func (h *Host) zoxideShim() string {
+	dir := filepath.Join(h.w.Dir, "zoxide-"+h.Name)
+	list := strings.ReplaceAll(strings.Join(h.zoxide, "\n"), "~", h.w.UserHome)
+	script := "#!/bin/sh\n[ \"$*\" = 'query --list --all' ] || exit 2\ncat <<'EOF'\n" + list + "\nEOF\n"
+	if _, err := os.Stat(filepath.Join(dir, "zoxide")); err != nil {
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "zoxide"), []byte(script), 0o755)
+	}
+	return dir
+}
+
+// mountsFile writes the host's mount table and returns its path.
+func (h *Host) mountsFile() string {
+	p := filepath.Join(h.w.Dir, "mounts-"+h.Name)
+	if _, err := os.Stat(p); err != nil {
+		os.WriteFile(p, []byte(strings.ReplaceAll(h.mounts, "~", h.w.UserHome)), 0o644)
+	}
+	return p
 }
 
 // unameShim writes the host's uname shim and returns its directory.

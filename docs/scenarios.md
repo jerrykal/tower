@@ -112,6 +112,19 @@ See [design/install.md](design/install.md).
 | LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | pass |
 | LD03 | `^x` three times fast kills three sessions | ui | pass |
 
+## Atlas data
+
+What the step-4 dashboard shows besides tmux's listing, and the requests
+it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
+
+| ID | What must hold | Package | Status |
+| --- | --- | --- | --- |
+| A01 | The git state of sessions on a remote reaches the home's view and another remote's: a branch, a linked worktree's repo, a detached commit; a tree made dirty and a new branch show on another remote's dashboard within a few hundred ms of it opening | dirs, towerd | pass |
+| A02 | Zoxide dirs on every dashboard: most frecent first, `~` for home, git roots with branch and dirt, a session's dir and a gone dir left out, a dir on a network mount listed unchecked; a host with an empty database has none; a new session in a dir takes it off the list in the rows read after the answer | dirs, towerd | pass |
+| A03 | A dashboard on one remote gets another remote's panes (a session's, a window's) with their layout, and a capture with its window's layout | towerd | pass |
+| A04 | Through act from another remote: new in `~/dir` (expanded there), a gone dir refused, a grouped duplicate, a new window in its session's dir, a window renamed and killed, each in the rows read after its answer | towerd | pass |
+| A05 | Costs with 40 sessions in 40 repos and a 500-entry zoxide database: the state's size, and the CPU of a periodic refresh and of a look (measured, reported) | dirs, towerd | pass |
+
 ## Standbys and the relay
 
 | ID | What must hold | Package | Status |
