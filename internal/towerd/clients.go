@@ -34,33 +34,55 @@ const unboundTTL = 10 * time.Second
 
 // registry is the set of registrations, saved to clients.json on every
 // change and restored at start, so a restarted towerd keeps them (V03).
-// Its methods are called with Daemon.mu held, except save.
+// Its methods are called with Daemon.mu held, except save, which writes a
+// copy taken under it (copyLocked): bind edits entries and filters the
+// list in place, so encoding the live list without the lock could write
+// torn or nil entries.
 type registry struct {
 	path string
 	list []*reg
+	seq  uint64 // bumped by copyLocked: the order the copies were taken
 
 	saveMu sync.Mutex
+	saved  uint64 // seq of the newest copy written
+}
+
+// regCopy is the set as it was at one moment, for save.
+type regCopy struct {
+	seq  uint64
+	list []reg
 }
 
 func loadRegistry(path string) *registry {
 	r := &registry{path: path}
 	config.ReadJSON(path, &r.list)
+	// A file from an older build, or one cut short, may hold null
+	// entries; they mean nothing.
+	r.list = slices.DeleteFunc(r.list, func(g *reg) bool { return g == nil || g.Pid <= 0 })
 	return r
 }
 
-// save writes the set; call it without Daemon.mu, after a change.
-func (r *registry) save() {
-	r.saveMu.Lock()
-	defer r.saveMu.Unlock()
-	r.write()
+// copyLocked copies the set; call it with Daemon.mu held.
+func (r *registry) copyLocked() regCopy {
+	r.seq++
+	c := regCopy{seq: r.seq, list: make([]reg, len(r.list))}
+	for i, g := range r.list {
+		c.list[i] = *g
+	}
+	return c
 }
 
-func (r *registry) write() {
-	list := slices.Clone(r.list)
-	if list == nil {
-		list = []*reg{}
+// save writes a copy taken with copyLocked; call it without Daemon.mu. A
+// copy older than one already written is skipped, so saves that race
+// never put an older set over a newer one.
+func (r *registry) save(c regCopy) {
+	r.saveMu.Lock()
+	defer r.saveMu.Unlock()
+	if c.seq <= r.saved {
+		return
 	}
-	config.WriteJSON(r.path, list)
+	r.saved = c.seq
+	config.WriteJSON(r.path, c.list)
 }
 
 func (r *registry) add(n *reg) {
@@ -186,8 +208,9 @@ func (d *Daemon) register(a proto.RegisterArgs) (*proto.Registered, error) {
 	d.mu.Lock()
 	d.regs.add(&reg{Pid: a.Pid, Loop: a.Loop, Gen: a.Gen, Home: a.Home, Inst: a.Inst, At: time.Now().UnixMilli()})
 	d.bump()
+	regs := d.regs.copyLocked()
 	d.mu.Unlock()
-	d.regs.save()
+	d.regs.save(regs)
 	for _, after := range []time.Duration{150 * time.Millisecond, 600 * time.Millisecond, 1500 * time.Millisecond} {
 		time.AfterFunc(after, d.w.kick)
 	}

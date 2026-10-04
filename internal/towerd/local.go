@@ -31,9 +31,13 @@ func (d *Daemon) publish(s *snapshot, changed bool) {
 		}
 	}
 	h := d.home
+	var regs regCopy
+	if regsChanged {
+		regs = d.regs.copyLocked()
+	}
 	d.mu.Unlock()
 	if regsChanged {
-		d.regs.save()
+		d.regs.save(regs)
 	}
 	if !changed && !regsChanged {
 		return

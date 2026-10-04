@@ -1,7 +1,11 @@
 package towerd
 
 import (
+	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -185,11 +189,75 @@ func TestRegistryBind(t *testing.T) {
 		t.Fatal("a registration of an earlier server instance is dropped")
 	}
 	r.add(&reg{Pid: 13, Inst: "1:1", At: now})
-	r.save()
+	r.save(r.copyLocked())
 	r2 := loadRegistry(r.path)
 	if r2.count() != 1 || r2.list[0].Pid != 13 {
 		t.Fatalf("restored: %+v", r2.list)
 	}
+}
+
+// Saves run without the daemon's lock while bind edits the list in place:
+// they must write the copy taken under the lock, never torn or nil
+// entries, and an older copy never overwrites a newer one.
+func TestRegistrySaveRacesBind(t *testing.T) {
+	var mu sync.Mutex
+	r := &registry{path: filepath.Join(t.TempDir(), "clients.json")}
+	now := time.Now().UnixMilli()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { // the watch: binds and drops under the lock
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			mu.Lock()
+			r.add(&reg{Pid: 100 + i%50, Inst: "1:1", At: now})
+			s := &snapshot{Inst: "1:1"}
+			for p := 100; p < 150; p += 2 {
+				s.Clients = append(s.Clients, tclient{Name: "/dev/t" + strconv.Itoa(p), Pid: p, Session: "$1"})
+			}
+			r.bind(s)
+			mu.Unlock()
+		}
+	}()
+	for range 300 { // registrations saving as they come
+		mu.Lock()
+		c := r.copyLocked()
+		mu.Unlock()
+		r.save(c)
+	}
+	close(stop)
+	wg.Wait()
+	var raw []json.RawMessage
+	b, _ := os.ReadFile(r.path)
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range raw {
+		if string(m) == "null" {
+			t.Fatalf("a null entry was saved: %s", b)
+		}
+	}
+	older := r.copyLocked()
+	newer := r.copyLocked()
+	r.list = nil
+	r.save(r.copyLocked())
+	r.save(newer)
+	r.save(older)
+	if got := loadRegistry(r.path); len(got.list) != 0 {
+		t.Fatalf("an older copy overwrote a newer one: %+v", got.list)
+	}
+	// A file holding null entries (from before this fix) loads without them.
+	os.WriteFile(r.path, []byte(`[null,{"pid":7,"loop":"L","gen":1,"home":"H","at":1},null]`), 0o600)
+	got := loadRegistry(r.path)
+	if len(got.list) != 1 || got.list[0].Pid != 7 {
+		t.Fatalf("loaded %+v", got.list)
+	}
+	got.bind(&snapshot{Inst: "1:1"}) // must not dereference a nil entry
 }
 
 func TestParseClient(t *testing.T) {

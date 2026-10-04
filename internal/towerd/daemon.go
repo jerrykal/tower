@@ -282,6 +282,7 @@ func (d *Daemon) shutdown() {
 			conns = append(conns, r.conn)
 		}
 	}
+	regs := d.regs.copyLocked()
 	d.mu.Unlock()
 	if h != nil {
 		h.stop()
@@ -289,7 +290,7 @@ func (d *Daemon) shutdown() {
 	for _, c := range conns {
 		c.Close(errors.New("towerd stopping"))
 	}
-	d.regs.save()
+	d.regs.save(regs)
 	if b, err := os.ReadFile(d.env.State("towerd.pid")); err == nil && strings.TrimSpace(string(b)) == strconv.Itoa(os.Getpid()) {
 		os.Remove(d.env.State("towerd.pid"))
 	}
