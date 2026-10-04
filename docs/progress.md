@@ -7,7 +7,7 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 | Step | Status |
 | --- | --- |
 | 1. Skeleton, packaging, v0.0.0 | done |
-| 2. Core: proto, stream, towerd, transport, loop, relay, harness | built; 7 towerd review findings to fix |
+| 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; reviewed (`/code-review xhigh`) and every finding fixed |
 | 3. Install on connect | built (I01–I05 pass); `/code-review high` and R03 on real hosts to do |
 | 4. Dashboard (Atlas) | not started |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
@@ -52,30 +52,23 @@ binary committed at the root (removed, `/tower` ignored); duplicates
 (TOWER_CLIENT parsing, quoting, sync sequences, the deadline clock, two
 tmux runs per local detach).
 
-**Still to fix, all in `internal/towerd`** (held back while step 3 changed
-the same files):
+The seven in `internal/towerd`, fixed after step 3 merged (de8b377 …
+50864e3), each with a test that fails on the code before it:
 
-1. `clients.go:52` — `registry.save` encodes entries without `Daemon.mu`
-   while `bind` filters the list in place: `null` entries in clients.json,
-   then a nil dereference on every start.
-2. `home.go:151` — reload compares `config.Host` values with pointer fields
-   (`Enabled`, `Standby`): any host setting them is rebuilt on every reload.
-3. `watch.go:46` — the snapshot dedup key includes `Ago`, so an unchanged
-   tmux still bumps watchers and pushes states and views (also
-   `remote.go:169`, `link.go:647`).
-4. `link.go:443` — `Wait` before the stderr reader finishes loses ssh's
-   reason ("ssh exited 255" instead of the fix).
-5. `home.go:299` — `changed` not reset per client in `applyClients`: the
-   wrong session becomes the last target.
-6. `link.go:157` — `fromCache` shifts `Ago` in place in the shared cache:
-   offline hosts' sessions age twice.
-7. `home.go:135` — a hosts.toml that fails to parse is re-parsed and logged
-   on every view call.
+1. registrations saved from a copy taken under the daemon's lock, null
+   entries dropped on load;
+2. a reload compares hosts by value (`config.Host.Same`);
+3. re-reads, states and views compared with ages at a fixed reference, so
+   an unchanged tmux sends nothing (5 idle re-reads: 6 states and 12
+   watcher wake-ups before, none after);
+4. ssh's stderr read to its end before the process is waited for;
+5. only the loop whose client moved becomes the last target;
+6. a link made from the cache leaves it alone (ages counted once);
+7. a hosts.toml that does not parse is read once, not on every view.
 
-Also: towerd's own `parseClient` should switch to `proto.ParseClient`
-(decision 54); the merged view is encoded once per link under the lock
-(once would do); the popup size is 80% in `ui.PopupSize` but 90% in
-towerd's `M-o` binding.
+Also: towerd parses TOWER_CLIENT with `proto.ParseClient`, and the popup
+and towerd's `M-o` binding share one size (`proto.PopupSize`). Suite after
+the fixes: both shards pass (LC 5.4 min, the rest 7.5 min).
 
 ## Blocked
 
@@ -86,8 +79,7 @@ Nothing.
 Paused here at the user's request, at a clean point: everything on
 `main` is built, tested and pushed. In order:
 
-1. Fix the seven towerd findings above (each with a regression test), run
-   the suite in its two shards (CLAUDE.md), merge.
+1. ~~Fix the seven towerd findings.~~ Done.
 2. `/code-review high` for step 3 (install on connect), then fix.
 3. The real hosts from the main session only: R01, R02, and R03 (install
    into `~/.cache/tower-test/harness/` with `TOWER_INSTALL_DIR`), under
