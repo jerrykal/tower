@@ -114,6 +114,13 @@ func cmdStatus(args []string) error {
 	return nil
 }
 
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
+}
+
 func formatStatus(st *proto.Status) string {
 	var b strings.Builder
 	role := "remote only"
@@ -133,6 +140,10 @@ func formatStatus(st *proto.Status) string {
 	}
 	if w.Keys != "" {
 		fmt.Fprintf(&b, "keys: %s\n", w.Keys)
+	}
+	if ds := st.Detail.Dirs; ds.Git != "" || ds.Zoxide != "" {
+		fmt.Fprintf(&b, "dirs: %d from zoxide (%s), %d repos (git %s); last refresh %dms (%d git runs), last look %dms (%d)\n",
+			ds.Dirs, orNone(ds.Zoxide), ds.Repos, orNone(ds.Git), ds.TimerMs, ds.TimerRun, ds.LookMs, ds.LookRun)
 	}
 	if len(st.Detail.Links) > 0 {
 		b.WriteString("hosts:\n")

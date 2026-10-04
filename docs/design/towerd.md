@@ -13,6 +13,7 @@ and the home role once an attach loop starts on its machine.
 | `watch.go` | the watch on its own tmux: `_tower`, the control client, paced re-reads, the snapshot |
 | `local.go` | publishing a snapshot, this machine as a view lists it, the state for one home |
 | `act.go` | requests: running them on the local server (deadlines, the answer memory), and the `act` entry that routes them |
+| `dirs.go` | git state of sessions and zoxide directories: the refresher (`internal/dirs`) in towerd, and looks |
 | `clients.go` | registrations: made by `register`, bound to tmux clients, persisted |
 | `keys.go` | `M-o`, `prefix L` and the alert hooks: take, record, restore |
 | `keeper.go` | `tower _keep`: ends a dead towerd's control client and `_tower` |
@@ -50,6 +51,8 @@ type Daemon struct {
     regs     *registry
     homes    map[string]*homeRec // remote role, by home id|as
     home     *homeRole           // nil until active
+    lookAt   time.Time           // the last look
+    dirs     *dirs.Refresher     // git state and zoxide directories, own lock
 }
 ```
 
@@ -123,9 +126,10 @@ type snapshot struct {
   back with `switch-client -l`, or to the first session (S22).
 - **Server gone** (the control client ends): back to probing.
 
-`publish(snap)` (in `local.go`) binds registrations, bumps, kicks each
-connected home's state pacer and lets the home role follow its loops'
-clients and push views.
+`publish(snap)` (in `local.go`) hands a changed snapshot's session
+directories to the refresher (it only records them), binds registrations,
+bumps, kicks each connected home's state pacer and lets the home role
+follow its loops' clients and push views.
 
 ## Requests (act.go)
 
@@ -147,13 +151,63 @@ gone. Then on the control client:
 | kill | `kill-session -t $id` / `kill-window -t @id`; "already gone" if missing |
 | rename | `rename-session -t $id <name>` / `rename-window -t @id <name>` (names `#`-escaped) |
 | new | `new-session -d -P -F … -s <name> -c <dir>` / `new-window -d -P -F … -t $id: -n <name> -c <dir>`; with no server a one-shot `new-session` that starts it (up to 15s for the user's config), then waits for the watch to take the server |
-| capture | `capture-pane -e -p -t <pane, else window, else session>` |
+| capture | `capture-pane -e -p -t <pane, else window, else session>` and `list-panes -t <the same>` in one batch: the text and its window's panes |
+| panes | `list-panes -s -t $id` (every pane of a session's windows), or `list-panes -t @id` for a window (`Kind`, or a target with a window and no `Kind`) |
 | has | `has-session -t $id`; no control client: `tmux -N has-session`; no server means gone |
 | dup | `new-session -d -t $id -s <name>` (grouped) |
+
+**A pane** is `pane_id`, `window_id`, left, top, width, height, active,
+`pane_current_command` and `pane_current_path`, the path with `~` for
+this machine's home (or its resolved path: tmux reports a pane's
+directory with symlinks resolved).
+
+**A new session's directory** (`Dir`): `~` is this machine's home; a
+relative path is taken from the home; none is the home. A new window with
+no `Dir` starts in its session's directory (`-c '#{session_path}'`, which
+tmux expands against the target). `-c` is format-expanded, so a given
+directory goes in with `#` doubled. tmux falls back to the home without a
+word when it cannot enter a directory, so a directory that is gone is
+refused (`no directory ~/x on B`); one on a network mount is not checked,
+since the stat could block.
 
 Kill, rename, new and dup re-read and publish before they answer (read
 your writes). Every id is quoted in tmux's language (`'$3'`), since tmux
 expands `$name` in unquoted words.
+
+## Git state and zoxide directories (dirs.go)
+
+towerd runs one `dirs.Refresher` ([dirs.md](dirs.md)), started with the
+daemon; it finds git and zoxide in its own goroutine. Its answers are
+joined in when a state or a view is built, never stored in the snapshot,
+so the watch's re-read path is untouched:
+
+- each session gets `Git` for its directory (`withGit`), in the state a
+  home receives and in this machine's own host entry (`localHost`);
+- the state and the local host entry carry `Dirs`: the zoxide
+  directories with no session yet (the refresher leaves out the
+  sessions' directories, which it has from `publish`).
+
+A change the refresher reports (`dirsChanged`) bumps the watch generation
+and kicks each connected home's state pacer and the home role's view
+pacers; each sends only if its body changed, paced as ever. `TOWER_GIT=0`
+turns git state off, `TOWER_DIRS=0` the zoxide directories;
+`TOWER_DIRS_EVERY` sets the periodic refresh (60s).
+
+**Looks.** A `view` call (a dashboard opening, or following the view) is
+a look, at most every `TOWER_LOOK_EVERY` (10s) per towerd: the refresher
+refreshes everything not asked within 2s, and the look is passed on as a
+`look` message, so every host a dashboard can show refreshes too:
+
+| A look from | Passed on to |
+| --- | --- |
+| a dashboard here (`view`) | every home connected here, and every up host of this home |
+| a host of this home (`look` on a link) | this home's other up hosts |
+| a home (`look` on a home's stream) | nobody |
+
+so a look never goes round, and the rate limit bounds a storm of reads.
+A dashboard opening on any host has every host's changes within about a
+round trip and a git status (A01: 43ms). A peer that does not know `look`
+ignores it.
 
 ## Registrations (clients.go)
 
@@ -203,9 +257,11 @@ Records are keyed by `home id | as`; a new stream for a key closes the old
 one (S13). Remote streams give up after `2 × TOWER_SILENCE + 5s`.
 
 Per home record: the stream, the last view (kept an hour after a
-disconnect), and a state pacer (100ms): on every published snapshot the
-record's state (sessions, and the clients whose registration names that
-home) is sent if its body changed. `exec` runs `runLocal`; a change goes
+disconnect), and a state pacer (100ms): on every published snapshot, and
+on every change of git state or zoxide directories, the record's state
+(sessions with their git state, the zoxide directories with no session,
+and the clients whose registration names that home) is sent if its body
+changed. A `look` from the home refreshes this machine (see above). `exec` runs `runLocal`; a change goes
 out as a state with `SendNow` before the `ack`. A `view` replaces the held
 one unless older than it within the same stream.
 
@@ -275,7 +331,10 @@ every second (`netchange` simulates a change).
 
 **Merged view**: the local host (status `local`) and every link in
 `hosts.toml` order, each with its last known sessions (`hosts.json` keeps
-them, with ids and versions, across restarts), plus the loops. Pushed to
+them, with ids, versions and git state, across restarts) and zoxide
+directories (from its last state; not kept across restarts: a host not
+up cannot make a session in one), plus the loops. A `look` from a host
+is passed on to the others (see Looks). Pushed to
 every up link through its pacer (150ms) when its body changed, at once to
 a link that just came up; numbered per home.
 
@@ -356,9 +415,12 @@ the towerd log, never stdout.
 | per link: the connect loop, view pacer, stall watch | the ssh process, reconnects |
 | home: net watch, wake check | – |
 | housekeeping | idle exit, expiries |
+| the refresher, and up to 4 git runs of a round | git state, zoxide directories |
 
-Everything shared is under `Daemon.mu`; pacers and streams have their own
-small locks.
+Everything shared is under `Daemon.mu`; pacers, streams and the
+refresher have their own small locks. `Daemon.mu` may be held while
+taking the refresher's lock (building a state), never the other way:
+the refresher calls `dirsChanged` with no lock held.
 
 ## Tests
 
@@ -369,4 +431,12 @@ by an in-process `Transport`: home and remote (views both ways, read your
 writes, relays, a request run once, the home going away), the loop calls
 (prepare's refusals, every row of `after`, the stored and the eager
 switch, an earlier attach), keys taken and put back, and a host with no
-server.
+server. Its daemons run with `TOWER_DIRS=0`, so they never read the user's
+zoxide database. `dirs_test.go` gives them a home directory, a fake zoxide
+and a mount table of their own: a remote's git state (a branch, a linked
+worktree) and zoxide directories in the home's view and back on the
+remote, a dirty tree after a look from the remote's dashboard, a closed
+session's directory listed again; panes and capture's layout through the
+home; new in a directory (`~`, a `#`, one that is gone, none), a new window
+in its session's directory, a window renamed and killed, and a grouped
+duplicate.

@@ -89,7 +89,7 @@ type Refresher struct {
 
 	mu       sync.Mutex
 	started  bool
-	git, zox string // the binaries, once found
+	git, zox string               // the binaries, once found
 	sessions map[string]bool      // session directories wanted, expanded
 	where    map[string]place     // each session directory's repo
 	list     []entry              // the zoxide list, capped

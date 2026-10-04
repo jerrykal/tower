@@ -70,6 +70,9 @@ func newWorld(t *testing.T) *world {
 	t.Setenv("TOWER_NOSRV_POLL", "200")
 	t.Setenv("TOWER_BACKOFF_BASE", "100")
 	t.Setenv("TOWER_BACKOFF_CAP", "1000")
+	// The daemons run in this process, with the user's HOME: never their
+	// zoxide database. Tests of the dirs set up their own.
+	t.Setenv("TOWER_DIRS", "0")
 	w := &world{t: t, root: root, nodes: map[string]*node{}}
 	w.keep = filepath.Join(root, "keep")
 	os.WriteFile(w.keep, []byte("#!/bin/sh\nexec sleep 600\n"), 0o755)

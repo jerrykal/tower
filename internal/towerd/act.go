@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/dirs"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/stream"
 	"github.com/jerrykal/tower/internal/tmux"
@@ -183,9 +186,32 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 		if target == "" {
 			target = t.Session
 		}
+		// The pane's text, and its window's layout, in one round trip.
+		var reps []tmux.Reply
+		reps, err = ctl.DoMany([]string{
+			"capture-pane -e -p -t " + tmux.Quote(target),
+			"list-panes -t " + tmux.Quote(target) + " -F " + tmux.Quote(fmtPanes),
+		}, max(left, 100*time.Millisecond))
+		if err == nil {
+			for _, r := range reps {
+				if r.Err {
+					err = errors.New(strings.TrimSpace(r.Text()))
+					break
+				}
+			}
+		}
+		if err == nil {
+			ack.Text, ack.Panes = reps[0].Text(), d.parsePanes(reps[1])
+		}
+	case proto.OpPanes:
+		// A window's panes, or every pane of a session's windows.
+		line := "list-panes -s -t " + tmux.Quote(t.Session)
+		if req.Kind == proto.KindWindow || t.Window != "" && req.Kind != proto.KindSession {
+			line = "list-panes -t " + tmux.Quote(t.Window)
+		}
 		var r tmux.Reply
-		if r, err = do("capture-pane -e -p -t " + tmux.Quote(target)); err == nil {
-			ack.Text = r.Text()
+		if r, err = do(line + " -F " + tmux.Quote(fmtPanes)); err == nil {
+			ack.Panes = d.parsePanes(r)
 		}
 	case proto.OpHas:
 		ack.Gone = !d.hasSession(ctl, t.Session, left)
@@ -201,6 +227,43 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 		d.w.refresh()
 	}
 	return ack
+}
+
+// fmtPanes lists a pane for the layout preview: a tab between fields,
+// the free-text fields last.
+const fmtPanes = "#{pane_id}\t#{window_id}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}"
+
+// parsePanes reads a list-panes reply in fmtPanes. Paths are spelled
+// with ~ for this machine's home, as the zoxide directories are; tmux
+// reports a pane's directory with symlinks resolved, so the home's
+// resolved path counts too.
+func (d *Daemon) parsePanes(r tmux.Reply) []proto.Pane {
+	home, _ := os.UserHomeDir()
+	real := home
+	if !d.dirs.Net(home) { // resolving it stats every component
+		if p, err := filepath.EvalSymlinks(home); err == nil {
+			real = p
+		}
+	}
+	short := func(p string) string {
+		if s := dirs.Short(p, home); s != p {
+			return s
+		}
+		return dirs.Short(p, real)
+	}
+	out := make([]proto.Pane, 0, len(r.Lines))
+	for _, l := range r.Lines {
+		f, err := tmux.Fields(l, 9)
+		if err != nil {
+			continue
+		}
+		n := func(s string) int { v, _ := strconv.Atoi(s); return v }
+		out = append(out, proto.Pane{
+			ID: f[0], Window: f[1], Left: n(f[2]), Top: n(f[3]), Width: n(f[4]), Height: n(f[5]),
+			Active: f[6] == "1", Command: f[7], Path: short(f[8]),
+		})
+	}
+	return out
 }
 
 // gone reports whether a tmux error says the target does not exist.
@@ -228,11 +291,17 @@ func (d *Daemon) hasSession(ctl *tmux.Control, id string, left time.Duration) bo
 // starts one, waiting for the user's config, and waits for the watch to
 // take the new server before answering.
 func (d *Daemon) newLocal(req *proto.Request, ctl *tmux.Control, left time.Duration) (*proto.Ref, error) {
-	dir := req.Dir
-	if dir == "" {
-		dir, _ = os.UserHomeDir()
-	}
 	window := req.Kind == proto.KindWindow
+	dir, err := d.startDir(req.Dir, window)
+	if err != nil {
+		return nil, err
+	}
+	// -c is format-expanded: a directory goes in literally, the session's
+	// own directory (a new window's default) as a format.
+	cdir := tmux.Arg(dir)
+	if dir == "" && window {
+		cdir = tmux.Quote("#{session_path}")
+	}
 	if ctl != nil {
 		var line string
 		if window {
@@ -246,9 +315,7 @@ func (d *Daemon) newLocal(req *proto.Request, ctl *tmux.Control, left time.Durat
 				line += " -s " + tmux.Arg(req.Name)
 			}
 		}
-		if dir != "" {
-			line += " -c " + tmux.Quote(dir)
-		}
+		line += " -c " + cdir
 		r, err := ctl.DoTimeout(line, max(left, 100*time.Millisecond))
 		if err != nil {
 			return nil, err
@@ -268,9 +335,7 @@ func (d *Daemon) newLocal(req *proto.Request, ctl *tmux.Control, left time.Durat
 	if req.Name != "" {
 		args = append(args, "-s", tmux.Literal(req.Name))
 	}
-	if dir != "" {
-		args = append(args, "-c", dir)
-	}
+	args = append(args, "-c", tmux.Literal(dir))
 	d.logf("act: starting tmux for a new session")
 	out, err := d.tm.Run(ctx, args...)
 	if err != nil {
@@ -283,6 +348,30 @@ func (d *Daemon) newLocal(req *proto.Request, ctl *tmux.Control, left time.Durat
 	defer wcancel()
 	d.w.waitAttached(wctx)
 	return d.madeRef(strings.TrimSpace(out), false), nil
+}
+
+// startDir is where a new session or window starts: dir with ~ taken as
+// this machine's home; with none, the home for a session and "" (the
+// session's own directory) for a window. tmux falls back to the home
+// without a word when it cannot enter a directory, so one that is gone
+// is refused instead; one on a network mount is not checked (the check
+// could block).
+func (d *Daemon) startDir(dir string, window bool) (string, error) {
+	home, _ := os.UserHomeDir()
+	if dir == "" {
+		if window {
+			return "", nil
+		}
+		return home, nil
+	}
+	dir = dirs.Expand(dir, home)
+	if d.dirs.Net(dir) {
+		return dir, nil
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("no directory %s on %s", dirs.Short(dir, home), d.name)
+	}
+	return dir, nil
 }
 
 // madeRef turns "<id>\t<name>" from new-session or new-window into a ref.

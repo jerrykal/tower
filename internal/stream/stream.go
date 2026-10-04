@@ -392,7 +392,7 @@ func (c *Conn) dispatch(m *proto.Msg) {
 				ch <- m.Ack
 			}
 		}
-	case proto.THello, proto.TState, proto.TView, proto.TExec, proto.TRelay:
+	case proto.THello, proto.TState, proto.TView, proto.TExec, proto.TRelay, proto.TLook:
 		if c.o.OnMsg != nil {
 			c.o.OnMsg(m)
 		}

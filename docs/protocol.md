@@ -155,12 +155,13 @@ merely slow to accept is another host's healthy master and stays (S16).
 | Message | Direction | Content |
 | --- | --- | --- |
 | `hello` | both, first | protocol range, towerd id, label, the name the home uses for the remote (`as`), version, home id; the remote's answer adds the chosen protocol, machine key, OS, tmux version, or an error |
-| `state` | remote → home | the remote's sessions and windows (ages against its own clock), its tmux instance, and the clients of **this home's** loops with where each is now |
+| `state` | remote → home | the remote's sessions and windows (ages against its own clock) with each session's git state, its zoxide directories with no session, its tmux instance, and the clients of **this home's** loops with where each is now |
 | `view` | home → remote | the merged view of every host, with this home's loops (current, previous), numbered |
-| `exec` | home → remote | a request to run there (kill, rename, new, capture, has-session) |
+| `exec` | home → remote | a request to run there (kill, rename, new, capture, panes, dup, has-session) |
 | `relay` | remote → home | a request from a dashboard on the remote (switch, or an action elsewhere) |
 | `ack` | answer to `exec` and `relay` | matched by request id |
 | `ping` / `pong` | both | keepalive; `pong` carries the sender's clock |
+| `look` | both | a dashboard opened: refresh git state and zoxide directories (see Git state and directories) |
 
 - **Versioning.** Each side sends `[min, max]`; the remote picks the highest
   version in common or answers an error naming both ranges, and the home
@@ -560,10 +561,41 @@ its own on stop; `TOWER_ALERTS=0` turns them off.
   LD03).
 - `TOWER_LIVE=0` turns live updates off.
 
+## Git state and directories
+
+Besides tmux's listing, a host's state carries what the dashboard shows of
+its directories (the `dirs` package, [design/dirs.md](design/dirs.md)):
+
+- **A session's git state**: for the session's directory, the branch (a
+  short commit when detached), whether the tree is dirty, and for a
+  linked worktree the main worktree's directory name.
+- **Zoxide directories with no session yet**, most frecent first, `~` for
+  the host's home: git roots (a `.git` file or directory) with their
+  state, others plain, a directory on a network mount listed but never
+  checked, a directory gone since left out; at most 100 roots and 100
+  others. The host leaves out its sessions' directories (it knows its own
+  home directory; dashboards do not), so a session made in a dir takes it
+  off the list in the state sent with the answer (A02).
+
+A towerd learns them in the background, never on its re-read of tmux:
+one `git status` per repo, without git's optional locks, at most 4 at a
+time, each given 10s. A path on a network mount (from the mount table) is
+never stat'ed, since a stat on a hard NFS mount whose server is gone
+blocks. The sessions' repos are refreshed every minute and a new session's
+at once; everything (zoxide, every repo) when a dashboard opens: a `view`
+call, at most every 10s per towerd, is a look, passed on as a `look`
+message from a dashboard's towerd to its homes and the home's hosts, and
+from a home to its other hosts, never back. A dashboard opening anywhere
+has every host's changes within about a round trip and a git status
+(A01). Costs on a host with 40 sessions and a 500-entry zoxide database
+(A05): about 0.3s of CPU per minute, 0.8–1s per look, a state of 22 KB
+(9 KB without the directories and git state).
+
 ## Requests from dashboards
 
-Kill, rename, new session and capture (previews) go to the dashboard's own
-towerd with a request id and a deadline (5s):
+Kill, rename, new session or window, grouped duplicate, capture (previews,
+with the window's panes) and panes go to the dashboard's own towerd with a
+request id and a deadline (5s):
 
 - **On this machine** (by towerd id): run on the local control client.
 - **Elsewhere**: to the client's home (relayed if this towerd is not it);
@@ -575,7 +607,16 @@ action after it, so a request the user was told had failed never runs later
 id for 10 minutes and answers a repeat from it. A kill of something already
 gone is `ok` with "already gone". Previews travel only on request, for the
 selected window (V06); a preview shows the session's windows, which it has
-from the view, before the capture arrives (LD01).
+from the view, before the capture arrives (LD01). A capture also answers
+with its window's panes (id, position, size, command, directory, active),
+the layout preview's; `panes` lists a session's or a window's panes
+alone, for a kill's question (A03).
+
+**New in a directory.** `new` takes a directory as the target host spells
+it: `~` is that host's home. A directory that is gone is refused (`no
+directory ~/x on B`), since tmux would start the session in the home
+without a word; one on a network mount is not checked. A new window with
+no directory starts in its session's (A04).
 
 **Read your writes.** The rows a dashboard reads after an action's answer
 show its result. Kill, rename and new re-read the session list before
@@ -623,6 +664,10 @@ Kept per loop, by its home:
 | `TOWER_LIVE` | 1 | 0: dashboards do not follow changes |
 | `TOWER_BIND` | 1 | 0: towerd binds no keys |
 | `TOWER_ALERTS` | 1 | 0: no alert hooks |
+| `TOWER_GIT` | 1 | 0: no git state of sessions or directories |
+| `TOWER_DIRS` | 1 | 0: no zoxide directories |
+| `TOWER_DIRS_EVERY` | 60s | the periodic refresh of zoxide and the sessions' repos |
+| `TOWER_LOOK_EVERY` | 10s | dashboards' reads refresh git state and directories at most this often |
 
 Tests shorten the timings further (keepalive, backoff, TTL) through
 variables listed in `test/scenario`.

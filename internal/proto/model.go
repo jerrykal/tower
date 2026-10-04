@@ -85,7 +85,7 @@ type Pane struct {
 	Width   int    `json:"cols"`
 	Height  int    `json:"rows"`
 	Command string `json:"cmd,omitempty"`
-	Path    string `json:"path,omitempty"`
+	Path    string `json:"path,omitempty"` // the pane's directory, ~ for its host's home
 	Active  bool   `json:"active,omitempty"`
 }
 

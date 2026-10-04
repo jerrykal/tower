@@ -34,6 +34,28 @@ type Session struct {
     Attached int    // clients attached, towerd's control client excluded
     Group    string // session_group when grouped
     Windows  []Window
+    Git      *Git   // the session's directory, when it is in a git repo
+}
+
+type Git struct {
+    Branch string // the branch, or a short commit (7) when detached
+    Dirty  bool
+    Repo   string // a linked worktree: the main worktree's directory name
+}
+
+type Dir struct {        // a zoxide directory with no session yet
+    Path string // as the host spells it, ~ for its home
+    Root bool   // a git repo's root (a .git file or directory)
+    Git  *Git   // for a root
+    Net  bool   // on a network mount: listed, never checked
+}
+
+type Pane struct {       // for the layout preview and a kill's question
+    ID, Window          string // "%3", "@1"
+    Left, Top           int    // cells, as tmux lays the window out
+    Width, Height       int
+    Command, Path       string // pane_current_command; the directory, ~ for the host's home
+    Active              bool
 }
 
 type Window struct {
@@ -67,6 +89,7 @@ type Host struct {
     Inst      string
     NoServer  bool
     Sessions  []Session
+    Dirs      []Dir // zoxide directories with no session, most frecent first
     Seen      int64 // ms since last heard (cached hosts)
 }
 
@@ -90,6 +113,7 @@ type State struct {
     Inst     string
     NoServer bool
     Sessions []Session
+    Dirs     []Dir    // zoxide directories with no session
     Clients  []Client // only clients of the receiving home's loops
     Pad      string   // TOWER_TEST_PAD only
 }
@@ -105,7 +129,7 @@ set, and unknown types are ignored by the receiver.
 
 ```go
 type Msg struct {
-    T     string    `json:"t"` // hello, state, view, exec, relay, ack, ping, pong
+    T     string    `json:"t"` // hello, state, view, exec, relay, ack, ping, pong, look
     Hello *Hello    `json:"hello,omitempty"`
     State *State    `json:"state,omitempty"`
     View  *View     `json:"view,omitempty"`
@@ -127,6 +151,9 @@ type Hello struct {
 type Ping struct { N uint64; Clock int64 } // Clock: sender's unix ms (pong)
 ```
 
+`look` has no body: a dashboard opened, so the receiver refreshes its git
+state and zoxide directories (see [towerd.md](towerd.md), Looks).
+
 ## Requests
 
 Requests travel as `exec` (home → remote), `relay` (remote → home) and the
@@ -135,12 +162,12 @@ local `act` call; one shape serves all three.
 ```go
 type Request struct {
     ID       string // unique per request; repeats are answered from memory
-    Op       string // kill, rename, new, capture, has, switch, dup
+    Op       string // kill, rename, new, capture, panes, has, switch, dup
     Deadline int64  // unix ms in the clock of whoever holds the request now
     Target   Ref
-    Kind     string // "session" or "window" (kill, rename, new)
-    Name     string // rename, new
-    Dir      string // new: start directory
+    Kind     string // "session" or "window" (kill, rename, new, panes)
+    Name     string // rename, new, dup
+    Dir      string // new: start directory (~ is the target host's home)
     Client   string // switch: "pid:created:name" of the pressing client
     Loop     string // switch: resolved from the client's registration
     Gen      int
@@ -156,7 +183,8 @@ type Ack struct {
     Ended  bool   // switch: the loop ended the old client
     Gone   bool   // has: the session does not exist (or no server)
     Text   string // capture
-    Ref    *Ref   // new: what was created
+    Panes  []Pane // capture: the target window's; panes
+    Ref    *Ref   // new, dup: what was created
 }
 ```
 
@@ -180,7 +208,7 @@ type Reply struct {
 
 | Op | Args → Result | Who calls |
 | --- | --- | --- |
-| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes (id, name, as, live), loops, pending switches, clients and the watch) | ensure, `tower status` |
+| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes (id, name, as, live), loops, pending switches, clients, the watch, the dirs refresher (binaries, counts, the last refreshes' cost) and towerd's CPU time, its finished children included) | ensure, `tower status` |
 | `stop` | `{IfOlderThan}` → `{}` | `tower stop`, an upgrading caller |
 | `stream` | – → the connection becomes a stream | the bridge |
 | `register` | `{Pid, Loop, Gen, Home, Inst}` → `{MKey, TmuxBin}` | the attach shim |

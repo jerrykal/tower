@@ -14,6 +14,16 @@ func errBad(msg string) error { return errors.New(msg) }
 // dashboards, and passes the change to each connected home and to the
 // home role. changed is false for a re-read that found nothing new.
 func (d *Daemon) publish(s *snapshot, changed bool) {
+	if changed {
+		// The refresher only records them here; it looks at a new one
+		// in its own goroutine. Before the pushes below, so the states
+		// they build leave out the dirs that now have a session.
+		paths := make([]string, 0, len(s.Sessions))
+		for _, x := range s.Sessions {
+			paths = append(paths, x.Path)
+		}
+		d.dirs.Sessions(paths)
+	}
 	d.mu.Lock()
 	d.snap = s
 	regsChanged := d.regs.bind(s)
@@ -89,7 +99,7 @@ func (d *Daemon) localHost(now time.Time) proto.Host {
 	return proto.Host{
 		ID: d.id, Name: d.name, Status: proto.StatusLocal, OS: d.osName, Tmux: d.tmuxVer,
 		Version: d.version, MKey: d.env.MKey, Inst: s.Inst, NoServer: s.NoServer,
-		Sessions: sessionsAt(s, now),
+		Sessions: d.withGit(sessionsAt(s, now)), Dirs: d.dirs.Dirs(),
 	}
 }
 
@@ -103,7 +113,7 @@ func (d *Daemon) stateAt(home string, at time.Time) *proto.State {
 	if s == nil {
 		s = &snapshot{At: at}
 	}
-	st := &proto.State{Inst: s.Inst, NoServer: s.NoServer, Sessions: sessionsAt(s, at)}
+	st := &proto.State{Inst: s.Inst, NoServer: s.NoServer, Sessions: d.withGit(sessionsAt(s, at)), Dirs: d.dirs.Dirs()}
 	for _, c := range d.regs.forHome(home) {
 		st.Clients = append(st.Clients, c)
 	}

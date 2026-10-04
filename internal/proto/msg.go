@@ -22,6 +22,7 @@ const (
 	TAck   = "ack"
 	TPing  = "ping"
 	TPong  = "pong"
+	TLook  = "look" // a dashboard opened: refresh git state and zoxide directories
 )
 
 // Msg is one line of the home ↔ remote stream. T names the type and the

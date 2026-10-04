@@ -74,6 +74,21 @@ type Detail struct {
 	Loops   []LoopStatus    `json:"loops,omitempty"`   // home role
 	Pending []PendingSwitch `json:"pending,omitempty"` // home role: stored switches
 	Watch   WatchStatus     `json:"watch"`
+	Dirs    DirsStatus      `json:"dirs"`
+	CPUMs   int64           `json:"cpu_ms"` // towerd's CPU time so far, its finished children (git, zoxide, tmux) included
+}
+
+// DirsStatus is the refresher of git state and zoxide directories.
+type DirsStatus struct {
+	Git      string `json:"git,omitempty"`    // the git binary; empty: no git state
+	Zoxide   string `json:"zoxide,omitempty"` // the zoxide binary; empty: no directories
+	Dirs     int    `json:"dirs"`             // zoxide directories kept
+	Repos    int    `json:"repos"`            // repos followed
+	Rounds   int    `json:"rounds"`           // refreshes so far
+	TimerMs  int64  `json:"timer_ms"`         // the last periodic refresh
+	TimerRun int    `json:"timer_runs"`       // and its git status runs
+	LookMs   int64  `json:"look_ms"`          // the last refresh a dashboard asked for
+	LookRun  int    `json:"look_runs"`
 }
 
 // LinkStatus is one host link at the home.

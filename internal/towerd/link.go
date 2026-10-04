@@ -131,6 +131,7 @@ type link struct {
 	inst                 string
 	nosrv                bool
 	sessions             []proto.Session
+	dirs                 []proto.Dir    // the host's zoxide directories with no session
 	clients              []proto.Client // the host's last client list
 	stateAt              time.Time
 	heard                time.Time // last heard from the host (wall clock, for hosts.json)
@@ -203,10 +204,11 @@ func (l *link) host(now time.Time) proto.Host {
 		ID: l.id, Name: l.cfg.Name, Status: l.status, Reason: l.reason, OS: l.os, Tmux: l.tmuxV,
 		Version: l.version, MKey: l.mkey, Inst: l.inst, NoServer: l.nosrv, Link: l.gen,
 		Sessions: sessionsShift(l.sessions, now.Sub(l.stateAt).Milliseconds()),
+		Dirs:     l.dirs,
 	}
 	if l.status == proto.StatusDup {
 		// Its sessions are listed under the alias that linked.
-		hst.Sessions = nil
+		hst.Sessions, hst.Dirs = nil, nil
 	}
 	if l.status != proto.StatusUp && !l.heard.IsZero() {
 		hst.Seen = now.Sub(l.heard).Milliseconds()
@@ -446,6 +448,8 @@ func (l *link) connect() outcome {
 				if m.Req != nil {
 					go l.h.serveRelay(l, m.Req)
 				}
+			case proto.TLook:
+				d.look(l)
 			}
 		},
 		OnStall: func(stalled bool) { l.onStall(conn, stalled) },
@@ -687,6 +691,7 @@ func (l *link) takeState(conn *stream.Conn, st *proto.State) {
 		return
 	}
 	l.inst, l.nosrv, l.sessions, l.clients, l.stateAt = st.Inst, st.NoServer, st.Sessions, st.Clients, time.Now()
+	l.dirs = st.Dirs
 	l.heard = time.Now()
 	l.states++
 	if l.id != "" {

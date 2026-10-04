@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/dirs"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
 	"golang.org/x/sys/unix"
@@ -80,6 +81,7 @@ type Daemon struct {
 
 	w       *watcher
 	answers *answers
+	dirs    *dirs.Refresher // git state of sessions, zoxide directories
 
 	mu        sync.Mutex // guards everything below; never held across I/O
 	gen       uint64
@@ -94,6 +96,7 @@ type Daemon struct {
 	calls     int
 	tmuxVer   string
 	bindState string
+	lookAt    time.Time // the last look (dirs.go)
 }
 
 // Start takes the lock, listens and starts the watch. The daemon runs
@@ -147,6 +150,8 @@ func Start(o Options) (*Daemon, error) {
 
 	d.regs = loadRegistry(e.State("clients.json"))
 	d.answers = newAnswers()
+	d.dirs = d.newDirs()
+	d.dirs.Start()
 	d.w = newWatcher(d)
 	go d.w.run()
 	if !o.Bridged {
@@ -269,6 +274,7 @@ func (d *Daemon) Stop(why string) {
 func (d *Daemon) shutdown() {
 	d.logf("stopping: %s", d.stopWhy)
 	d.w.stop()
+	d.dirs.Stop()
 	d.ln.Close()
 	if st, err := os.Lstat(d.env.Socket()); err == nil && st.Mode()&os.ModeSocket != 0 {
 		os.Remove(d.env.Socket())
@@ -629,6 +635,16 @@ func (d *Daemon) activateHome(why string) *homeRole {
 	return h
 }
 
+// cpuTime is the user and system time of this process and its children
+// that have finished.
+func cpuTime() time.Duration {
+	var self, kids syscall.Rusage
+	syscall.Getrusage(syscall.RUSAGE_SELF, &self)
+	syscall.Getrusage(syscall.RUSAGE_CHILDREN, &kids)
+	tv := func(t syscall.Timeval) time.Duration { return time.Duration(t.Nano()) }
+	return tv(self.Utime) + tv(self.Stime) + tv(kids.Utime) + tv(kids.Stime)
+}
+
 // status is the answer to status; full adds what towerd knows.
 func (d *Daemon) status(full bool) *proto.Status {
 	st := &proto.Status{ID: d.id, Version: d.version, Pid: os.Getpid(), MKey: d.env.MKey, Tag: d.env.Tag, TmuxBin: d.tm.Bin}
@@ -660,6 +676,10 @@ func (d *Daemon) status(full bool) *proto.Status {
 	if h != nil {
 		h.detail(det)
 	}
+	ds := d.dirs.Stats()
+	det.Dirs = proto.DirsStatus{Git: ds.Git, Zoxide: ds.Zoxide, Dirs: ds.Dirs, Repos: ds.Roots, Rounds: ds.Rounds,
+		TimerMs: ds.Timer.Took.Milliseconds(), TimerRun: ds.Timer.Statuses, LookMs: ds.Look.Took.Milliseconds(), LookRun: ds.Look.Statuses}
+	det.CPUMs = cpuTime().Milliseconds()
 	st.Detail = det
 	return st
 }
