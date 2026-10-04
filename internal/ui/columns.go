@@ -256,7 +256,7 @@ func (m *Model) follow(old *world) {
 		// A session that went hands its place to another session, while
 		// there is one: landing on a dir would turn the next ⏎ into a new
 		// session.
-		n := (*item)(nil)
+		var n *item
 		if gone := old.find(k); gone != nil {
 			n = neighbour(ofKind(before, gone.kind), ofKind(now, gone.kind), k, keyOf)
 		}

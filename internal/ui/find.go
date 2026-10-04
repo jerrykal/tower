@@ -321,23 +321,34 @@ func (f *finder) build(w *world, allDirs bool, requery bool) {
 		return
 	}
 	// The cursor's row went: the nearest row after it that is still
-	// there, else before it.
+	// there, else before it; a session's prefers a session's to a dir (the
+	// next ⏎ would otherwise make a session), as the columns do.
 	at := -1
 	for i := range old {
 		if old[i].key == f.cursor {
 			at = i
 		}
 	}
-	for i := at + 1; i < len(old) && at >= 0; i++ {
-		if f.index(old[i].key) >= 0 {
-			f.cursor = old[i].key
-			return
-		}
+	if at < 0 {
+		f.toBest()
+		return
 	}
-	for i := at - 1; i >= 0; i-- {
-		if f.index(old[i].key) >= 0 {
-			f.cursor = old[i].key
-			return
+	dir := old[at].kind == fDir
+	for _, sameKind := range []bool{true, false} {
+		ok := func(i int) bool {
+			return (!sameKind || (old[i].kind == fDir) == dir) && f.index(old[i].key) >= 0
+		}
+		for i := at + 1; i < len(old); i++ {
+			if ok(i) {
+				f.cursor = old[i].key
+				return
+			}
+		}
+		for i := at - 1; i >= 0; i-- {
+			if ok(i) {
+				f.cursor = old[i].key
+				return
+			}
 		}
 	}
 	f.toBest()
@@ -374,15 +385,20 @@ func (f *finder) index(k rowKey) int {
 }
 
 // lines lays the rows out as the sessions column does: a run of dirs, and
-// the sessions after one, open with a header and a blank line (and a
-// blank above the header when rows come before it). line[i] is row i's
-// line; heads are the rows that open a section, their header two lines
-// above them.
+// the cached sessions of unreachable hosts, open with a header and a
+// blank line (and a blank above the header when rows come before it).
+// line[i] is row i's line; heads are the rows that open a section, their
+// header two lines above them.
 func (f *finder) lines() (line []int, heads []int, total int) {
 	line = make([]int, len(f.rows))
 	for i := range f.rows {
 		dir := f.rows[i].kind == fDir
-		if i == 0 && dir || i > 0 && dir != (f.rows[i-1].kind == fDir) {
+		head := dir || f.rows[i].band == 2
+		if i > 0 {
+			prev := &f.rows[i-1]
+			head = head && (dir != (prev.kind == fDir) || f.rows[i].band != prev.band && !dir)
+		}
+		if head {
 			if i > 0 {
 				total++
 			}

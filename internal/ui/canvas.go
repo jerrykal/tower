@@ -273,10 +273,14 @@ func (c *canvas) String() string {
 				continue
 			}
 			// Every cell sits on the palette's base, whatever the
-			// terminal's own background.
+			// terminal's own background, and default text takes the
+			// palette's text so it reads on that base.
 			st := cl.st
 			if st.bg == nil {
 				st.bg = cBase
+			}
+			if st.fg == nil {
+				st.fg = cText
 			}
 			if st != cur {
 				b.WriteString(st.sgr())

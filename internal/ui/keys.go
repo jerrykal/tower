@@ -9,7 +9,7 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	if m.note.kind == noteErr {
 		m.note = message{} // an error stays until the next key
 	}
-	if m.width > 0 && m.height > 0 && m.layout().small {
+	if m.tooSmall() {
 		// Nothing is drawn but the size: no key acts on what is not seen
 		// (a size not yet known leaves the keys alone).
 		switch k.String() {
@@ -36,8 +36,17 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	return m.normalKey(k)
 }
 
+// tooSmall reports whether the dashboard shows only its size (a size not
+// yet known is not too small).
+func (m *Model) tooSmall() bool {
+	return m.width > 0 && m.height > 0 && (m.width < minWidth || m.height < minHeight)
+}
+
 // paste puts pasted text, as one line, into whatever takes text.
 func (m *Model) paste(s string) tea.Cmd {
+	if m.tooSmall() {
+		return nil // as keys: nothing acts on what is not seen
+	}
 	s = oneLine(s)
 	switch m.mode {
 	case modeFind:

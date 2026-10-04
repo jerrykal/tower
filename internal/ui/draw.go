@@ -333,11 +333,6 @@ func (m *Model) hostRight(it *item) (string, style) {
 		return "off", sMuted
 	case h.Status == proto.StatusFailed || h.Status == proto.StatusDup:
 		return glyphWarn, sErr.Bold()
-	case !h.Reachable():
-		if h.Seen > 0 {
-			return age(time.Duration(h.Seen) * time.Millisecond), sErr
-		}
-		return glyphWarn, sErr
 	}
 	if len(m.cs[colSessions].in.text) > 0 && m.w != nil {
 		n := len(filter(m.w.entries(h.Name, m.allDirs), m.cs[colSessions].in.text).items)
@@ -345,6 +340,12 @@ func (m *Model) hostRight(it *item) (string, style) {
 			return strconv.Itoa(n), sErr // matches in a cached list
 		}
 		return strconv.Itoa(n), sGold
+	}
+	if !h.Reachable() {
+		if h.Seen > 0 {
+			return age(time.Duration(h.Seen) * time.Millisecond), sErr
+		}
+		return glyphWarn, sErr
 	}
 	return strconv.Itoa(len(h.Sessions)), sMuted
 }
@@ -387,7 +388,7 @@ func (m *Model) drawHosts(cv *canvas, g geometry, s span, l *list) {
 		logo := sFoam
 		name := sPlain
 		switch {
-		case h.Status == proto.StatusOff:
+		case h.Status == proto.StatusOff || loading(h):
 			logo, name = sMuted, sMuted
 		case !h.Reachable():
 			logo, name = sErr, sMuted // down: the logo says so
@@ -492,7 +493,10 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 			hint("space", "on the host turns it on")
 		default:
 			msg, mst = glyphRefused+" "+hostStatus(h.host), sErr
-			hint("⏎", "on the host retries")
+			switch h.host.Status {
+			case proto.StatusDown, proto.StatusFailed:
+				hint("⏎", "on the host retries") // as enterHost
+			}
 		}
 		cv.put(s.x+2, g.bodyY, msg, mst, s.w-2)
 	}
@@ -795,7 +799,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		if r.kind == fSession || r.fold || r.kind == fDir {
 			hst, logo := sFoam, sFoam
 			switch {
-			case r.it.host.Status == proto.StatusOff:
+			case r.it.host.Status == proto.StatusOff || loading(r.it.host):
 				hst, logo = sMuted, sMuted
 			case !reach:
 				hst, logo = sMuted, sErr
