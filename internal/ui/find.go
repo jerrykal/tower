@@ -10,7 +10,8 @@ import (
 // without walking host by host. Each session appears once with the
 // windows that match a query word under it; zoxide dirs follow the
 // sessions of reachable hosts; unreachable hosts' cached sessions and
-// dirs come last, since ⏎ there can only reconnect.
+// dirs come last, since ⏎ there can only reconnect. A run of dirs, and
+// the sessions after one, open with a header (lines).
 
 type frowKind uint8
 
@@ -370,6 +371,28 @@ func (f *finder) index(k rowKey) int {
 		}
 	}
 	return -1
+}
+
+// lines lays the rows out as the sessions column does: a run of dirs, and
+// the sessions after one, open with a header and a blank line (and a
+// blank above the header when rows come before it). line[i] is row i's
+// line; heads are the rows that open a section, their header two lines
+// above them.
+func (f *finder) lines() (line []int, heads []int, total int) {
+	line = make([]int, len(f.rows))
+	for i := range f.rows {
+		dir := f.rows[i].kind == fDir
+		if i == 0 && dir || i > 0 && dir != (f.rows[i-1].kind == fDir) {
+			if i > 0 {
+				total++
+			}
+			total += 2
+			heads = append(heads, i)
+		}
+		line[i] = total
+		total++
+	}
+	return line, heads, total
 }
 
 // at is the cursor's row index, or -1.

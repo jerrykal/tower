@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/relay"
 )
@@ -432,6 +434,25 @@ func TestDirs(t *testing.T) {
 	// every entry.
 	if got := names(m); !slices.Equal(got[4:], []string{"A  ~/src/herdr", "A  ~/src/alpha", "C  charlie"}) {
 		t.Fatalf("rows %q", got)
+	}
+	// The dirs, and the cached sessions after them, open with a header
+	// between blanks.
+	line, heads, total := m.find.lines()
+	if !slices.Equal(line, []int{0, 1, 2, 3, 7, 8, 12}) || !slices.Equal(heads, []int{4, 6}) || total != 13 {
+		t.Fatalf("lines %v heads %v total %d", line, heads, total)
+	}
+	m.width, m.height = 100, 30
+	text := ansi.Strip(m.View().Content)
+	for _, s := range []string{"dirs · git roots", "sessions · cached on hosts that are down"} {
+		if !strings.Contains(text, s) {
+			t.Errorf("the finder lacks %q:\n%s", s, text)
+		}
+	}
+	if c, i := m.rowAt(m.geo.cols[0].x+3, m.geo.bodyY+7); c != 0 || i != 4 {
+		t.Errorf("a click on the first dir's line picks row %d", i)
+	}
+	if _, i := m.rowAt(m.geo.cols[0].x+3, m.geo.bodyY+5); i != -1 {
+		t.Errorf("a click on a header picks row %d", i)
 	}
 	press(t, m, "ctrl+g")
 	if got := names(m); !slices.Contains(got, "A  ~/notes") {

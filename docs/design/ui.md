@@ -161,6 +161,9 @@ the current session (⏎ then goes there) and `?` shows the keys.
 Every host's sessions in one list, each once, most recently attached
 first: reachable hosts' sessions, then their zoxide dirs (git roots; `^g`
 every entry), then unreachable hosts' cached sessions and dirs, dimmed.
+As in the sessions column, a run of dirs opens with a blank line, the
+`dirs · git roots ^g` header and a blank, and so do the cached sessions
+after one (`sessions · cached on hosts that are down`).
 
 - **Words.** The query splits at spaces and `:`; each word goes to the
   host, session or window it matches best, in any order, and every word

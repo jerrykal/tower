@@ -526,15 +526,19 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 	}
 	if header >= 0 {
 		if y := g.bodyY + header - top; y >= g.bodyY && y < g.bodyY+g.bodyH {
-			label := "dirs · git roots"
-			if m.allDirs {
-				label = "dirs · every zoxide entry"
-			}
-			cv.put(s.x+2, y, label, sMuted.Bold(), s.w-6)
+			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-6)
 			putRight(cv, s.x+s.w-1, y, "^g", sMuted)
 		}
 	}
 	scrollbar(cv, s.x+s.w, g.bodyY, g.bodyH, top, total)
+}
+
+// dirsLabel heads the dirs, in the sessions column and the finder.
+func (m *Model) dirsLabel() string {
+	if m.allDirs {
+		return "dirs · every zoxide entry"
+	}
+	return "dirs · git roots"
 }
 
 func (m *Model) ageText(it *item) string {
@@ -748,7 +752,8 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		return
 	}
 	at := max(f.at(), 0)
-	f.top = scrollTo(f.top, at, g.bodyH, len(f.rows))
+	line, heads, total := f.lines()
+	f.top = scrollTo(f.top, line[at], g.bodyH, total)
 	hostW := m.findHostWidth()
 	clientsW, winsW, flags, ageW := 0, 0, false, 0
 	for i := range f.rows {
@@ -765,8 +770,23 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		flags = flags || r.it.bell || r.it.act
 		ageW = max(ageW, width(m.ageText(r.it)))
 	}
-	for i := f.top; i < len(f.rows) && i-f.top < g.bodyH; i++ {
-		y := g.bodyY + i - f.top
+	for _, i := range heads {
+		y := g.bodyY + line[i] - 2 - f.top
+		if y < g.bodyY || y >= g.bodyY+g.bodyH {
+			continue
+		}
+		if f.rows[i].kind == fDir {
+			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-6)
+			putRight(cv, s.x+s.w-1, y, "^g", sMuted)
+		} else {
+			cv.put(s.x+2, y, "sessions · cached on hosts that are down", sMuted.Bold(), s.w-3)
+		}
+	}
+	for i := range f.rows {
+		y := g.bodyY + line[i] - f.top
+		if y < g.bodyY || y >= g.bodyY+g.bodyH {
+			continue
+		}
 		r := &f.rows[i]
 		end := s.x + s.w - 1
 		reach := r.it.host.Reachable()
@@ -881,7 +901,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		}
 		frame(cv, s.x, y, s.w, sel)
 	}
-	scrollbar(cv, s.x+s.w, g.bodyY, g.bodyH, f.top, len(f.rows))
+	scrollbar(cv, s.x+s.w, g.bodyY, g.bodyH, f.top, total)
 }
 
 // --- the breadcrumb ---

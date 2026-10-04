@@ -35,11 +35,13 @@ func (m *Model) rowAt(x, y int) (col, int) {
 		if x < s.x || x >= s.x+s.w {
 			return 0, -1
 		}
-		i := m.find.top + line
-		if i >= len(m.find.rows) {
-			return 0, -1
+		lineOf, _, _ := m.find.lines()
+		for i, l := range lineOf {
+			if l == m.find.top+line {
+				return 0, i
+			}
 		}
-		return 0, i
+		return 0, -1
 	}
 	for c := colHosts; c <= colWindows; c++ {
 		s := g.cols[c]
