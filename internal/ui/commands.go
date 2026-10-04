@@ -235,10 +235,12 @@ func (m *Model) dupSelected() tea.Cmd {
 		m.setErr(err.Error())
 		return nil
 	}
-	name := it.sess.Name + " 2"
-	for _, s := range m.w.sessions[it.host.Name] {
-		if s.sess.Name == name {
-			return m.enter(s.key, "")
+	name, found := dupName(it.host, it.sess)
+	if found {
+		for _, s := range m.w.sessions[it.host.Name] {
+			if s.sess.Name == name {
+				return m.enter(s.key, "")
+			}
 		}
 	}
 	if m.busy {

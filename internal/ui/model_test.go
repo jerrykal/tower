@@ -449,7 +449,7 @@ func TestDirs(t *testing.T) {
 	// A taken name opens the prompt with the first free one.
 	m2, f2, _ := newTestModel(t, d, false)
 	press(t, m2, "s", "r", "c", "a", "l", "enter")
-	if m2.mode != modePrompt || m2.prompt.in.String() != "alpha 2" || !strings.Contains(m2.prompt.err, "alpha is taken") {
+	if m2.mode != modePrompt || m2.prompt.in.String() != "alpha_2" || !strings.Contains(m2.prompt.err, "alpha is taken") {
 		t.Fatalf("taken: mode %v prompt %+v", m2.mode, m2.prompt)
 	}
 	press(t, m2, "ctrl+u", "a", ".", "b", "enter")
@@ -735,3 +735,23 @@ func TestLive(t *testing.T) {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+// D reuses only a duplicate in the session's group: a session that merely
+// has the duplicate's name is passed over.
+func TestDupName(t *testing.T) {
+	h := &proto.Host{Sessions: []proto.Session{
+		{ID: "$1", Name: "proj"},
+		{ID: "$2", Name: "proj 2"}, // made by hand, not grouped
+	}}
+	if n, found := dupName(h, &h.Sessions[0]); n != "proj 3" || found {
+		t.Fatalf("%q %v", n, found)
+	}
+	h.Sessions = append(h.Sessions, proto.Session{ID: "$3", Name: "proj 3", Group: "proj"})
+	h.Sessions[0].Group = "proj"
+	if n, found := dupName(h, &h.Sessions[0]); n != "proj 3" || !found {
+		t.Fatalf("the grouped duplicate: %q %v", n, found)
+	}
+	if got := freeName(h, "proj"); got != "proj_2" {
+		t.Fatalf("a dir's session: %q", got)
+	}
+}

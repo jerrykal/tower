@@ -49,10 +49,10 @@ func TestScriptAtlas(t *testing.T) {
 	if dup := f.actsOf(proto.OpDup); len(dup) != 1 || dup[0].Name != "bravo 2" {
 		t.Fatalf("dup sent %+v", dup)
 	}
-	if out, err := sh("open", "A", "~/src/alpha"); err != nil || out != "open on A: done (alpha 2)\n" {
+	if out, err := sh("open", "A", "~/src/alpha"); err != nil || out != "open on A: done (alpha_2)\n" {
 		t.Fatalf("open: %q %v", out, err)
 	}
-	if n := f.actsOf(proto.OpNew); len(n) != 1 || n[0].Dir != "~/src/alpha" || n[0].Name != "alpha 2" {
+	if n := f.actsOf(proto.OpNew); len(n) != 1 || n[0].Dir != "~/src/alpha" || n[0].Name != "alpha_2" {
 		t.Fatalf("open sent %+v", n)
 	}
 }

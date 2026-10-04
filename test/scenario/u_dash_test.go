@@ -245,7 +245,8 @@ func TestU05(t *testing.T) {
 // U06: zoxide dirs in the dashboard: git roots after the sessions, every
 // entry after ^g; ⏎ on a dir makes a session named after it there and
 // attaches it; a taken name opens the prompt with the first free
-// "<name> <n>"; `tower _ui open` does the same by path.
+// "<name>_<n>" ("<name> <n>" is a grouped duplicate's); `tower _ui open`
+// does the same by path.
 func TestU06(t *testing.T) {
 	w := NewWorld(t, "u06")
 	w.repo("src/proj")
@@ -282,20 +283,20 @@ func TestU06(t *testing.T) {
 	term.Wait(`NEW SESSION`, 3*time.Second)
 	term.Wait(`proj is taken on B`, 3*time.Second)
 	term.Slow("Enter")
-	w.WaitLoop(a, "^B:proj 2(:@|$)", 6*time.Second)
-	if p := sessionFormat(b, "proj 2", "#{session_path}"); p != filepath.Join(w.UserHome, "work", "proj") {
-		t.Fatalf("proj 2 is in %q", p)
+	w.WaitLoop(a, "^B:proj_2(:@|$)", 6*time.Second)
+	if p := sessionFormat(b, "proj_2", "#{session_path}"); p != filepath.Join(w.UserHome, "work", "proj") {
+		t.Fatalf("proj_2 is in %q", p)
 	}
 	// By path, from a script.
 	dir := filepath.Join(w.Dir, "elsewhere", "proj")
 	os.MkdirAll(dir, 0o700)
-	cl := b.ClientIDs("proj 2")[0]
-	if out, err := b.UI(cl, nil, "open", "B", dir); err != nil || out != "open on B: done (proj 3)\n" {
+	cl := b.ClientIDs("proj_2")[0]
+	if out, err := b.UI(cl, nil, "open", "B", dir); err != nil || out != "open on B: done (proj_3)\n" {
 		t.Fatalf("open: %v %q", err, out)
 	}
-	w.WaitLoop(a, "^B:proj 3(:@|$)", 6*time.Second)
-	if p := sessionFormat(b, "proj 3", "#{session_path}"); p != dir {
-		t.Fatalf("proj 3 is in %q, want %q", p, dir)
+	w.WaitLoop(a, "^B:proj_3(:@|$)", 6*time.Second)
+	if p := sessionFormat(b, "proj_3", "#{session_path}"); p != dir {
+		t.Fatalf("proj_3 is in %q, want %q", p, dir)
 	}
 }
 

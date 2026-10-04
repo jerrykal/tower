@@ -394,8 +394,9 @@ func dirSessionName(p string) string {
 	return sessionName(path.Base(p))
 }
 
-// freeName is the first of name, "name 2", "name 3", … that no session
-// on host h has.
+// freeName is name, or when a session on h has it, the first free
+// "<name>_<n>" from 2: a dir's session whose name is taken (the fzf
+// picker's spelling), never "<name> <n>", which is a grouped duplicate's.
 func freeName(h *proto.Host, name string) string {
 	taken := func(n string) bool {
 		return slices.ContainsFunc(h.Sessions, func(s proto.Session) bool { return s.Name == n })
@@ -404,9 +405,28 @@ func freeName(h *proto.Host, name string) string {
 		return name
 	}
 	for n := 2; ; n++ {
-		c := name + " " + strconv.Itoa(n)
+		c := name + "_" + strconv.Itoa(n)
 		if !taken(c) {
 			return c
+		}
+	}
+}
+
+// dupName is the name of session s's grouped duplicate on h: "<name> 2",
+// or the next "<name> <n>" free. A session of that name already in s's
+// group is the duplicate made before, and is returned as found; one of
+// that name not in the group (made by hand, or a dir's session) is passed
+// over, never attached as if it were the duplicate.
+func dupName(h *proto.Host, s *proto.Session) (name string, found bool) {
+	for n := 2; ; n++ {
+		c := s.Name + " " + strconv.Itoa(n)
+		i := slices.IndexFunc(h.Sessions, func(o proto.Session) bool { return o.Name == c })
+		if i < 0 {
+			return c, false
+		}
+		o := h.Sessions[i]
+		if o.Group != "" && (o.Group == s.Group || o.Group == s.Name) {
+			return c, true
 		}
 	}
 }

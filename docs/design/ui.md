@@ -292,10 +292,12 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   in the session's directory; the new row is selected once a read has it.
   ⏎ on a dir makes a session named after it (`.` dropped at the start,
   `.` and `:` as `_`) in that dir and attaches it; a taken name opens the
-  prompt with the first free `<name> <n>`; `r` on a dir asks the name
-  first.
-- **Duplicate** (`D`): `act dup` named `<name> 2`, then ⏎ on what it
-  made; an existing `<name> 2` is attached as it is.
+  prompt with the first free `<name>_<n>` (the fzf picker's spelling);
+  `r` on a dir asks the name first.
+- **Duplicate** (`D`): `act dup` named `<name> 2` (or the next free
+  `<name> <n>`), then ⏎ on what it made; a session of that name already
+  in the session's group is the duplicate made before and is attached as
+  it is, while one of that name outside the group is passed over.
 - **Rename**: prefilled; a session name another session on the host has
   is refused with why.
 - **Requests** carry a fresh id and a deadline of `TOWER_ACK_TIMEOUT` (5s;
