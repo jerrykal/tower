@@ -6,17 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/client"
 	"github.com/jerrykal/tower/internal/config"
-	"github.com/jerrykal/tower/internal/install"
+	"github.com/jerrykal/tower/internal/hosts"
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/internal/transport"
-	"github.com/jerrykal/tower/internal/version"
 )
 
 func cmdHost(args []string, out io.Writer) error {
@@ -27,35 +22,25 @@ func cmdHost(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	l := hosts.New(env)
 	switch args[0] {
 	case "add":
-		return hostAdd(env, args[1:], out)
+		return hostAdd(l, args[1:], out)
 	case "rm", "remove":
-		return hostEdit(env, args[1:], out, "removed", func(hs []config.Host, i int) []config.Host { return slices.Delete(hs, i, i+1) })
+		return hostEdit(args[1:], out, "removed", l.Remove)
 	case "on", "off":
 		on := args[0] == "on"
-		return hostEdit(env, args[1:], out, "turned "+args[0], func(hs []config.Host, i int) []config.Host {
-			if on {
-				hs[i].Enabled = nil
-			} else {
-				hs[i].Enabled = &on
-			}
-			return hs
-		})
+		return hostEdit(args[1:], out, "turned "+args[0], func(name string) error { return l.SetOn(name, on) })
 	case "ls", "list":
 		return hostList(env, out)
 	}
 	return fmt.Errorf("unknown host command %q", args[0])
 }
 
-func findHost(hosts []config.Host, name string) int {
-	return slices.IndexFunc(hosts, func(h config.Host) bool { return strings.EqualFold(h.Name, name) })
-}
-
 // hostAdd checks the host in order (ssh, tmux, OS, tower), adds it to
 // hosts.toml (a failed check keeps it, with the reason and the fix), and
 // tells the home.
-func hostAdd(env *config.Env, args []string, out io.Writer) error {
+func hostAdd(l *hosts.List, args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("host add", flag.ContinueOnError)
 	name := fs.String("name", "", "the host's label (default: from the ssh target)")
 	tmuxArgs := fs.String("tmux", "", "tmux arguments selecting the server there (-L name)")
@@ -68,51 +53,29 @@ func hostAdd(env *config.Env, args []string, out io.Writer) error {
 	if len(pos) != 1 {
 		return errors.New("usage: tower host add <ssh target> [--name N] [--tmux ARGS] [--tower PATH]")
 	}
-	h := config.Host{Name: *name, SSH: pos[0], Tmux: *tmuxArgs, Tower: *tower}
-	if h.Name == "" {
-		h.Name = config.DefaultName(pos[0])
+	list, err := l.Load()
+	if err != nil {
+		return err
 	}
-	if h.SSH == h.Name {
-		h.SSH = ""
+	aliases := l.Aliases()
+	h := config.Host{Name: hosts.Clean(*name), SSH: pos[0], Tmux: *tmuxArgs, Tower: *tower}
+	if h.Name == "" {
+		h.Name = hosts.Clean(config.DefaultName(pos[0]))
 	}
 	if *noStandby {
 		f := false
 		h.Standby = &f
 	}
-	hosts, err := config.LoadHosts(env.HostsFile())
-	if err != nil {
-		return err
-	}
-	if findHost(hosts, h.Name) >= 0 {
-		return &exitError{code: 1, msg: fmt.Sprintf("a host named %q already exists", h.Name)}
+	if err := hosts.CheckName(list, aliases, h.Name, pos[0], -1); err != nil {
+		return &exitError{code: 1, msg: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	ssh := transport.New(env.CMDir())
-	self, _ := os.Executable()
-	inst := install.New(version.Version, self)
-	towerCmd := inst.Command()
-	if h.Tower != "" {
-		towerCmd = transport.RemoteCommand(h.Tower)
-	}
-	towerCmd = transport.WithHome(h.Home, towerCmd)
-	failed := false
-	checks := ssh.CheckHost(ctx, h, towerCmd)
-	if last := &checks[len(checks)-1]; last.Name == "tower" && !last.OK && h.Tower == "" {
-		// The last check: put this build there, as the home would on connect.
-		ictx, icancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		err := inst.Install(ictx, ssh.On(h), h.Name)
-		icancel()
-		if err != nil {
-			last.Detail = err.Error()
-		} else {
-			last.OK, last.Detail = true, "installed "+version.Version
-		}
-	}
+	checks, err := l.Add(ctx, h, nil)
 	for _, c := range checks {
 		mark := "✓"
 		if !c.OK {
-			mark, failed = "✗", true
+			mark = "✗"
 		}
 		line := mark + " " + c.Name
 		if c.Detail != "" {
@@ -120,48 +83,25 @@ func hostAdd(env *config.Env, args []string, out io.Writer) error {
 		}
 		fmt.Fprintln(out, line)
 	}
-	hosts = append(hosts, h)
-	if err := config.SaveHosts(env.HostsFile(), hosts); err != nil {
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "added %s\n", h.Name)
-	reloadHome(env)
-	if failed {
+	if hosts.Failed(checks) {
 		return &exitError{code: 1, msg: h.Name + " is added but not usable yet: see the reason above"}
 	}
 	return nil
 }
 
-func hostEdit(env *config.Env, args []string, out io.Writer, did string, edit func([]config.Host, int) []config.Host) error {
+func hostEdit(args []string, out io.Writer, did string, edit func(name string) error) error {
 	if len(args) != 1 {
 		return errors.New("usage: tower host rm|on|off <name>")
 	}
-	hosts, err := config.LoadHosts(env.HostsFile())
-	if err != nil {
-		return err
+	if err := edit(args[0]); err != nil {
+		return &exitError{code: 1, msg: err.Error()}
 	}
-	i := findHost(hosts, args[0])
-	if i < 0 {
-		return &exitError{code: 1, msg: fmt.Sprintf("no host named %q", args[0])}
-	}
-	name := hosts[i].Name
-	hosts = edit(hosts, i)
-	if err := config.SaveHosts(env.HostsFile(), hosts); err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "%s %s\n", did, name)
-	reloadHome(env)
+	fmt.Fprintf(out, "%s %s\n", did, args[0])
 	return nil
-}
-
-
-// reloadHome tells a running towerd to read hosts.toml again; one that
-// starts later reads it anyway.
-func reloadHome(env *config.Env) {
-	c := client.New(env)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	c.Call(ctx, proto.CallReload, nil, nil)
 }
 
 func hostList(env *config.Env, out io.Writer) error {
