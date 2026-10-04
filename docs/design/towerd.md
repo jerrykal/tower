@@ -269,7 +269,9 @@ one unless older than it within the same stream.
 names the loop and its home; that home's view is ours when we are it,
 else the held one (a home not connected: kept view and the note "home <h>
 not connected: other hosts as of Ns ago"); a client no loop owns sees this
-machine's home, or the home connected last, with "not a tower terminal: ⏎
+machine's home when it has hosts, else the home connected last (a home
+role with no hosts, a towerd a dashboard started on a remote, would show
+this machine alone), with "not a tower terminal: ⏎
 to another host needs the attach loop". This machine's own host entry is
 always the live one, ages moved on to now.
 

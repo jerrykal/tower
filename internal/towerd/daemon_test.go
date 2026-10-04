@@ -324,6 +324,27 @@ func TestHomeAndRemote(t *testing.T) {
 	}
 }
 
+// TestRemoteStartedAsHome: a dashboard on a remote started its towerd, so
+// it plays home with no hosts of its own; a client no loop owns there still
+// sees the connected home's view, every host, not this machine alone.
+func TestRemoteStartedAsHome(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	b := w.node("B", "", "bravo")
+	b.start(false)
+	if !b.d.status(false).Home {
+		t.Fatal("B started outside a bridge does not play home")
+	}
+	a.hosts(b.remote())
+	a.start(false)
+	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	w.eventually(2*time.Second, "B's dashboards show the home's view", func() bool {
+		v := b.d.view(proto.ViewArgs{Client: "999999:1:/dev/fake"})
+		return viewHas(v.View, "A", "alpha") && viewHas(v.View, "B", "bravo") && v.Home == a.d.id &&
+			strings.Contains(v.Note, "not a tower terminal")
+	})
+}
+
 func TestLoopDecisions(t *testing.T) {
 	w := newWorld(t)
 	a := w.node("A", "", "alpha", "apple", "avocado")

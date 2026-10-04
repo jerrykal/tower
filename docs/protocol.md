@@ -512,7 +512,7 @@ leads a session of its own.
 - Outside tmux, `tower` is the attach loop. Inside tmux (`$TMUX` set) it is
   the dashboard, never a nested attach (S11).
 - A dashboard in a client no loop owns shows the home's view (its machine's
-  home, or the latest home connected there) and can switch locally, but `⏎`
+  home when that has hosts, else the latest home connected there) and can switch locally, but `⏎`
   to another host says it needs the attach loop (S11).
 - tower is launched as the terminal's command, so the attach loop always
   owns the terminal.

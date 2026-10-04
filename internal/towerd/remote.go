@@ -319,15 +319,18 @@ func (d *Daemon) view(a proto.ViewArgs) *proto.Dash {
 			dash.Note = fmt.Sprintf("home %s not connected: other hosts as of %s ago", homeLabel(held), time.Since(held.viewAt).Round(time.Second))
 		}
 	default:
-		if d.home != nil {
+		// A home role with hosts of its own shows its view; one without
+		// (a towerd a dashboard started on a remote) yields to the newest
+		// connected home, which sees this machine and more.
+		own := d.home != nil && len(d.home.links) > 0
+		for _, r := range d.homes {
+			if !own && r.conn != nil && r.view != nil && (held == nil || r.connected.After(held.connected)) {
+				held = r
+			}
+		}
+		if held == nil && d.home != nil {
 			dash.View = d.home.buildView(now)
 			dash.Home = d.id
-		} else {
-			for _, r := range d.homes {
-				if r.conn != nil && r.view != nil && (held == nil || r.connected.After(held.connected)) {
-					held = r
-				}
-			}
 		}
 		if a.Client != "" {
 			dash.Note = "not a tower terminal: ⏎ to another host needs the attach loop"
