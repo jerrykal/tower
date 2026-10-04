@@ -449,7 +449,12 @@ gone, down or stalled, or whose host it is now attached to, and makes the
 ones missing. It asks again on every change of the home's view, every 2s,
 and when a standby is used or dies (LS03, LS04). A standby that dies before
 it is ready backs its host off (1s, doubling to a minute); one not ready in
-20s counts as dead; a shim nobody used exits after 12h. On loop exit the
+20s counts as dead; a shim nobody used exits after 12h. While a standby
+waits, the loop sends it an empty line every 2s, and a shim that hears
+nothing for 30s exits: a session's hang-up does not always reach the
+host (Tailscale SSH keeps the pty of a session whose client went away,
+found by R02), and without the heartbeat every loop exit and reconnect
+there left a shim waiting for 12 hours. On loop exit the
 loop ends them all; on a crash the kernel closes the loop's ptys, which
 hangs up each ssh. A standby never registers and is no tmux client, so no
 dashboard shows it (LS01).

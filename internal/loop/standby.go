@@ -72,6 +72,7 @@ func (s *standbys) run(ctx context.Context) {
 	for {
 		_, changed := s.l.views.get()
 		s.refresh(ctx)
+		s.heartbeat()
 		select {
 		case <-ctx.Done():
 			return
@@ -227,6 +228,19 @@ func (s *standbys) reserve(host string) {
 	s.mu.Unlock()
 	if host == "" {
 		s.kick()
+	}
+}
+
+// heartbeat sends every ready standby an empty line: a shim that stops
+// hearing them exits (shim.go, standbySilence). It holds s.mu, as take
+// does, so no heartbeat follows a standby's go line.
+func (s *standbys) heartbeat() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sb := range s.byHost {
+		if sb.ready {
+			sb.sess.Send(nil)
+		}
 	}
 }
 

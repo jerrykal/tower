@@ -30,7 +30,7 @@ func TestAttachCommand(t *testing.T) {
 
 func TestReadLineTakesOneLine(t *testing.T) {
 	r := bytes.NewBufferString("\r\n{\"s\":\"$1\"}\nkeys typed after")
-	line, err := readLine(r)
+	line, err := readLine(r, nil)
 	if err != nil || string(line) != `{"s":"$1"}` {
 		t.Fatalf("%q %v", line, err)
 	}
@@ -108,5 +108,42 @@ func readWithin(f io.Reader, d time.Duration) string {
 		return s
 	case <-time.After(d):
 		return "(nothing)"
+	}
+}
+
+// A standby that stops hearing its loop's heartbeats exits: a session's
+// hang-up does not always reach it.
+func TestStandbyExitsWithoutHeartbeats(t *testing.T) {
+	m, s, err := testPty()
+	if err != nil {
+		t.Skip("no pty:", err)
+	}
+	defer m.Close()
+	defer s.Close()
+	t.Setenv("TOWER_STANDBY_SILENCE", "300ms")
+	exited := make(chan time.Time, 1)
+	old := standbyExit
+	standbyExit = func() { exited <- time.Now() }
+	defer func() { standbyExit = old }()
+	go waitGo(s, s)
+	// Heartbeats keep it waiting.
+	stop := time.Now().Add(time.Second)
+	for time.Now().Before(stop) {
+		io.WriteString(m, "\n")
+		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-exited:
+			t.Fatal("exited while it heard heartbeats")
+		default:
+		}
+	}
+	quiet := time.Now()
+	select {
+	case at := <-exited:
+		if d := at.Sub(quiet); d > 700*time.Millisecond {
+			t.Fatalf("exited %v after the last heartbeat", d)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a standby without heartbeats kept waiting")
 	}
 }

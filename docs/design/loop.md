@@ -133,7 +133,9 @@ echo and line editing off, write the ready marker (`relay.MarkerReady`,
 output goes, read one JSON line a byte at a time (the go line: loop, gen,
 home, inst, mkey, session, window, note), restore the modes, write the
 answer marker (`relay.MarkerGo`, `ESC ] 7193 ; tower-standby-go BEL`),
-then continue as above. A standby nobody used exits after 12h.
+then continue as above. A standby nobody used exits after 12h, and one
+that hears no heartbeat from its loop (an empty line every 2s) for 30s
+exits at once.
 
 ## Standbys
 

@@ -27,6 +27,13 @@ import (
 // standbyLife is how long a standby nobody used waits before it exits.
 const standbyLife = 12 * time.Hour
 
+// standbyExit ends a standby nobody will use (a variable for tests).
+var standbyExit = func() { os.Exit(0) }
+
+// standbySilence is how long a standby waits without its loop's
+// heartbeat (an empty line every standbyRefresh) before it exits.
+const standbySilence = 30 * time.Second
+
 // Shim is one attach: who it belongs to and what it attaches to.
 type Shim struct {
 	Loop    string
@@ -214,7 +221,18 @@ func waitGo(tty *os.File, out io.Writer) (*proto.GoLine, error) {
 		restore()
 		os.Exit(0)
 	})
-	line, err := readLine(tty)
+	// The loop sends an empty line every few seconds while it keeps this
+	// standby. Silence means the loop is gone: a session's hang-up does
+	// not always reach here (Tailscale SSH keeps the pty of a session
+	// whose client went away), and a shim nobody will use must not wait
+	// out its 12 hours.
+	silence := config.Duration("TOWER_STANDBY_SILENCE", standbySilence)
+	idle := time.AfterFunc(silence, func() {
+		restore()
+		standbyExit()
+	})
+	line, err := readLine(tty, func() { idle.Reset(silence) })
+	idle.Stop()
 	timer.Stop()
 	restore()
 	if err != nil {
@@ -228,13 +246,17 @@ func waitGo(tty *os.File, out io.Writer) (*proto.GoLine, error) {
 	return &g, nil
 }
 
-// readLine reads up to a newline one byte at a time.
-func readLine(r io.Reader) ([]byte, error) {
+// readLine reads up to a newline one byte at a time; heard is called for
+// every byte (the loop's heartbeats are empty lines).
+func readLine(r io.Reader, heard func()) ([]byte, error) {
 	var line []byte
 	var b [1]byte
 	for {
 		n, err := r.Read(b[:])
 		if n == 1 {
+			if heard != nil {
+				heard()
+			}
 			if b[0] == '\n' || b[0] == '\r' {
 				if len(line) == 0 {
 					continue
