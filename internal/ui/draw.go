@@ -625,10 +625,7 @@ func (m *Model) drawDir(cv *canvas, x, y, end int, it *item, hits []int, cursor 
 	d := it.dir
 	rx := end
 	if b := gitText(d.Git); b != "" {
-		rx = putRight(cv, end, y, b, sMuted)
-		if d.Git.Dirty {
-			cv.put(end-1, y, "*", sGold, 1)
-		}
+		rx = putRight(cv, end, y, b, sMuted) // the * of a dirty tree with it
 	}
 	// Dirs sit below the sessions in weight: subtle, a non-git dir muted.
 	base, icon := sSubtle, sSubtle

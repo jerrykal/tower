@@ -210,7 +210,7 @@ every entry), then unreachable hosts' cached sessions and dirs, dimmed.
   space on the host turns it on`, `✗ down: <reason> · ⏎ on the host
   retries`; an unreachable host's header says `cached 2h` on its right,
   in red. Session icons are pine, dirs subtle (a non-git dir muted) with
-  their branch muted and a gold `*` when dirty, so dirs sit below the
+  their branch muted (its `*` when dirty too), so dirs sit below the
   sessions.
 - **windows**: the number, `󰓩`, the name, `󰧟`; a bell or activity, and the
   pane count. A dir has `no session yet`.
