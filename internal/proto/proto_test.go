@@ -104,3 +104,25 @@ func TestParseClient(t *testing.T) {
 		}
 	}
 }
+
+func TestReplaces(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"0.0.2", "0.0.1", true},
+		{"0.0.1", "0.0.2", false},
+		{"0.0.1", "0.0.1", false},
+		{"0.0.1-dev+abc", "0.0.1", true},
+		{"0.0.1", "0.0.1-dev+abc", false},
+		// Two builds of one base: either replaces the other.
+		{"0.0.1-dev+abc.dirty.1111", "0.0.1-dev+abc.dirty.2222", true},
+		{"0.0.1-dev+abc.dirty.2222", "0.0.1-dev+abc.dirty.1111", true},
+		{"0.0.1-dev+abc", "0.0.2", false},
+	}
+	for _, c := range cases {
+		if got := Replaces(c.a, c.b); got != c.want {
+			t.Errorf("Replaces(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}

@@ -153,8 +153,9 @@ type WatchStatus struct {
 	Keys     string `json:"keys,omitempty"`
 }
 
-// StopArgs asks towerd to exit; with IfOlderThan set, only if its version
-// is older than that.
+// StopArgs asks towerd to exit; with IfOlderThan set, only if a tower of
+// that version replaces it (Replaces: older, or another build of the
+// same base).
 type StopArgs struct {
 	IfOlderThan string `json:"if_older_than,omitempty"`
 }

@@ -125,16 +125,13 @@ only a dashboard's reads (`ViewArgs.Look`) start a git/zoxide look.
 
 To resume:
 
-1. Run both scenario shards (CLAUDE.md) on main: the last commits (the
-   look fix especially) have passed unit tests only; the shards were
-   stopped when the laptop closed.
-2. A different build of the same base version must replace the running
+1. ~~Run both scenario shards.~~ Both pass (LC 330s, the rest 506s).
+2. ~~A different build of the same base version must replace the running
    towerd (a user's note): `client.Ensure` and `stop` replace only a
    strictly older one, so after `mise run build` of uncommitted code the
    old towerd keeps running (and the same on remote hosts through the
    bridge). Replace when the versions differ and the running one is not
-   newer; test it (a rebuilt dev binary replaces the towerd; an older
-   release never does).
+   newer; test it.~~ Done: `proto.Replaces`, V09.
 3. towerd gaps the UI agent named: no call to retry one host (⏎ on a
    down host uses netchange, which retries all).
 4. The final report (here and as an artifact), then step 5 with the user.

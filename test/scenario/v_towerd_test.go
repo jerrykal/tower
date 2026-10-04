@@ -342,3 +342,41 @@ func TestV08(t *testing.T) {
 		t.Fatalf("K's alert hooks after stop: %q", h)
 	}
 }
+
+// V09: a rebuilt binary of the same version (another development build)
+// replaces the running towerd, as a newer one does; an older release
+// still never replaces a newer towerd.
+func TestV09(t *testing.T) {
+	w := NewWorld(t, "v09")
+	a := w.Host("A", []string{"alpha"})
+	w.Home(a)
+	ensure := func(bin string) proto.Status {
+		t.Helper()
+		out, err := a.TowerBin(bin, "_ensure")
+		if err != nil {
+			t.Fatal(err, out)
+		}
+		var st proto.Status
+		json.Unmarshal([]byte(out), &st)
+		return st
+	}
+	first := ensure(towerBin)
+	if first.Version != Version {
+		t.Fatalf("started %+v", first)
+	}
+	re := ensure(towerRe)
+	if re.Version != VersionRebuilt || re.Pid == first.Pid {
+		t.Fatalf("a rebuild did not replace the towerd: %+v (was %+v)", re, first)
+	}
+	// Either build replaces the other: the one just run is the one wanted.
+	if back := ensure(towerBin); back.Version != Version || back.Pid == re.Pid {
+		t.Fatalf("the first build back: %+v", back)
+	}
+	up := ensure(tower2)
+	if up.Version != Version2 {
+		t.Fatalf("an upgrade: %+v", up)
+	}
+	if old := ensure(towerRe); old.Version != Version2 || old.Pid != up.Pid {
+		t.Fatalf("an older build replaced a newer towerd: %+v", old)
+	}
+}

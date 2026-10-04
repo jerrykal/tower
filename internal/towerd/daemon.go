@@ -473,8 +473,8 @@ func (d *Daemon) dispatch(ctx context.Context, call *proto.Call) (any, error) {
 		if err := decode(call, &a); err != nil {
 			return nil, err
 		}
-		if a.IfOlderThan != "" && !proto.Newer(a.IfOlderThan, d.version) {
-			return nil, fmt.Errorf("towerd %s is not older than %s", d.version, a.IfOlderThan)
+		if a.IfOlderThan != "" && !proto.Replaces(a.IfOlderThan, d.version) {
+			return nil, fmt.Errorf("towerd %s is not replaced by %s", d.version, a.IfOlderThan)
 		}
 		d.Stop("asked by tower " + call.Version)
 		return struct{}{}, nil

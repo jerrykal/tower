@@ -125,9 +125,10 @@ func (c *Client) Ensure(ctx context.Context) (*proto.Status, error) {
 	for {
 		st, err := c.status(ctx, time.Second)
 		switch {
-		case err == nil && proto.Newer(c.Version, st.Version):
-			// An older towerd makes way; an older caller never downgrades
-			// a newer one (the other branch).
+		case err == nil && proto.Replaces(c.Version, st.Version):
+			// An older towerd, or another build of the same version (a
+			// rebuilt development binary), makes way; an older caller
+			// never downgrades a newer one (the other branch).
 			c.Call(ctx, proto.CallStop, proto.StopArgs{IfOlderThan: c.Version}, nil)
 			c.waitGone(ctx)
 			stuckSince = time.Time{}

@@ -75,6 +75,7 @@ See [design/install.md](design/install.md).
 | V05 | A remote whose own `hosts.toml` lists another host stays remote-only while only a bridge started it; an attach loop there makes it a home | towerd | pass |
 | V06 | A dashboard on a remote: its rows fast; a session on C shows on B fast; a preview of C's pane from B fast | towerd, ui | pass |
 | V07 | The home dies while a loop's client is on a remote: B keeps the last view, marked not connected; ⏎ to A refused before detaching; a local switch works; the restarted home relearns the loop and hand-off works | towerd | pass |
+| V09 | A rebuilt binary of the same version replaces the running towerd (either build the other); an older one never replaces a newer one | client, towerd | pass |
 | V08 | Keys: towerd takes `M-o` and `prefix L` where free, leaves the user's `L`; in a plain terminal `prefix L` is tmux's own; in a tower terminal `M-o` opens the dashboard and `prefix L` goes back across hosts; stopping towerd puts the keys back | towerd | pass |
 
 ## Slow, stalled and wedged hosts

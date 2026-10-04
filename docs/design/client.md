@@ -22,9 +22,10 @@ error is returned as an error carrying its text.
 
 1. Ask `status`. If a towerd answers:
    - same version or newer: use it;
-   - older: call `stop` with `IfOlderThan` = our version, wait for the
-     socket to go quiet, then start ours (an older binary never downgrades
-     a newer towerd).
+   - older, or another build of our version (`proto.Replaces`: a rebuilt
+     development binary): call `stop` with `IfOlderThan` = our version,
+     wait for the socket to go quiet, then start ours (an older binary
+     never downgrades a newer towerd).
 2. If nobody answers: start `tower towerd --tmux …` detached (`Setsid`,
    stdio to `/dev/null`, environment as ours minus nothing), ask again every
    10ms, start another every 100ms. The lock decides between starters.

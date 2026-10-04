@@ -96,9 +96,10 @@ demos): `$TOWER_HOME/config` and `$TOWER_HOME/state`.
   answer, which ensure already asks for; helpers that fzf runs get them in
   `TOWER_TMUX_BIN` and `TOWER_FZF_BIN`, which towerd drops from its own
   environment. A path is used only if it is absolute and executable (LC07).
-- **Upgrade.** Every call carries the caller's version. A newer binary asks
-  an older towerd to exit and starts itself; an older binary uses a newer
-  towerd and never downgrades it. A restart loses nothing: loops re-send
+- **Upgrade.** Every call carries the caller's version. A newer binary, or
+  another build of the same version (a rebuilt development binary), asks
+  the running towerd to exit and starts itself; an older binary uses a
+  newer towerd and never downgrades it (V09). A restart loses nothing: loops re-send
   their state in their heartbeat and remotes keep their clients file (V02).
   A remote is upgraded by its next ssh: the new bridge replaces the older
   towerd, which restores its clients from disk (V03).

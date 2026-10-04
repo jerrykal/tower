@@ -18,6 +18,9 @@ import (
 const (
 	Version  = "0.0.1-test"
 	Version2 = "0.0.2-test"
+	// VersionRebuilt is the current version rebuilt from other code: the
+	// same base, another build (a development rebuild).
+	VersionRebuilt = "0.0.1-test.rebuilt"
 	// VersionDev is a development build: it has no release to download.
 	VersionDev = "0.0.3-dev+test"
 )
@@ -29,6 +32,7 @@ var (
 	root     string // TOWER_TEST_DIR
 	towerBin string
 	tower2   string
+	towerRe  string
 	towerDev string
 	fakeSSH  string
 )
@@ -67,11 +71,13 @@ func setup() error {
 	}
 	towerBin = filepath.Join(bin, "tower")
 	tower2 = filepath.Join(bin, "tower-v2")
+	towerRe = filepath.Join(bin, "tower-rebuilt")
 	towerDev = filepath.Join(bin, "tower-dev")
 	fakeSSH = filepath.Join(bin, "ssh")
 	builds := []struct{ out, pkg, version string }{
 		{towerBin, "../../cmd/tower", Version},
 		{tower2, "../../cmd/tower", Version2},
+		{towerRe, "../../cmd/tower", VersionRebuilt},
 		{towerDev, "../../cmd/tower", VersionDev},
 		{fakeSSH, "./fakessh", ""},
 	}

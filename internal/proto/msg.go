@@ -132,6 +132,12 @@ func Newer(a, b string) bool {
 	return ad != "" && bd == ""
 }
 
+// Replaces reports whether a tower of version a takes over from a running
+// towerd of version b: when b is older, or another build of a's base (two
+// development builds, each newer than the other's release but not
+// ordered between themselves). An older build never replaces a newer one.
+func Replaces(a, b string) bool { return a != b && !Newer(b, a) }
+
 func splitVersion(v string) ([3]int, string) {
 	var n [3]int
 	base, dev, _ := strings.Cut(strings.TrimPrefix(v, "v"), "-")
