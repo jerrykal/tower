@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
 	"github.com/jerrykal/tower/internal/transport"
 )
@@ -136,7 +137,7 @@ func (k *keys) install(ctl *tmux.Control) {
 			}
 			state = append(state, table+" "+key)
 		}
-		popup := "display-popup -E -w 90% -h 90% " + tmux.Quote(k.shellLine(1))
+		popup := "display-popup -E " + strings.Join(proto.PopupSize, " ") + " " + tmux.Quote(k.shellLine(1))
 		take("root", "M-o", "run-shell -C "+tmux.Quote(popup), func(string) bool { return false })
 		last := "run-shell -b " + tmux.Quote(k.shellLine(2, "last"))
 		take("prefix", "L", "run-shell -C "+tmux.Quote(last), func(cur string) bool { return cur == "switch-client -l" })

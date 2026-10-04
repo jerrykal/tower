@@ -2,8 +2,6 @@ package towerd
 
 import (
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -146,30 +144,16 @@ func (s *snapshot) client(match func(*tclient) bool) *tclient {
 // byClient finds the registration of a TOWER_CLIENT value,
 // "pid:created:name".
 func (r *registry) byClient(v string) *reg {
-	pid, created, name, ok := parseClient(v)
-	if !ok {
+	c, err := proto.ParseClient(v)
+	if err != nil {
 		return nil
 	}
 	for _, g := range r.list {
-		if g.Pid == pid && (!g.bound() || g.Created == created && g.Name == name) {
+		if g.Pid == c.Pid && (!g.bound() || g.Created == c.Created && g.Name == c.Name) {
 			return g
 		}
 	}
 	return nil
-}
-
-// parseClient splits a TOWER_CLIENT value. The name, a tty path or
-// client-<pid>, comes last and may hold colons.
-func parseClient(v string) (pid int, created, name string, ok bool) {
-	f := strings.SplitN(v, ":", 3)
-	if len(f) != 3 {
-		return 0, "", "", false
-	}
-	pid, err := strconv.Atoi(f[0])
-	if err != nil || pid <= 0 {
-		return 0, "", "", false
-	}
-	return pid, f[1], f[2], true
 }
 
 // count is the number of registrations with a live client (or one on

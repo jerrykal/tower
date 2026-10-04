@@ -12,8 +12,6 @@ import (
 	"github.com/jerrykal/tower/internal/transport"
 )
 
-// PopupSize is the dashboard popup's size, as display-popup arguments.
-var PopupSize = []string{"-w", "80%", "-h", "80%"}
 
 // Open is `tower` typed at a prompt inside tmux: it opens the dashboard
 // in a popup for its own client, as the key binding would, so tower never
@@ -53,7 +51,7 @@ func Open(ctx context.Context, sv Tmux, self string, env map[string]string) erro
 		cmd.WriteString(k + "=" + transport.ShellQuote(vars[k]) + " ")
 	}
 	cmd.WriteString("exec " + transport.ShellQuote(self) + " dash")
-	args := append([]string{"display-popup", "-E", "-c", cl.Name}, PopupSize...)
+	args := append([]string{"display-popup", "-E", "-c", cl.Name}, proto.PopupSize...)
 	_, err = sv.Run(ctx, append(args, cmd.String())...)
 	return err
 }

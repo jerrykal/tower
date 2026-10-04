@@ -260,21 +260,6 @@ func TestRegistrySaveRacesBind(t *testing.T) {
 	got.bind(&snapshot{Inst: "1:1"}) // must not dereference a nil entry
 }
 
-func TestParseClient(t *testing.T) {
-	pid, created, name, ok := parseClient("42:1700000000:/dev/ttys003")
-	if !ok || pid != 42 || created != "1700000000" || name != "/dev/ttys003" {
-		t.Fatal(pid, created, name, ok)
-	}
-	if _, _, name, _ := parseClient("1:2:client:with:colons"); name != "client:with:colons" {
-		t.Fatal(name)
-	}
-	for _, bad := range []string{"", "x:1:n", "1:2", "-1:2:n"} {
-		if _, _, _, ok := parseClient(bad); ok {
-			t.Fatalf("%q parsed", bad)
-		}
-	}
-}
-
 func TestAnswersRunOnce(t *testing.T) {
 	a := newAnswers()
 	var runs atomic.Int32
