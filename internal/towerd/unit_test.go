@@ -348,3 +348,28 @@ func TestBindingShellLineSetsTheEnvironment(t *testing.T) {
 		}
 	}
 }
+
+// A link made from the cache leaves the cache alone, and two links made
+// from it show the same ages: an offline host's sessions age once.
+func TestCacheAgesOnce(t *testing.T) {
+	heard := time.Now().Add(-time.Hour)
+	c := cachedHost{ID: "abcd1234", Sessions: []proto.Session{{ID: "$1", Name: "s", Ago: 1000}}, Heard: heard.UnixMilli()}
+	h := &homeRole{}
+	l1 := newLink(h, config.Host{Name: "X"})
+	l1.fromCache(c)
+	l2 := newLink(h, config.Host{Name: "X"})
+	l2.fromCache(c)
+	if c.Sessions[0].Ago != 1000 {
+		t.Fatalf("the cache changed: %d", c.Sessions[0].Ago)
+	}
+	a1, a2 := l1.sessions[0].Ago, l2.sessions[0].Ago
+	want := int64(1000 + time.Hour/time.Millisecond)
+	if a1-want > 1000 || a2-want > 1000 || a1 < want || a2 < want {
+		t.Fatalf("ages %d and %d, want about %d", a1, a2, want)
+	}
+	// Saved again, the ages are as of the same moment.
+	back := l2.toCache()
+	if back.Heard != c.Heard || back.Sessions[0].Ago < 1000 || back.Sessions[0].Ago > 1100 {
+		t.Fatalf("cached again: %+v", back)
+	}
+}

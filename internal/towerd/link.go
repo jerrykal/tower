@@ -162,26 +162,29 @@ func newLink(h *homeRole, cfg config.Host) *link {
 	return l
 }
 
+// fromCache starts a link from what the home last knew of its host. The
+// cached ages are as of Heard; they move on from there. The cache is not
+// changed: a link made from it again shifts the same ages again from the
+// same moment.
 func (l *link) fromCache(c cachedHost) {
-	l.id, l.os, l.tmuxV, l.version, l.mkey, l.inst, l.sessions = c.ID, c.OS, c.Tmux, c.Version, c.MKey, c.Inst, c.Sessions
+	l.id, l.os, l.tmuxV, l.version, l.mkey, l.inst = c.ID, c.OS, c.Tmux, c.Version, c.MKey, c.Inst
+	l.stateAt = time.Now()
+	l.sessions = sessionsShift(c.Sessions, 0)
 	if c.Heard > 0 {
 		l.heard = time.UnixMilli(c.Heard)
-	}
-	l.stateAt = time.Now()
-	// Ages move on from when the host was last heard.
-	if !l.heard.IsZero() {
-		shift := time.Since(l.heard).Milliseconds()
-		for i := range l.sessions {
-			l.sessions[i].Ago += shift
-		}
+		l.sessions = sessionsShift(c.Sessions, time.Since(l.heard).Milliseconds())
 	}
 }
 
+// toCache is what the home keeps of the host: its sessions with ages as
+// of when it was last heard (or now, for a host never heard).
 func (l *link) toCache() cachedHost {
-	c := cachedHost{ID: l.id, OS: l.os, Tmux: l.tmuxV, Version: l.version, MKey: l.mkey, Inst: l.inst, Sessions: sessionsShift(l.sessions, time.Since(l.stateAt).Milliseconds())}
-	if !l.heard.IsZero() {
-		c.Heard = l.heard.UnixMilli()
+	at := l.heard
+	if at.IsZero() {
+		at = time.Now()
 	}
+	c := cachedHost{ID: l.id, OS: l.os, Tmux: l.tmuxV, Version: l.version, MKey: l.mkey, Inst: l.inst,
+		Sessions: sessionsShift(l.sessions, at.Sub(l.stateAt).Milliseconds()), Heard: at.UnixMilli()}
 	return c
 }
 
