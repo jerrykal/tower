@@ -2,157 +2,153 @@
 
 Where the build of v0.0.1 stands. A session resuming the work starts here.
 
-## Steps
+**Final report:** https://claude.ai/artifact/CWeFXFcBWUMBDUyXMwE9az (the same content as this page, laid out
+to scan).
+
+## Status
 
 | Step | Status |
 | --- | --- |
 | 1. Skeleton, packaging, v0.0.0 | done |
-| 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; reviewed (`/code-review xhigh`) and every finding fixed |
-| 3. Install on connect | done: reviewed (`/code-review high`), its 10 findings fixed, R03 passes on `pc` and `831` |
-| 4. Dashboard (Atlas) | built: towerd's data sources (A01–A05) and the Atlas UI (U01–U08); `/code-review medium` to do |
+| 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; `/code-review xhigh`, all 15 findings fixed |
+| 3. Install on connect | done; `/code-review high`, all 10 findings fixed; R03 passes on `pc` and `831` |
+| 4. Dashboard (Atlas) | done; `/code-review medium`, all 5 findings fixed |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
 
-## Step 2
+## Waiting for the user
 
-- [x] docs: overview, protocol, design notes per package (`docs/design/`)
-- [x] proto, config, tmux, stream, transport, client, with unit tests
-- [x] harness and fake ssh (`test/scenario`, `mise run scenarios`)
-- [x] towerd: the watch, registrations, keys and alert hooks, the keeper,
-  the remote and home roles, links (stall, probe, give-up, reconnect,
-  backoff, wake, network change), the merged view, loops, switches,
-  prepare, after, standby offers, `last`, routing, the bridge
-- [x] CLI: `towerd [--bridged] [--stdio] [--tmux]`, `_keep`, `_ensure`,
-  `status [--json]`, `stop`, `netchange`, `host add|rm|ls|on|off`, `last`,
-  `attach` (the shim, `internal/loop/shim.go`, standby mode included)
-- [x] relay (LS06, LS07 and LS08 as package tests; LS08 also through the
-  fake ssh, which now uses the relay's pty and mode helpers)
-- [x] picker (Bubble Tea; `docs/design/ui.md`): the popup, `ui.Pick` for the loop, `tower _ui`
-- [x] the attach loop (`tower`, `tower dash`), standbys
-  (`internal/loop`, docs/design/loop.md)
-- [x] scenarios (see scenarios.md): every simulated one passes (77 tests
-  with step 3's, 13 minutes, at 561327c); R01 and R02 are run by hand on
-  real hosts
+- [ ] The first real install into `~/.local/share/tower` on `pc` and `831`:
+      tower installs itself on connect; until now it was only installed
+      into `~/.cache/tower-test/harness/install` (R03). Running `tower`
+      from a home whose `hosts.toml` lists them does it.
+- [ ] Step 5: bind `prefix o` in the dotfiles (`~/.dotfiles/tmux/tmux.conf`,
+      falling back to `session-picker.sh` without tower), and use it daily.
+- [ ] `/code-review ultra` before the tag (you start it; it is billed).
+- [ ] Tag `v0.0.1` (CI's release workflow builds and publishes it).
+- [ ] After v0.0.1: delete the prototype branch and worktree
+      (`feat/tower-prototype`, `~/.dotfiles.feat-tower-prototype`) and
+      `session-picker.sh`.
 
-## Step 2 scenarios
+## What was built
 
-The dashboard's scenarios (S01, S09, S11, S19, LV04, LD01, LD03, LC07,
-and the dashboard parts of S17, V04, V06, LV01) run through the real loop,
-the popup and `tower _ui`; LH06 too runs the real loop. The picker ranks
-its matches (exact name first), so the LC hosts' sessions are s0 … s400
-again.
+Fresh code, from the design notes in [design/](design/README.md); the
+prototypes were read only for narrow facts (a glyph codepoint, a tmux
+quirk, a timing constant). About 22,000 lines of Go and 17,000 of tests,
+123 commits from v0.0.0.
 
-## Code review, end of step 2 (`/code-review xhigh`)
+| Package | What |
+| --- | --- |
+| `proto` | wire types: stream messages, local calls, the model |
+| `config` | paths per machine and tmux server, identities, `hosts.toml` |
+| `tmux` | binaries past version-manager shims, quoting, the control client |
+| `stream` | one JSON-lines peer: queued writer, requests, keepalive, stall mark, clock offset |
+| `transport` | ssh options, failure classes, probe, control-socket sweep, network watch, `sh -c` for any login shell |
+| `client` | calls to towerd; ensure (start, upgrade, replace a wedged one) |
+| `towerd` | the daemon: watch, registrations, keys and alert hooks, keeper, remote and home roles, links, loops, hand-off, standby offers, git and zoxide data |
+| `relay` | ptys, the byte-exact relay, frame holds between escape sequences |
+| `loop` | the attach loop, the attach shim, standby sessions |
+| `install` | install on connect: platform, build source, verified upload |
+| `dirs` | git state and zoxide dirs, refreshed in the background |
+| `hosts` | the host list's edits, naming rules and checks |
+| `ui` | the Atlas dashboard (Bubble Tea, no Lip Gloss) |
+| `test/scenario` | the acceptance harness, the fake ssh, 92 scenarios |
 
-15 findings. Fixed (31e3cd1 and before): the control client ending a
-reply at a fake `%end` in a capture; `XDG_RUNTIME_DIR` shared across
-`TOWER_HOME`s; ctrl-c killing the loop between attaches; a loop stuck when
-towerd went away; ctrl-c quitting the dashboard mid-⏎; standbys started
-under the set's lock; the harness's process lookup on Linux; a stray
-binary committed at the root (removed, `/tower` ignored); duplicates
-(TOWER_CLIENT parsing, quoting, sync sequences, the deadline clock, two
-tmux runs per local detach).
+Docs: [overview.md](overview.md) (product), [protocol.md](protocol.md),
+[scenarios.md](scenarios.md), [decisions.md](decisions.md) (101
+decisions), a design note per package.
 
-The seven in `internal/towerd`, fixed after step 3 merged (de8b377 …
-50864e3), each with a test that fails on the code before it:
+## Suite results
 
-1. registrations saved from a copy taken under the daemon's lock, null
-   entries dropped on load;
-2. a reload compares hosts by value (`config.Host.Same`);
-3. re-reads, states and views compared with ages at a fixed reference, so
-   an unchanged tmux sends nothing (5 idle re-reads: 6 states and 12
-   watcher wake-ups before, none after);
-4. ssh's stderr read to its end before the process is waited for;
-5. only the loop whose client moved becomes the last target;
-6. a link made from the cache leaves it alone (ages counted once);
-7. a hosts.toml that does not parse is read once, not on every view.
+At 0a4213c: every scenario passes. The simulated suite runs in two
+shards: `-run '^TestLC'` 8/8 in 330s, `-skip '^TestLC'` 82 passed in 508s
+(R01–R03 skip without `TOWER_REAL`). In that run U01 failed once at a
+3s screen wait under the full suite's load ("local server" not yet in the
+breadcrumb); alone it passed 5 of 5. Recorded, not loosened.
 
-Also: towerd parses TOWER_CLIENT with `proto.ParseClient`, and the popup
-and towerd's `M-o` binding share one size (`proto.PopupSize`). Suite after
-the fixes: both shards pass (LC 5.4 min, the rest 7.5 min).
+| Family | Scenarios | Result |
+| --- | --- | --- |
+| Core edge cases | S00–S27, D01 | pass |
+| Extras | E01–E04 | pass |
+| towerd | V01–V09 | pass |
+| Install on connect | I01–I05 | pass |
+| Slow and stalled hosts | LH01–LH06 | pass |
+| Connections and switches | LC01–LC08 | pass |
+| Freshness and dashboards | LV01, LV02, LV04, LD01–LD03 | pass |
+| Dashboard data | A01–A05 | pass |
+| Dashboard (Atlas) | U01–U08 | pass (U01: one failure under load, see above) |
+| Standbys and the relay | LS01–LS09 | pass |
+| Real hosts | R01–R03 | pass on `pc` and `831` |
 
-## Step 4: towerd's data for the dashboard
+## Latency measured
 
-- [x] `internal/dirs` ([design/dirs.md](design/dirs.md)): the git state of
-  directories (branch or short commit, dirt, a linked worktree's repo),
-  zoxide dirs (roots, network mounts listed unchecked, capped at 100 roots
-  and 100 others), refreshed in the background
-- [x] towerd: sessions' git state and the zoxide dirs with no session in
-  states and views; a dashboard's read is a look (`look` message), at
-  most every 10s per towerd; `status --full` shows the refresher and
-  towerd's CPU
-- [x] requests: `panes`, capture's panes, `new` in a dir (`~` on the
-  target host, `#` literal, a gone dir refused), a new window in its
-  session's dir; `dup` and window rename and kill were there (tested now)
-- [x] scenarios A01–A05 pass; both shards pass after the rebase onto
-  15e29ef (LC 5.4 min, the rest 7.8 min)
-- Costs (A05, 40 sessions in 40 repos, a 500-entry zoxide database):
-  a state of 22 KB (8.7 KB without dirs and git state; 200 dirs are
-  12.4 KB); a periodic refresh about 0.3s of CPU a minute, a look 0.8–1s
-  (141 git status runs, 0.2–0.3s wall)
+| What | Measured | Reference (prototype) |
+| --- | --- | --- |
+| Switch stored → new client, `pc` → laptop (real ssh) | 11ms | 11ms |
+| Switch stored → new client, laptop → `pc` through its standby | 17–23ms | 17ms |
+| ⏎ → target's shim, standby, laptop → remote at RTT 0/50/150/400ms (LC08) | 21/45/96/221ms | 4/30/80/206ms |
+| same, remote → remote | 7/57/159/408ms | 2/54/156/410ms |
+| `prefix d` gives the terminal back | 4–11ms | about 100ms |
+| A change on one remote in another's view, RTT 150ms (LV01) | 133–185ms | 167ms |
+| An open dashboard follows the view, RTT 50ms (LV04) | 84ms | about 0.1s |
+| ^x row gone from the dashboard (LD01) | 17–28ms | 4–7ms |
+| Dashboard popup, first frame (U08) | 23–26ms | – |
+| Keystroke through the relay (LS07) | +4–9µs | +7µs |
+| 200 MiB `cat` through the relay (LS08) | 205–223 MB/s | 118–136 MB/s |
+| Remote towerd up over real ssh (R01) | 0.49s | 0.5s |
+| Kill relayed 831 → home → pc (R01) | 131ms (115ms ssh) | 150ms (120ms ssh) |
+| Client back after a wake (R01) | 0.27s | 1.2s |
 
-## Step 4: the Atlas UI
+## Code reviews
 
-- [x] `internal/ui` rewritten as the column dashboard
-  ([design/ui.md](design/ui.md)): hosts › sessions and dirs › windows ›
-  layout preview, the breadcrumb and footer, the finder (where the popup
-  and the loop's picker open), column search, `-` `.`, `J` `K`, `D`, `n`,
-  `r`, `x` with a confirm that says what is at stake, `^g`, the add-host
-  picker and host edits, help, mouse, width and long-name fitting, Rosé
-  Pine and Nerd Font glyphs, on a cell canvas of its own
-- [x] `internal/hosts`: `tower host` and the dashboard share the host
-  list's edits, naming rules, ssh aliases and checks
-- [x] kept: live updates, cursor by identity, kill without waiting, fresh
-  re-resolve, hand-off, `TOWER_LIVE=0`, `tower _ui` (now also `find`,
-  `ask-kill`, `open`, `dup`), `ui.Pick`
-- [x] the suite drives the finder (`Prompt` is its pill, `rowRe` its rows,
-  the cursor read from the breadcrumb; `^x y`); U01–U08 added; both shards
-  pass
-- Start-up (U08, pty, 15 runs): first frame 23–26ms median, a key's echo
-  8ms; the step-2 picker measured the same way 24ms and 8ms
-- Open: a pane picked with `J` `K` is selected by a local switch only (the
-  loop's attach selects the window); ⏎ on a down host retries every down
-  host (`netchange`, no per-host call)
+| Review | Findings | Resolved |
+| --- | --- | --- |
+| Step 2, `/code-review xhigh` | 15 | all fixed, each with a test that fails before: a fake `%end` in a capture mismatching every later reply; registrations saved without the lock; reloads rebuilding links; unchanged re-reads pushing states; ssh's reason lost; the last target from the wrong loop; cached ages counted twice; a broken hosts.toml re-read on every view; `XDG_RUNTIME_DIR` shared across homes; ctrl-c killing the loop; a loop stuck without towerd; ctrl-c mid-⏎; standbys spawned under a lock; Linux process lookup; a stray 8.8 MB binary committed (removed, ignored) |
+| Step 3, `/code-review high` | 10 | all fixed: fish/csh login shells (`sh -c`, quoting with no backslash); an upload cut short or of another build installed; a platform directory; `current` downgraded; dist checksums overwritten; the retry counter; dirty dev builds sharing a version; macOS `sh` exiting 126 for a missing build |
+| Step 4, `/code-review medium` | 5 | all fixed: a picked pane lost on a hand-off; a new window not selected; an add-host spinner left running; dir sessions and duplicates sharing `<name> 2`; every view starting a git/zoxide look |
 
-## Paused (step 4 review fixes)
+Also fixed from the real-host runs: standby shims left waiting behind
+Tailscale SSH for 12h (standbys now take a heartbeat and exit 30s after
+it stops); and from a note of yours: a rebuilt binary of the same version
+now replaces the running towerd (V09).
 
-Paused at the user's request. `/code-review medium` on step 4 found five
-bugs; all five are fixed and committed with tests (e4a6414 … the look
-fix): a pane picked with J/K now reaches the attach (`--pane`, the go
-line); a new window's ref names its session so the dashboard selects it;
-an add-host result is delivered after the checks' 15s; a dir's session
-takes `<name>_<n>` and `D` reuses only a duplicate in the session's group;
-only a dashboard's reads (`ViewArgs.Look`) start a git/zoxide look.
-
-To resume:
-
-1. ~~Run both scenario shards.~~ Both pass (LC 330s, the rest 506s).
-2. ~~A different build of the same base version must replace the running
-   towerd (a user's note): `client.Ensure` and `stop` replace only a
-   strictly older one, so after `mise run build` of uncommitted code the
-   old towerd keeps running (and the same on remote hosts through the
-   bridge). Replace when the versions differ and the running one is not
-   newer; test it.~~ Done: `proto.Replaces`, V09.
-3. ~~A call to retry one host.~~ Done: `retry`, used by ⏎ on a down host.
-4. The final report (here and as an artifact), then step 5 with the user.
+**Rebuild rule.** No file is a near-copy of a prototype file. The step-2
+review counted 288 of 23,087 non-trivial lines (1.25%) matching any 80+
+character line or 5-line run of a prototype file: import blocks, Go
+idioms, tmux format strings, the ssh option list, and in the docs a
+diagram and a hosts.toml example taken from the design. The step-4 review
+found about 25 key-help strings in `internal/ui/help.go` matching the UI
+prototype's help table (the documented key texts); every other file
+shares 0–6 lines.
 
 ## Blocked
 
 Nothing.
 
-## Next
+## Open
 
-Paused here at the user's request, at a clean point: everything on
-`main` is built, tested and pushed. In order:
+- `?` and `-`/`.` type into the finder when its query is not empty.
+- Views and states are sent whole; dirs are more than half of each (a
+  22 KB state with 200 dirs). Deltas would pay off past about 100 KB.
+- A dashboard opening costs up to about 1s of CPU on a host with many
+  zoxide repos (a git status each). Reading only `HEAD` for zoxide repos
+  would make it nearly free, without their dirty marker.
+- Git state follows a session's starting directory, not where its panes
+  have moved since.
+- `~^Z` does nothing in a relayed session (its ssh leads a session of its
+  own); `suspend-client` and ctrl-z behave as with plain ssh.
+- A local attach's frame hold can still land inside an escape sequence
+  while tmux floods the terminal (only relayed sessions order the writes).
+- The new pty and Linux code paths of the relay ran on Linux only in CI
+  and on `pc`/`831` through the real-host scenarios.
 
-1. ~~Fix the seven towerd findings.~~ Done.
-2. ~~`/code-review high` for step 3, then fix.~~ Done (8a3c49d): remote
-   lines through `sh -c` (fish/csh login shells), a verified upload (size
-   and version), a platform directory, `current` never downgraded,
-   checksums per archive, only successful installs counted, a content
-   hash in dirty dev versions, one ssh runner adapter.
-3. ~~The real hosts.~~ Done: R01, R02, R03 pass on `pc` and `831` (see
-   scenarios.md); hosts clean after. R02 found standby shims left waiting
-   behind Tailscale SSH; standbys now exit 30s after their loop's
-   heartbeats stop (37896c5). A host may set `home` (TOWER_HOME there).
-4. ~~Step 4: the Atlas dashboard.~~ Built; `/code-review medium` next.
-5. The final report (here and as an artifact), then step 5 with the user.
+## How the work was done
+
+Main session: the docs, the design notes, `proto`, `config`, `tmux`,
+`stream`, `transport`, `client`, the harness and fake ssh, the real-host
+scenarios, the review fixes after step 2's towerd findings and steps 3
+and 4, and the merges. Agents (Opus, each in a worktree, merged
+fast-forward after review): `towerd`; `relay` then the loop and standbys;
+the step-2 picker then the dashboard scenarios; install on connect; step
+4's data sources; the Atlas UI. One agent stalled for about 3 hours
+waiting on a background run that had ended; `CLAUDE.md` now has the suite
+run in foreground shards and agents never end a turn with a run going.
