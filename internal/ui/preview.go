@@ -180,7 +180,10 @@ func (m *Model) drawPreview(cv *canvas, x, headY, y, w, h int) {
 			label += " · " + panes[i].Command
 		}
 	}
-	cv.put(x+1, capY, label, sSubtle, bodyW)
+	lw := cv.put(x+1, capY, label, sSubtle, bodyW)
+	if len(panes) > 1 && bodyW-lw > 20 {
+		putRight(cv, x+1+bodyW, capY, "J K picks a pane", sMuted)
+	}
 	if capH < 3 {
 		return
 	}

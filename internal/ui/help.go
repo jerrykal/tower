@@ -8,6 +8,13 @@ import (
 
 type helpLine struct{ key, what string }
 
+// markerStyle draws the legend's markers in their own colours.
+var markerStyle = map[string]style{
+	glyphCur: sFoam, glyphBell: sGold, glyphAct: sFoam,
+	glyphClients + " N": sGold, glyphWindow + " N": sMuted, glyphSplit + " N": sMuted,
+	glyphGroup: sMuted, glyphBranch + " main*": sGold, "2h": sErr, glyphWarn: sErr.Bold(), "off": sMuted,
+}
+
 var helpLeft = []struct {
 	title string
 	lines []helpLine
@@ -33,7 +40,7 @@ var helpLeft = []struct {
 		{"q", "quit"},
 	}},
 	{"finder", []helpLine{
-		{"type", "words match host, session, window"},
+		{"type", "match host, session or window"},
 		{"tab", "all of a session's windows"},
 		{"⏎  ^l", "attach · show in columns"},
 		{"^x  ^g", "kill · dirs"},
@@ -86,7 +93,7 @@ func (m *Model) drawHelp(cv *canvas, g geometry) {
 		return out
 	}
 	left, right := render(helpLeft), render(helpRight)
-	const keyW, colW = 18, 54
+	const keyW, colW = 16, 48
 	two := g.w >= 2*colW+4
 	lines := left
 	if two {
@@ -114,7 +121,11 @@ func (m *Model) drawHelp(cv *canvas, g geometry) {
 			cv.put(x, y, l.key[1:], sPlain.Bold(), colW)
 			return
 		}
-		cv.put(x, y, l.key, sKey, keyW)
+		kst, ok := markerStyle[l.key]
+		if !ok {
+			kst = sPlain.Bold()
+		}
+		cv.put(x, y, l.key, kst, keyW)
 		cv.put(x+keyW, y, l.what, sSubtle, colW-keyW)
 	}
 	for i := 0; i < bh-2 && i < len(lines); i++ {

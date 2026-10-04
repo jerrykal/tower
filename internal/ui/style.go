@@ -69,6 +69,7 @@ var (
 	cPine    = ansi.TrueColor(0x31748f)
 	cFoam    = ansi.TrueColor(0x9ccfd8)
 	cIris    = ansi.TrueColor(0xc4a7e7)
+	cHLMed   = ansi.TrueColor(0x403d52)
 	cHLHigh  = ansi.TrueColor(0x524f67)
 )
 
@@ -82,8 +83,9 @@ var (
 	sFoam   = fg(cFoam)
 	sIris   = fg(cIris)
 	sRose   = fg(cRose)
-	sRule   = fg(cHLHigh)
+	sRule   = fg(cHLMed)
 	sKey    = fg(cIris)
+	sCap    = fg(cText).Bold().On(cOverlay) // a key in the footer: a keycap
 )
 
 // Glyphs (Nerd Font).
@@ -113,6 +115,7 @@ const (
 	glyphRefused  = "✗"
 	glyphSubRow   = "└"
 	glyphCrumbSep = "›"
+	glyphSearch   = "\U000f0349" // md-magnify
 )
 
 // spinner frames, one per spinTick.

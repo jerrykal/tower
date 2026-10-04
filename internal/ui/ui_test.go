@@ -98,7 +98,7 @@ func TestView(t *testing.T) {
 	}
 	m.width, m.height = 100, 30
 	text := ansi.Strip(m.View().Content)
-	for _, s := range []string{"5/5", "A     alpha", "1:fish", "local server", "⏎ attach"} {
+	for _, s := range []string{"5/5", "A     alpha", "1:fish", "local server", " ⏎  attach"} {
 		if !strings.Contains(text, s) {
 			t.Errorf("view lacks %q:\n%s", s, text)
 		}

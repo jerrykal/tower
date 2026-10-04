@@ -105,6 +105,7 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 	switch m.mode {
 	case modeNormal, modeHelp:
 		x += pill(cv, x, 0, "NORMAL", sIris) + 1
+		x += cv.put(x, 0, glyphSearch+" ", sMuted, room())
 		x += cv.put(x, 0, colNames[m.focus]+" ", sSubtle, room())
 		if q := m.cs[m.focus].in.String(); q != "" {
 			cv.put(x, 0, "/"+q, sGold, room())
@@ -113,6 +114,7 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 		}
 	case modeSearch:
 		x += pill(cv, x, 0, "SEARCH", sGold) + 1
+		x += cv.put(x, 0, glyphSearch+" ", sGold, room())
 		x += cv.put(x, 0, colNames[m.focus]+" ", sSubtle, room())
 		q := &m.cs[m.focus].in
 		text, at := inputView(q.text, q.cur, room())
@@ -120,7 +122,8 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 		cx, cy = x+at, 0
 	case modeFind, modeConfirm, modePrompt, modeAddHost:
 		if m.mode == modeFind {
-			x += pill(cv, x, 0, "FIND", sFoam) + 1
+			x += pill(cv, x, 0, "FIND", sRose) + 1
+			x += cv.put(x, 0, glyphSearch+" ", sRose, room())
 			q := &m.find.in
 			if len(q.text) == 0 {
 				cv.put(x, 0, "session, window or host · words in any order", sMuted, room())
@@ -137,7 +140,7 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 		}
 		if m.mode == modePrompt {
 			p := m.prompt
-			x += pill(cv, x, 0, p.pill, sRose) + 1
+			x += pill(cv, x, 0, p.pill, sFoam) + 1
 			tail := ""
 			if p.err != "" {
 				tail = "  " + glyphRefused + " " + p.err
@@ -158,7 +161,7 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 			cv.put(x, 0, about, sSubtle, room())
 		}
 		if m.mode == modeAddHost {
-			pill(cv, x, 0, "ADD HOST", sRose)
+			pill(cv, x, 0, "ADD HOST", sFoam)
 		}
 	}
 	return cx, cy
@@ -268,18 +271,21 @@ func (m *Model) hostItem(h *item) *item {
 }
 
 func (m *Model) colHeader(cv *canvas, g geometry, c col, s span, extra string) {
-	st := sSubtle
+	st, kst := sSubtle.Bold(), sMuted
 	if m.focus == c {
-		st = sPlain.Bold()
+		st, kst = sIris.Bold(), sKey
+	}
+	end := s.x + s.w - 1
+	if extra != "" {
+		// A cached list says so on the right, in red: what it shows may be
+		// gone.
+		end = putRight(cv, end, g.headY, extra, sErr) - 1
 	}
 	x := s.x + 1
-	x += cv.put(x, g.headY, "["+strconv.Itoa(int(c)+1)+"] ", sKey, s.w-1)
-	x += cv.put(x, g.headY, colNames[c], st, s.x+s.w-x)
+	x += cv.put(x, g.headY, "["+strconv.Itoa(int(c)+1)+"] ", kst, max(end-x, 0))
+	x += cv.put(x, g.headY, colNames[c], st, max(end-x, 0))
 	if q := m.cs[c].in.String(); q != "" {
-		x += cv.put(x, g.headY, " /"+q, sGold, s.x+s.w-x)
-	}
-	if extra != "" {
-		cv.put(x, g.headY, " · "+extra, sMuted, s.x+s.w-x)
+		cv.put(x, g.headY, " /"+q, sGold, max(end-x, 0))
 	}
 }
 
@@ -314,7 +320,7 @@ func (m *Model) hostRight(it *item) (string, style) {
 	h := it.host
 	if c := m.checks[h.Name]; c != nil {
 		if c.running {
-			return spinner[m.spin%len(spinner)], sSubtle
+			return spinner[m.spin%len(spinner)], sGold
 		}
 		if c.failed() {
 			return glyphWarn, sErr.Bold()
@@ -322,7 +328,7 @@ func (m *Model) hostRight(it *item) (string, style) {
 	}
 	switch {
 	case loading(h):
-		return spinner[m.spin%len(spinner)], sSubtle
+		return spinner[m.spin%len(spinner)], sGold
 	case h.Status == proto.StatusOff:
 		return "off", sMuted
 	case h.Status == proto.StatusFailed || h.Status == proto.StatusDup:
@@ -335,6 +341,9 @@ func (m *Model) hostRight(it *item) (string, style) {
 	}
 	if len(m.cs[colSessions].in.text) > 0 && m.w != nil {
 		n := len(filter(m.w.entries(h.Name, m.allDirs), m.cs[colSessions].in.text).items)
+		if !h.Reachable() {
+			return strconv.Itoa(n), sErr // matches in a cached list
+		}
 		return strconv.Itoa(n), sGold
 	}
 	return strconv.Itoa(len(h.Sessions)), sMuted
@@ -378,13 +387,19 @@ func (m *Model) drawHosts(cv *canvas, g geometry, s span, l *list) {
 		logo := sFoam
 		name := sPlain
 		switch {
-		case !h.Reachable():
+		case h.Status == proto.StatusOff:
 			logo, name = sMuted, sMuted
+		case !h.Reachable():
+			logo, name = sErr, sMuted // down: the logo says so
 		case it.local:
 			logo = sRose
 		}
 		if matching && rt == "0" {
 			name = sMuted
+		}
+		sel := m.rowSelFor(colHosts, i, l.at)
+		if sel == selFocus {
+			name = name.Bold()
 		}
 		x := s.x + 2
 		x += cv.put(x, y, osGlyph(h.OS), logo, 1) + 1
@@ -396,14 +411,14 @@ func (m *Model) drawHosts(cv *canvas, g geometry, s span, l *list) {
 		if it.cur {
 			cv.put(x+1, y, glyphCur, sFoam, 1)
 		}
-		frame(cv, s.x, y, s.w, m.rowSelFor(colHosts, i, l.at))
+		frame(cv, s.x, y, s.w, sel)
 		y++
 	}
 	for _, c := range pending {
 		if y >= g.bodyY+g.bodyH {
 			break
 		}
-		putRight(cv, s.x+s.w-1, y, spinner[m.spin%len(spinner)], sSubtle)
+		putRight(cv, s.x+s.w-1, y, spinner[m.spin%len(spinner)], sGold)
 		cv.put(s.x+2, y, glyphServer, sMuted, 1)
 		cv.put(s.x+4, y, cutMiddleText(c.host.Name, s.w-8), sSubtle, s.w-8)
 		y++
@@ -448,7 +463,7 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 	if h != nil && !h.host.Reachable() && len(h.host.Sessions) > 0 {
 		extra = "cached"
 		if h.host.Seen > 0 {
-			extra += " " + age(time.Duration(h.host.Seen)*time.Millisecond) + " ago"
+			extra += " " + age(time.Duration(h.host.Seen)*time.Millisecond)
 		}
 	}
 	m.colHeader(cv, g, colSessions, s, extra)
@@ -460,19 +475,26 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 	m.cs[colSessions].top = scrollTo(m.cs[colSessions].top, at, g.bodyH, total)
 	top := m.cs[colSessions].top
 	if len(l.items) == 0 {
-		msg := m.emptyText(colSessions)
+		msg, mst := m.emptyText(colSessions), sMuted
+		hint := func(key, what string) {
+			cv.put(s.x+2, g.bodyY+1, key, sKey, s.w-2)
+			cv.put(s.x+3+width(key), g.bodyY+1, what, sMuted, s.w-3-width(key))
+		}
 		switch {
 		case msg != "":
 		case loading(h.host):
-			msg = "loading sessions…"
+			msg, mst = spinner[m.spin%len(spinner)]+" loading sessions…", sGold
 		case h.host.Reachable():
 			msg = "no sessions"
-			cv.put(s.x+2, g.bodyY+1, "n", sKey, 1)
-			cv.put(s.x+4, g.bodyY+1, "makes one", sMuted, s.w-5)
+			hint("n", "makes one")
+		case h.host.Status == proto.StatusOff:
+			msg = "turned off"
+			hint("space", "on the host turns it on")
 		default:
-			msg = h.host.Name + " is " + hostStatus(h.host)
+			msg, mst = glyphRefused+" "+hostStatus(h.host), sErr
+			hint("⏎", "on the host retries")
 		}
-		cv.put(s.x+2, g.bodyY, msg, sMuted, s.w-2)
+		cv.put(s.x+2, g.bodyY, msg, mst, s.w-2)
 	}
 	// Marker slots, as wide as the widest in the list.
 	clientsW, flags, ageW := 0, false, 0
@@ -494,12 +516,13 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 		}
 		it := &l.items[i]
 		end := s.x + s.w - 1
+		sel := m.rowSelFor(colSessions, i, l.at)
 		if it.kind == kDir {
-			m.drawDir(cv, s.x, y, end, it, l.hits[i])
+			m.drawDir(cv, s.x, y, end, it, l.hits[i], sel == selFocus)
 		} else {
-			m.drawSession(cv, s.x, y, end, it, l.hits[i], clientsW, flags, ageW)
+			m.drawSession(cv, s.x, y, end, it, l.hits[i], clientsW, flags, ageW, sel == selFocus)
 		}
-		frame(cv, s.x, y, s.w, m.rowSelFor(colSessions, i, l.at))
+		frame(cv, s.x, y, s.w, sel)
 	}
 	if header >= 0 {
 		if y := g.bodyY + header - top; y >= g.bodyY && y < g.bodyY+g.bodyH {
@@ -507,7 +530,7 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 			if m.allDirs {
 				label = "dirs · every zoxide entry"
 			}
-			cv.put(s.x+2, y, label, sSubtle, s.w-6)
+			cv.put(s.x+2, y, label, sMuted.Bold(), s.w-6)
 			putRight(cv, s.x+s.w-1, y, "^g", sMuted)
 		}
 	}
@@ -521,7 +544,7 @@ func (m *Model) ageText(it *item) string {
 	return age(it.ago)
 }
 
-func (m *Model) drawSession(cv *canvas, x, y, end int, it *item, hits []int, clientsW int, flags bool, ageW int) {
+func (m *Model) drawSession(cv *canvas, x, y, end int, it *item, hits []int, clientsW int, flags bool, ageW int, cursor bool) {
 	ast := sSubtle
 	if !it.host.Reachable() {
 		ast = sMuted
@@ -548,7 +571,11 @@ func (m *Model) drawSession(cv *canvas, x, y, end int, it *item, hits []int, cli
 		}
 	}
 	nx := x + 2
-	nx += cv.put(nx, y, glyphSession, sFoam, 1) + 1
+	icon := fg(cPine)
+	if cursor {
+		icon = sIris
+	}
+	nx += cv.put(nx, y, glyphSession, icon, 1) + 1
 	room := rx - 1 - nx
 	if it.sess.Group != "" {
 		room -= 2
@@ -556,15 +583,18 @@ func (m *Model) drawSession(cv *canvas, x, y, end int, it *item, hits []int, cli
 	if it.cur {
 		room -= 2
 	}
-	m.drawName(cv, nx, y, max(room, 1), it, hits)
+	m.drawName(cv, nx, y, max(room, 1), it, hits, cursor)
 }
 
 // drawName draws a session's name fitted to room: a linked worktree's
 // repo part dimmed and shrunk first.
-func (m *Model) drawName(cv *canvas, x, y, room int, it *item, hits []int) int {
+func (m *Model) drawName(cv *canvas, x, y, room int, it *item, hits []int, cursor bool) int {
 	base := sPlain
 	if !it.host.Reachable() {
 		base = sSubtle
+	}
+	if cursor {
+		base = base.Bold()
 	}
 	gs := graphemes(it.sess.Name)
 	repo := worktreeRepo(it)
@@ -591,24 +621,25 @@ func (m *Model) drawName(cv *canvas, x, y, room int, it *item, hits []int) int {
 	return n
 }
 
-func (m *Model) drawDir(cv *canvas, x, y, end int, it *item, hits []int) {
+func (m *Model) drawDir(cv *canvas, x, y, end int, it *item, hits []int, cursor bool) {
 	d := it.dir
 	rx := end
 	if b := gitText(d.Git); b != "" {
-		rx = putRight(cv, end, y, b, sSubtle)
+		rx = putRight(cv, end, y, b, sMuted)
 		if d.Git.Dirty {
 			cv.put(end-1, y, "*", sGold, 1)
 		}
 	}
-	base := sPlain
-	if !d.Root {
-		base = sMuted
+	// Dirs sit below the sessions in weight: subtle, a non-git dir muted.
+	base, icon := sSubtle, sSubtle
+	if !d.Root || !it.host.Reachable() {
+		base, icon = sMuted, sMuted
 	}
-	if !it.host.Reachable() {
-		base = sMuted
+	if cursor {
+		base, icon = base.Bold(), sIris
 	}
 	nx := x + 2
-	nx += cv.put(nx, y, glyphDir, fg(cPine), 1) + 1
+	nx += cv.put(nx, y, glyphDir, icon, 1) + 1
 	cv.putFitted(nx, y, fitPath(d.Path, max(rx-1-nx, 1), hits), hitStyle(base, hits))
 }
 
@@ -642,6 +673,7 @@ func (m *Model) drawWindows(cv *canvas, g geometry, s span, e *item, l *list) {
 		y := g.bodyY + i - top
 		it := &l.items[i]
 		w := it.win
+		sel := m.rowSelFor(colWindows, i, l.at)
 		rx := s.x + s.w - 1
 		if splitW > 0 {
 			rx -= splitW
@@ -660,7 +692,11 @@ func (m *Model) drawWindows(cv *canvas, g geometry, s span, e *item, l *list) {
 		}
 		x := s.x + 2
 		idx := strconv.Itoa(w.Index)
-		cv.put(x+idxW-width(idx), y, idx, sMuted, -1)
+		ist := sMuted
+		if sel == selFocus {
+			ist = sIris.Bold()
+		}
+		cv.put(x+idxW-width(idx), y, idx, ist, -1)
 		x += idxW + 1
 		x += cv.put(x, y, glyphWindow, sMuted, 1) + 1
 		room := rx - 1 - x
@@ -671,11 +707,14 @@ func (m *Model) drawWindows(cv *canvas, g geometry, s span, e *item, l *list) {
 		if !it.host.Reachable() {
 			base = sSubtle
 		}
+		if sel == selFocus {
+			base = base.Bold()
+		}
 		x += cv.putFitted(x, y, fitMiddle(graphemes(w.Name), max(room, 1), firstHit(l.hits[i])), hitStyle(base, l.hits[i]))
 		if it.cur {
 			cv.put(x+1, y, glyphCur, sFoam, 1)
 		}
-		frame(cv, s.x, y, s.w, m.rowSelFor(colWindows, i, l.at))
+		frame(cv, s.x, y, s.w, sel)
 	}
 	scrollbar(cv, s.x+s.w, g.bodyY, g.bodyH, top, len(l.items))
 }
@@ -734,6 +773,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		r := &f.rows[i]
 		end := s.x + s.w - 1
 		reach := r.it.host.Reachable()
+		cursor := i == at
 		nx := s.x + 2 + hostW + 2
 		if r.kind == fSession || r.fold || r.kind == fDir {
 			hst := sFoam
@@ -782,17 +822,26 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			if r.it.cur {
 				room -= 2
 			}
-			m.drawName(cv, nx, y, max(room, 1), r.it, r.nameHits)
+			m.drawName(cv, nx, y, max(room, 1), r.it, r.nameHits, cursor)
 		case fWindow:
 			w := r.win.win
 			rx := end
 			if w.Panes > 1 {
 				rx = putRight(cv, end, y, glyphSplit+" "+strconv.Itoa(w.Panes), sMuted)
 			}
+			switch {
+			case w.Bell:
+				rx = putRight(cv, rx-1, y, glyphBell, sGold)
+			case w.Activity:
+				rx = putRight(cv, rx-1, y, glyphAct, sFoam)
+			}
 			x := nx
 			base := sPlain
 			if r.dim || !reach {
 				base = sMuted
+			}
+			if cursor {
+				base = base.Bold()
 			}
 			if r.fold {
 				x += cv.putFitted(x, y, fitMiddle(graphemes(r.it.sess.Name), max((rx-x)/2, 4), -1), func(int) style { return sSubtle })
@@ -802,8 +851,11 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			}
 			idx := strconv.Itoa(w.Index)
 			ist := sMuted
-			if r.numHit {
+			switch {
+			case r.numHit:
 				ist = sHit
+			case cursor:
+				ist = sIris.Bold()
 			}
 			x += cv.put(x, y, idx, ist, -1)
 			x += cv.put(x, y, ":", sMuted, -1)
@@ -812,9 +864,10 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 				cv.put(x+1, y, glyphCur, sFoam, 1)
 			}
 		case fMore:
-			cv.put(nx, y, glyphSubRow+" +"+strconv.Itoa(r.more)+" more", sMuted, end-nx)
+			x := nx + cv.put(nx, y, glyphSubRow+" +"+strconv.Itoa(r.more)+" more", sMuted, end-nx)
+			cv.put(x, y, " · tab", sMuted, end-x)
 		case fDir:
-			m.drawDir(cv, nx-2, y, end, r.it, r.nameHits)
+			m.drawDir(cv, nx-2, y, end, r.it, r.nameHits, cursor)
 		}
 		sel := selNone
 		if i == at {
@@ -858,10 +911,10 @@ func (m *Model) linkState(h *item) (full, icon string, st style) {
 	if c := m.checks[hh.Name]; c != nil {
 		if c.running {
 			sp := spinner[m.spin%len(spinner)]
-			return sp + " " + c.step.Name + ": " + c.step.Detail, sp, sSubtle
+			return sp + " " + c.step.Name + ": " + c.step.Detail, sp, sGold
 		}
 		if c.failed() {
-			return glyphWarn + " " + c.reason(), glyphWarn, sErr
+			return glyphWarn + " " + c.reason() + " · ⏎ checks again", glyphWarn, sErr
 		}
 	}
 	switch hh.Status {
@@ -875,14 +928,14 @@ func (m *Model) linkState(h *item) (full, icon string, st style) {
 		return s, glyphLink, sFoam
 	case proto.StatusConnecting:
 		sp := spinner[m.spin%len(spinner)]
-		return sp + " connecting…", sp, sSubtle
+		return sp + " connecting…", sp, sGold
 	case proto.StatusInstalling:
 		sp := spinner[m.spin%len(spinner)]
-		return sp + " installing tower…", sp, sSubtle
+		return sp + " installing tower…", sp, sGold
 	case proto.StatusStalled:
 		return glyphUnlink + " not responding", glyphUnlink, sErr
 	case proto.StatusOff:
-		return glyphUnlink + " turned off", glyphUnlink, sMuted
+		return glyphUnlink + " turned off · space turns it on", glyphUnlink, sMuted
 	case proto.StatusDown:
 		s := glyphUnlink + " unreachable"
 		if hh.Seen > 0 {
@@ -891,7 +944,7 @@ func (m *Model) linkState(h *item) (full, icon string, st style) {
 		if hh.Reason != "" {
 			s += " · " + hh.Reason
 		}
-		return s, glyphUnlink, sErr
+		return s + " · ⏎ retries", glyphUnlink, sErr
 	}
 	return glyphUnlink + " " + hostStatus(hh), glyphUnlink, sErr
 }
@@ -1087,13 +1140,21 @@ func (m *Model) drawFooter(cv *canvas, g geometry) {
 	case m.mode == modeNormal:
 		right, rst = "q quit", sMuted
 	}
-	right = cutMiddleText(right, max(g.w-4, 1))
 	rx := g.w - 1
-	if right != "" {
+	if m.note.text != "" {
+		// A message is a pill: errors on love, the rest on iris.
+		bg := cIris
+		if m.note.kind == noteErr {
+			bg = cLove
+		}
+		right = " " + cutMiddleText(right, max(g.w-6, 1)) + " "
+		rx = putRight(cv, g.w-1, y, right, fg(cBase).Bold().On(bg)) - 2
+	} else if right != "" {
+		right = cutMiddleText(right, max(g.w-4, 1))
 		rx = putRight(cv, g.w-1, y, right, rst) - 2
 	}
 	hs := m.hints()
-	widthOf := func(h hint) int { return width(h.key) + 1 + width(h.label) + 3 }
+	widthOf := func(h hint) int { return width(h.key) + 2 + 1 + width(h.label) + 2 }
 	total := 0
 	for _, h := range hs {
 		total += widthOf(h)
@@ -1110,9 +1171,9 @@ func (m *Model) drawFooter(cv *canvas, g geometry) {
 	if total > rx {
 		return
 	}
-	x := 2
+	x := 1
 	for _, h := range hs {
-		x += cv.put(x, y, h.key, sKey, -1) + 1
-		x += cv.put(x, y, h.label, sMuted, -1) + 3
+		x += cv.put(x, y, " "+h.key+" ", sCap, -1) + 1
+		x += cv.put(x, y, h.label, sSubtle, -1) + 2
 	}
 }
