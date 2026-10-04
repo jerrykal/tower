@@ -125,8 +125,9 @@ func (t *Term) Pick(query string) {
 	t.Keys("Enter")
 }
 
-// Prompt is what the dashboard shows while it waits for a query.
-const Prompt = `sessions>`
+// Prompt is what the dashboard shows while it waits for a query: the
+// finder's mode pill, where it opens.
+const Prompt = `FIND`
 
 // LoopTo starts a loop terminal on home and attaches it to the session
 // matching query; re is what the loop's current target must then match.

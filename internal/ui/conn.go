@@ -11,6 +11,7 @@ import (
 
 	"github.com/jerrykal/tower/internal/client"
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/hosts"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/stream"
 	"github.com/jerrykal/tower/internal/tmux"
@@ -21,6 +22,8 @@ type Towerd interface {
 	View(ctx context.Context, a proto.ViewArgs) (proto.Dash, error)
 	Watch(ctx context.Context, gen uint64) (uint64, error)
 	Act(ctx context.Context, r proto.Request) (proto.Ack, error)
+	// Retry asks the home to retry every host that is down now.
+	Retry(ctx context.Context) error
 }
 
 // Tmux runs one tmux command on the dashboard's own server.
@@ -49,16 +52,21 @@ func (t Calls) Act(ctx context.Context, r proto.Request) (proto.Ack, error) {
 	return a, err
 }
 
+func (t Calls) Retry(ctx context.Context) error {
+	return t.C.Call(ctx, proto.CallNetChange, nil, nil)
+}
+
 // Conn is one dashboard's link to the world: its towerd, the tmux server
 // it runs on, and who it runs for. The popup, the loop's picker and the
 // scripted entry points share it, so they share every code path behind a
 // key.
 type Conn struct {
 	Towerd Towerd
-	Tmux   Tmux   // nil in the loop's picker, which never runs tmux
-	Client string // TOWER_CLIENT: pid:created:name of the pressing client
-	Loop   string // the loop's own picker: its loop id
-	Pick   bool   // the loop's picker: ⏎ returns the target
+	Tmux   Tmux     // nil in the loop's picker, which never runs tmux
+	Client string   // TOWER_CLIENT: pid:created:name of the pressing client
+	Loop   string   // the loop's own picker: its loop id
+	Pick   bool     // the loop's picker: ⏎ returns the target
+	Hosts  HostList // the host list, on the home's machine; nil: not edited here
 
 	mu   sync.Mutex
 	info *clientInfo // the client's tty and session, read once
@@ -78,6 +86,7 @@ func Dial(ctx context.Context, e *config.Env, clientID string) (*Conn, error) {
 		Towerd: Calls{C: c},
 		Tmux:   tmux.Server{Bin: tmux.Bin(), Args: e.Tmux},
 		Client: clientID,
+		Hosts:  hosts.New(e),
 	}, nil
 }
 

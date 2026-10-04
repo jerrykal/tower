@@ -88,10 +88,10 @@ const (
 // act on what is there now. In the loop's picker the target is returned;
 // in a popup it is a switch-client on this server or a hand-off to
 // another.
-func (c *Conn) enter(ctx context.Context, k rowKey) (outcome, proto.Ref, error) {
+func (c *Conn) enter(ctx context.Context, k rowKey, pane string) (outcome, proto.Ref, error) {
 	config.Mark("dash: enter")
 	if k.Session == "" {
-		return 0, proto.Ref{}, errors.New("no session there: ^n makes one")
+		return 0, proto.Ref{}, errors.New("no session there: n makes one")
 	}
 	d, err := c.Towerd.View(ctx, c.viewArgs())
 	if err != nil {
@@ -103,6 +103,9 @@ func (c *Conn) enter(ctx context.Context, k rowKey) (outcome, proto.Ref, error) 
 	}
 	if err := reachable(t.host); err != nil {
 		return 0, proto.Ref{}, err
+	}
+	if pane != "" && t.ref.Window != "" {
+		t.ref.Pane = pane
 	}
 	if c.Pick {
 		return outChoice, t.ref, nil
@@ -126,6 +129,9 @@ func (c *Conn) switchHere(ctx context.Context, r proto.Ref) error {
 	args := []string{"switch-client", "-c", cl.Name, "-t", r.Session}
 	if r.Window != "" {
 		args = append(args, ";", "select-window", "-t", r.Window)
+	}
+	if r.Pane != "" {
+		args = append(args, ";", "select-pane", "-t", r.Pane)
 	}
 	_, err = c.Tmux.Run(ctx, args...)
 	return err
@@ -225,10 +231,11 @@ func (c *Conn) rename(ctx context.Context, t target, name string) (proto.Ack, er
 	return c.act(ctx, proto.Request{Op: proto.OpRename, Target: t.ref, Kind: kind, Name: name})
 }
 
-// newSession makes a session on h; an empty name leaves it to tmux.
-func (c *Conn) newSession(ctx context.Context, h *proto.Host, name string) (proto.Ack, error) {
+// newSession makes a session on h in dir (as the host spells it; empty:
+// its home directory); an empty name leaves it to tmux.
+func (c *Conn) newSession(ctx context.Context, h *proto.Host, name, dir string) (proto.Ack, error) {
 	ref := proto.Ref{Host: h.ID, Name: h.Name, Inst: h.Inst}
-	req := proto.Request{Op: proto.OpNew, Target: ref, Kind: proto.KindSession, Name: name}
+	req := proto.Request{Op: proto.OpNew, Target: ref, Kind: proto.KindSession, Name: name, Dir: dir}
 	if h.NoServer {
 		// Starting the server runs the user's config, seconds with a
 		// plugin manager: towerd gives it 15s, and so does the dashboard.
@@ -250,9 +257,29 @@ func startingNote(h *proto.Host) string {
 	return ""
 }
 
-// capture asks for the active pane of the session's active window (or of
-// the window t names).
-func (c *Conn) capture(ctx context.Context, t target) (string, error) {
+// newWindow adds a window to the session s names, in dir; an empty name
+// leaves it to tmux.
+func (c *Conn) newWindow(ctx context.Context, s proto.Ref, name, dir string) (proto.Ack, error) {
+	s.Window, s.Pane = "", ""
+	return c.act(ctx, proto.Request{Op: proto.OpNew, Target: s, Kind: proto.KindWindow, Name: name, Dir: dir})
+}
+
+// dup makes a session grouped with the one s names, called name.
+func (c *Conn) dup(ctx context.Context, s proto.Ref, name string) (proto.Ack, error) {
+	s.Window, s.Pane = "", ""
+	return c.act(ctx, proto.Request{Op: proto.OpDup, Target: s, Kind: proto.KindSession, Name: name})
+}
+
+// panes asks what runs in the panes of the session (or window) r names.
+func (c *Conn) panes(ctx context.Context, r proto.Ref, kind string) ([]proto.Pane, error) {
+	a, err := c.act(ctx, proto.Request{Op: proto.OpPanes, Target: r, Kind: kind})
+	return a.Panes, err
+}
+
+// capture asks for a pane's contents: the pane t names, or the active
+// pane of its window, or of the session's active window. The answer
+// carries the window's panes when towerd sends them.
+func (c *Conn) capture(ctx context.Context, t target) (string, []proto.Pane, error) {
 	ref := t.ref
 	if ref.Window == "" && t.sess != nil {
 		for _, w := range t.sess.Windows {
@@ -262,7 +289,7 @@ func (c *Conn) capture(ctx context.Context, t target) (string, error) {
 		}
 	}
 	a, err := c.act(ctx, proto.Request{Op: proto.OpCapture, Target: ref})
-	return a.Text, err
+	return a.Text, a.Panes, err
 }
 
 // previewHeader is the preview's first line: "B:bravo  ($1)  1:fish
@@ -274,4 +301,16 @@ func previewHeader(h *proto.Host, s *proto.Session) string {
 		b.WriteString("  " + strconv.Itoa(w.Index) + ":" + w.Name)
 	}
 	return b.String()
+}
+
+// rowTarget is the target an item names, as drawn.
+func rowTarget(it *item) target {
+	t := target{host: it.host, sess: it.sess, ref: proto.Ref{Host: it.host.ID, Name: it.host.Name, Inst: it.host.Inst}}
+	if it.sess != nil {
+		t.ref.Session, t.ref.Label = it.sess.ID, it.sess.Name
+	}
+	if it.win != nil {
+		t.ref.Window = it.win.ID
+	}
+	return t
 }

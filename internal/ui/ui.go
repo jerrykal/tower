@@ -17,6 +17,7 @@ import (
 
 	"github.com/jerrykal/tower/internal/client"
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/hosts"
 	"github.com/jerrykal/tower/internal/proto"
 )
 
@@ -62,6 +63,9 @@ func Pick(ctx context.Context, c *client.Client, o PickOptions) (Choice, error) 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	conn := &Conn{Towerd: Calls{C: c}, Loop: o.Loop, Pick: true}
+	if c.Env != nil {
+		conn.Hosts = hosts.New(c.Env)
+	}
 	m, err := run(ctx, conn, runOptions{note: o.Note, dash: o.Dash, in: o.Input, out: o.Output})
 	if err != nil {
 		return Choice{}, err
@@ -125,7 +129,6 @@ func run(ctx context.Context, c *Conn, o runOptions) (*Model, error) {
 			m.width, m.height = w, h
 		}
 	}
-	m.scroll()
 	if _, err := tea.NewProgram(m, opts...).Run(); err != nil && !m.quitted {
 		if ctx.Err() != nil {
 			return m, ctx.Err()

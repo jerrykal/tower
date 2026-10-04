@@ -258,11 +258,8 @@ func TestS12(t *testing.T) {
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
 	term.Wait(Prompt, 6*time.Second)
-	term.Type("bone")
-	time.Sleep(250 * time.Millisecond)
-	term.Keys("C-w")
-	term.Wait(`windows [^\n]*>`, 3*time.Second)
-	term.Pick("second")
+	// A session and a window name: the finder's cursor on the window.
+	term.Pick("bone second")
 	w.Eventually(5*time.Second, "B's client on 2:second", func() bool { return b.ClientWindow() == "2 second" })
 	time.Sleep(300 * time.Millisecond)
 	ids := b.ClientIDs("bone")

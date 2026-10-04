@@ -1,128 +1,49 @@
 package ui
 
-import "unicode"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
-// Matching the query against rows, the way fzf reads to a user: every
-// character of the query, in order, ignoring case, with spaces in the
-// query ignored. Of the rows that match, the ones that match best come
-// first, so ⏎ on the top row takes the session the user named:
-//
-//  1. the session (or window) name is the query;
-//  2. the name starts with the query;
-//  3. the name contains the query, at a word start before inside a word,
-//     earlier before later;
-//  4. "host name" (spaces aside) contains the query, likewise;
-//  5. the query's characters are scattered, a tighter span first.
-//
-// Ties keep the rows' own order (recency). So `s50` puts session s50
-// before s150, and `bra` puts bravo before cobra.
+// Matching. A column's search filters the way fzf reads to a user: the
+// query's characters in order, ignoring case, spaces in the query
+// ignored; the column keeps its own order. The finder (find.go) scores
+// whole words instead. Both work on graphemes, so highlights land on what
+// is drawn.
 
-// score orders matches: lower is better, field by field.
-type score struct{ tier, a, b int }
+// ftext is text as it is compared: lower-case graphemes.
+type ftext []string
 
-func (s score) less(o score) bool {
-	if s.tier != o.tier {
-		return s.tier < o.tier
+func foldText(s string) ftext {
+	gs := graphemes(s)
+	out := make(ftext, len(gs))
+	for i, g := range gs {
+		out[i] = strings.ToLower(g.s)
 	}
-	if s.a != o.a {
-		return s.a < o.a
-	}
-	return s.b < o.b
+	return out
 }
 
-// fold is the query as it is compared: lower case, no spaces.
-func fold(query []rune) []rune {
-	q := make([]rune, 0, len(query))
-	for _, r := range query {
+// foldQuery is a column's query as it is compared: no spaces.
+func foldQuery(q []rune) ftext {
+	var b strings.Builder
+	for _, r := range q {
 		if !unicode.IsSpace(r) {
-			q = append(q, unicode.ToLower(r))
+			b.WriteRune(r)
 		}
 	}
-	return q
+	return foldText(b.String())
 }
 
-// rank matches the folded query q against text, whose name starts at rune
-// nameAt (-1: no name). It returns the match's score and the rune
-// positions in text that matched, for highlighting.
-func rank(q []rune, text string, nameAt int) (score, []int, bool) {
-	if len(q) == 0 {
-		return score{}, nil, true
-	}
-	t := []rune(text)
-	for i, r := range t {
-		t[i] = unicode.ToLower(r)
-	}
-	span := func(from, n int) []int {
-		p := make([]int, n)
-		for i := range p {
-			p[i] = from + i
-		}
-		return p
-	}
-	if nameAt >= 0 && nameAt <= len(t) {
-		name := t[nameAt:]
-		if i := index(name, q); i >= 0 {
-			switch {
-			case i == 0 && len(name) == len(q):
-				return score{tier: 1}, span(nameAt, len(q)), true
-			case i == 0:
-				return score{tier: 2}, span(nameAt, len(q)), true
-			}
-			return score{3, wordStart(name, i), i}, span(nameAt+i, len(q)), true
-		}
-	}
-	// "host name" with its spaces left out, mapped back to text.
-	var bare []rune
-	var at []int
-	for i, r := range t {
-		if !unicode.IsSpace(r) {
-			bare = append(bare, r)
-			at = append(at, i)
-		}
-	}
-	if i := index(bare, q); i >= 0 {
-		pos := make([]int, len(q))
-		for j := range pos {
-			pos[j] = at[i+j]
-		}
-		return score{4, wordStart(t, at[i]), at[i]}, pos, true
-	}
-	pos, ok := scatter(q, t)
-	if !ok {
-		return score{}, nil, false
-	}
-	return score{5, pos[len(pos)-1] - pos[0], pos[0]}, pos, true
-}
-
-// index is the first position of q in s, or -1.
-func index(s, q []rune) int {
-	for i := 0; i+len(q) <= len(s); i++ {
-		j := 0
-		for j < len(q) && s[i+j] == q[j] {
-			j++
-		}
-		if j == len(q) {
-			return i
-		}
-	}
-	return -1
-}
-
-// wordStart is 0 when s[i] begins a word (the start, or after a character
-// that is not a letter or digit), else 1.
-func wordStart(s []rune, i int) int {
-	if i == 0 || !unicode.IsLetter(s[i-1]) && !unicode.IsDigit(s[i-1]) {
-		return 0
-	}
-	return 1
-}
-
-// scatter finds q's characters in order in t: the match that ends
+// inOrder finds q's graphemes in order in t: the match that ends
 // earliest, tightened from its end, so "bra" in "b bravo" marks "bra".
-func scatter(q, t []rune) ([]int, bool) {
+func inOrder(q, t ftext) ([]int, bool) {
+	if len(q) == 0 {
+		return nil, true
+	}
 	end, qi := -1, 0
-	for i, r := range t {
-		if r == q[qi] {
+	for i, g := range t {
+		if g == q[qi] {
 			qi++
 			if qi == len(q) {
 				end = i
@@ -142,4 +63,162 @@ func scatter(q, t []rune) ([]int, bool) {
 		}
 	}
 	return pos, true
+}
+
+// filterMatch is a column's search on one name.
+func filterMatch(q ftext, name string) ([]int, bool) {
+	if len(q) == 0 {
+		return nil, true
+	}
+	return inOrder(q, foldText(name))
+}
+
+// wordStartAt reports whether t[i] begins a word: the start, or after a
+// grapheme that is not a letter or digit.
+func wordStartAt(t ftext, i int) bool {
+	if i == 0 {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(t[i-1])
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+}
+
+// indexAt is the first position of w in t at or after from, or -1.
+func indexAt(t, w ftext, from int) int {
+	for i := from; i+len(w) <= len(t); i++ {
+		j := 0
+		for j < len(w) && t[i+j] == w[j] {
+			j++
+		}
+		if j == len(w) {
+			return i
+		}
+	}
+	return -1
+}
+
+// Scores of one finder word against one name: higher is better. A
+// substring beats any scattered match; among substrings the whole name,
+// then its start, then a word start, each nearer the front.
+const (
+	scoreSub     = 1000
+	scoreExact   = 600
+	scorePrefix  = 400
+	scoreWord    = 200
+	scoreScatter = 300
+	scoreIndex   = 1500 // a window number next to a ':'
+	scorePlainNo = 500  // a plain number naming a window by number
+)
+
+// wordMatch scores word w against t. sub reports a substring match.
+func wordMatch(w, t ftext) (score int, pos []int, sub bool, ok bool) {
+	if len(w) == 0 || len(t) == 0 {
+		return 0, nil, false, false
+	}
+	best := -1
+	for i := indexAt(t, w, 0); i >= 0; i = indexAt(t, w, i+1) {
+		s := scoreSub - min(i, 100)
+		switch {
+		case i == 0 && len(w) == len(t):
+			s += scoreExact
+		case i == 0:
+			s += scorePrefix
+		case wordStartAt(t, i):
+			s += scoreWord
+		}
+		if s > best {
+			best = s
+			pos = make([]int, len(w))
+			for j := range pos {
+				pos[j] = i + j
+			}
+		}
+	}
+	if best >= 0 {
+		return best, pos, true, true
+	}
+	// Scattered: the tightest span, at most three times the word's
+	// length.
+	bestSpan, bestAt := -1, -1
+	for i := range t {
+		if t[i] != w[0] {
+			continue
+		}
+		qi, end := 1, i
+		for j := i + 1; j < len(t) && qi < len(w); j++ {
+			if t[j] == w[qi] {
+				qi++
+				end = j
+			}
+		}
+		if qi < len(w) && len(w) > 1 {
+			break // no later start can match either
+		}
+		if span := end - i + 1; bestSpan < 0 || span < bestSpan {
+			bestSpan, bestAt = span, i
+		}
+	}
+	if bestSpan < 0 || bestSpan > 3*len(w) {
+		return 0, nil, false, false
+	}
+	pos = make([]int, 0, len(w))
+	qi := 0
+	for j := bestAt; j < len(t) && qi < len(w); j++ {
+		if t[j] == w[qi] {
+			pos = append(pos, j)
+			qi++
+		}
+	}
+	s := scoreScatter - (bestSpan-len(w))*10 - min(bestAt, 50)
+	if wordStartAt(t, bestAt) {
+		s += 50
+	}
+	return max(s, 1), pos, false, true
+}
+
+// qword is one word of a finder query.
+type qword struct {
+	text  ftext
+	num   int  // the word as a window number, or -1
+	index bool // a number next to a ':': names a window by number only
+}
+
+// splitQuery splits a finder query at spaces and ':', in any order.
+func splitQuery(q []rune) []qword {
+	var out []qword
+	s := string(q)
+	i := 0
+	for i < len(s) {
+		if s[i] == ' ' || s[i] == ':' || s[i] == '\t' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(s) && s[j] != ' ' && s[j] != ':' && s[j] != '\t' {
+			j++
+		}
+		word := s[i:j]
+		w := qword{text: foldText(word), num: -1}
+		if n, ok := number(word); ok {
+			w.num = n
+			w.index = i > 0 && s[i-1] == ':' || j < len(s) && s[j] == ':'
+		}
+		out = append(out, w)
+		i = j
+	}
+	return out
+}
+
+func number(s string) (int, bool) {
+	if s == "" || len(s) > 6 {
+		return 0, false
+	}
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, true
 }

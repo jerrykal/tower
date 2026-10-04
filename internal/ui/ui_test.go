@@ -61,7 +61,7 @@ func TestPick(t *testing.T) {
 		t.Fatalf("^c: %+v %v", ch, err)
 	}
 	// - picks the loop's previous session.
-	if ch, err := pick(t, f, PickOptions{Loop: "L"}, "-"); err != nil || ch.Target.Host != "bbbb" || ch.Target.Session != "$0" {
+	if ch, err := pick(t, f, PickOptions{Loop: "L"}, "-", "\r"); err != nil || ch.Target.Host != "bbbb" || ch.Target.Session != "$0" {
 		t.Fatalf("-: %+v %v", ch, err)
 	}
 }
@@ -80,12 +80,11 @@ func TestPickCancelled(t *testing.T) {
 
 func TestView(t *testing.T) {
 	m, _, _ := newTestModel(t, testDash(), false)
-	for _, size := range [][2]int{{100, 30}, {40, 10}, {30, 5}, {20, 2}} {
+	for _, size := range [][2]int{{100, 30}, {200, 50}, {86, 23}, {40, 10}, {30, 5}, {20, 2}} {
 		m.width, m.height = size[0], size[1]
-		m.scroll()
 		v := m.View()
 		lines := strings.Split(v.Content, "\n")
-		if len(lines) > max(size[1], 3) {
+		if len(lines) > size[1] {
 			t.Errorf("%v: %d lines", size, len(lines))
 		}
 		for i, l := range lines {
@@ -93,14 +92,13 @@ func TestView(t *testing.T) {
 				t.Errorf("%v: line %d is %d wide: %q", size, i, w, ansi.Strip(l))
 			}
 		}
-		if !strings.HasPrefix(ansi.Strip(lines[0]), "sessions> ") {
+		if size[0] >= minWidth && size[1] >= minHeight && !strings.Contains(ansi.Strip(lines[0]), "FIND") {
 			t.Errorf("%v: prompt %q", size, ansi.Strip(lines[0]))
 		}
 	}
 	m.width, m.height = 100, 30
-	m.scroll()
 	text := ansi.Strip(m.View().Content)
-	for _, s := range []string{"6/6", "A  alpha", "A:alpha  ($0)  1:fish", "switch-client → A:alpha", "⏎ attach"} {
+	for _, s := range []string{"5/5", "A     alpha", "1:fish", "local server", "⏎ attach"} {
 		if !strings.Contains(text, s) {
 			t.Errorf("view lacks %q:\n%s", s, text)
 		}

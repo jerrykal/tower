@@ -14,9 +14,13 @@ import (
 
 // Live dashboards and their requests: LV04, LD01, LD03.
 
-// cursorRe reads the dashboard's cursor row from its preview header,
-// "C:lvd3  ($5)  …".
-var cursorRe = regexp.MustCompile(`([A-Z]):(\S+)  \(\$`)
+// cursorRe reads the dashboard's cursor row from its breadcrumb: the
+// host, then the session after its glyph.
+var cursorRe = regexp.MustCompile(`([A-Z])  \x{ebc8} (\S+)`)
+
+// crumbRe is the breadcrumb on C:charlie with its window, which comes
+// from the view, before the capture.
+var crumbRe = regexp.MustCompile(`C  \x{ebc8} charlie  \x{f04e9} \d+:`)
 
 func (t *Term) cursor() string {
 	m := cursorRe.FindStringSubmatch(t.Screen())
@@ -240,7 +244,8 @@ func TestLD01(t *testing.T) {
 					d.term.Type(victim)
 					time.Sleep(300 * time.Millisecond)
 					pressed := time.Now()
-					gone := d.term.timeUntil(func() { d.term.Keys("C-x") }, rowRe("C", victim), false, 3*time.Second)
+					// ^x asks; y kills.
+					gone := d.term.timeUntil(func() { d.term.Keys("C-x", "y") }, rowRe("C", victim), false, 3*time.Second)
 					add("^x row gone on "+d.h.Name, gone)
 					var answered time.Time
 					w.Eventually(3*time.Second, "the kill's answer", func() bool {
@@ -275,7 +280,7 @@ func TestLD01(t *testing.T) {
 					win, pane := time.Duration(-1), time.Duration(-1)
 					for time.Since(start) < 5*time.Second && pane < 0 {
 						s := d.term.Screen()
-						if win < 0 && strings.Contains(s, "C:charlie  (") {
+						if win < 0 && crumbRe.MatchString(s) {
 							win = time.Since(start)
 						}
 						if strings.Contains(s, "PREVIEW-MARK-42") {
@@ -323,7 +328,7 @@ func TestLD03(t *testing.T) {
 	term.Type("spam")
 	time.Sleep(400 * time.Millisecond)
 	for range 3 {
-		term.Keys("C-x")
+		term.Keys("C-x", "y")
 		time.Sleep(80 * time.Millisecond)
 	}
 	spam := func() int {
@@ -336,7 +341,7 @@ func TestLD03(t *testing.T) {
 		return n
 	}
 	w.Eventually(3*time.Second, "three spam sessions killed", func() bool { return spam() <= 2 })
-	rows := regexp.MustCompile(`spam\d +1w`)
+	rows := regexp.MustCompile(`C {2,}spam\d( |$)`)
 	w.Eventually(3*time.Second, "two spam rows", func() bool { return len(rows.FindAllString(term.Screen(), -1)) == 2 })
 	time.Sleep(500 * time.Millisecond)
 	if n := spam(); n != 2 || !c.hasSession("charlie") {

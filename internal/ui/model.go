@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -10,29 +9,45 @@ import (
 	"github.com/jerrykal/tower/internal/proto"
 )
 
-// mode is what the list shows and what keys do.
+// mode is what keys do.
 type mode int
 
 const (
-	modeList    mode = iota // sessions of every host
-	modeWindows             // one session's windows (^w)
-	modePrompt              // a line of input for rename or new
+	modeNormal  mode = iota // the columns
+	modeSearch              // typing filters the focused column
+	modeFind                // the finder
+	modePrompt              // a line of input: a name
+	modeConfirm             // y/n
+	modeAddHost             // the add-host picker
+	modeHelp                // the key reference
 )
 
-type promptKind int
+// col is a column of the dashboard.
+type col int
 
 const (
-	promptRename promptKind = iota
-	promptNew
+	colHosts col = iota
+	colSessions
+	colWindows
 )
 
-// prompt is a line of input asked for an action on one row.
-type prompt struct {
-	kind  promptKind
-	row   row
-	label string // "rename B:bravo", "new session on B"
-	text  []rune
-	back  mode
+var colNames = [3]string{"hosts", "sessions", "windows"}
+
+// colState is one column's query (with its text cursor in search mode)
+// and its scroll.
+type colState struct {
+	in  input
+	top int
+}
+
+// selection is the columns' memory, by identity: the selected host, each
+// host's selected session or dir, each session's selected window, and
+// each window's picked pane. It changes only when a cursor moves.
+type selection struct {
+	host   string
+	entry  map[string]rowKey
+	window map[rowKey]string
+	pane   map[rowKey]string
 }
 
 // hide is a row whose kill is in flight: it stays out of every rebuild
@@ -42,12 +57,32 @@ type hide struct {
 	clearAt int // 0 while in flight; else the first read seq that clears it
 }
 
+type noteKind int
+
+const (
+	noteInfo noteKind = iota // goes after noteTime
+	noteBusy                 // stays until replaced: something is in flight
+	noteErr                  // stays until the next key
+)
+
+// noteTime is how long a message stays in the footer.
+const noteTime = 2400 * time.Millisecond
+
+type message struct {
+	text string
+	kind noteKind
+	id   int
+}
+
 // readEvery paces view reads in a burst of changes.
 const readEvery = 50 * time.Millisecond
 
-// Model is the dashboard: the last view read, the rows derived from it and
-// what the user is doing. Bubble Tea's update loop owns it; calls to
-// towerd run as commands and come back as messages.
+// spinEvery is a spinner's frame time.
+const spinEvery = 100 * time.Millisecond
+
+// Model is the dashboard: the last view read, what it lists, and what
+// the user is doing. Bubble Tea's update loop owns it; calls to towerd,
+// tmux and ssh run as commands and come back as messages.
 type Model struct {
 	c    *Conn
 	ctx  context.Context
@@ -58,40 +93,49 @@ type Model struct {
 	view   proto.Dash
 	readAt time.Time
 	have   bool
+	w      *world
+	order  []string // the hosts' order, taken when the dashboard opens
+	hidden map[rowKey]hide
+	fresh  map[rowKey]bool // sessions made here, "new" until attached
+	here   proto.Ref       // the client's own session (tmux), for a client no loop owns
 
-	rows   []row   // the mode's rows, hidden ones left out
-	shown  []row   // rows the query matches
-	hits   [][]int // match positions per shown row
-	cols   columns
-	cursor rowKey // the row under the cursor, by identity
-	at     int    // its index in shown
-	top    int    // first shown row on screen
-	want   *rowKey
+	mode     mode
+	back     mode // where a prompt, confirm, picker or help returns
+	focus    col
+	cs       [3]colState
+	sel      selection
+	allDirs  bool // ^g: every zoxide entry, not only git roots
+	find     finder
+	prompt   *prompt
+	confirm  *confirm
+	picker   *picker
+	pendingG bool
 
-	query     []rune
-	mode      mode
-	winOf     rowKey // windows mode: the session
-	saved     []rune // the list's query, kept while in windows mode
-	savedKey  rowKey
-	prompt    *prompt
-	hidden    map[rowKey]hide
-	note      string
-	noteErr   bool
-	busy      bool // ⏎ in flight
-	here      proto.Ref
-	width     int
-	height    int
-	reading   bool
-	dirty     bool
-	ticking   bool
-	lastRead  time.Time
-	seq       int // view reads started
-	gen       uint64
-	capKey    rowKey // the row whose capture is shown
-	capWin    string // and the window it is of
-	capText   string
-	capErr    string
-	capBusy   bool
+	widths [3]int // the columns' natural widths; they only grow
+	note   message
+	noteN  int
+	busy   bool // ⏎ in flight
+
+	width, height int
+
+	reading  bool
+	dirty    bool
+	ticking  bool
+	lastRead time.Time
+	seq      int // view reads started
+	gen      uint64
+
+	cap      capState
+	checks   map[string]*hostCheck // add-host checks, by host name
+	spinning bool
+	spin     int
+
+	click lastClick
+	geo   geometry
+
+	want      *rowKey // select this row once a view read has it (what new made)
+	wantReads int
+
 	choice    *proto.Ref
 	last      bool
 	quitted   bool
@@ -99,13 +143,18 @@ type Model struct {
 }
 
 // newModel is a model over c, starting from view d when it was read
-// already (have).
+// already (have). It opens in the finder, so typing a name and ⏎ moves
+// there, as the picker it replaces did.
 func newModel(ctx context.Context, c *Conn, d proto.Dash, have bool, live bool) *Model {
-	m := &Model{c: c, ctx: ctx, live: live, now: time.Now, hidden: map[rowKey]hide{}, width: 80, height: 24}
+	m := &Model{c: c, ctx: ctx, live: live, now: time.Now, hidden: map[rowKey]hide{}, fresh: map[rowKey]bool{},
+		width: 100, height: 30, mode: modeFind, focus: colSessions, checks: map[string]*hostCheck{}}
+	m.find.front = true
+	m.sel = selection{entry: map[string]rowKey{}, window: map[rowKey]string{}, pane: map[rowKey]string{}}
+	m.cap.cache = map[capKey]*capture{}
 	if have {
 		m.view, m.have, m.readAt, m.gen = d, true, m.now(), d.Gen
 		m.rebuild()
-		m.toTop()
+		m.find.toBest()
 	}
 	return m
 }
@@ -123,18 +172,16 @@ type (
 	}
 	readTickMsg   struct{}
 	watchRetryMsg struct{}
+	noteExpireMsg struct{ id int }
+	spinMsg       struct{}
 	actMsg        struct {
 		op   string
 		host string
-		key  rowKey
+		key  rowKey // the row a kill hid
+		also rowKey // and its session, for a session's last window
 		ack  proto.Ack
 		err  error
-	}
-	captureMsg struct {
-		key  rowKey
-		win  string
-		text string
-		err  error
+		then func(*Model, proto.Ack) tea.Cmd // after a success
 	}
 	infoMsg  struct{ info *clientInfo }
 	enterMsg struct {
@@ -155,7 +202,7 @@ func (m *Model) Init() tea.Cmd {
 	if m.c.Client != "" && m.c.Tmux != nil && !m.c.Pick {
 		cmds = append(cmds, m.readInfo())
 	}
-	cmds = append(cmds, m.wantCapture())
+	cmds = append(cmds, m.wantCapture(), m.spinIfNeeded())
 	return tea.Batch(cmds...)
 }
 
@@ -163,9 +210,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.scroll()
 	case tea.KeyPressMsg:
 		return m, m.key(msg)
+	case tea.PasteMsg:
+		return m, m.paste(msg.Content)
+	case tea.MouseClickMsg:
+		return m, m.mouseClick(tea.Mouse(msg))
+	case tea.MouseWheelMsg:
+		return m, m.mouseWheel(tea.Mouse(msg))
 	case viewMsg:
 		return m, m.gotView(msg)
 	case watchMsg:
@@ -175,10 +227,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.read()
 	case watchRetryMsg:
 		return m, m.watch()
+	case noteExpireMsg:
+		if msg.id == m.note.id && m.note.kind == noteInfo {
+			m.note = message{}
+		}
+	case spinMsg:
+		m.spinning = false
+		m.spin++
+		return m, m.spinIfNeeded()
 	case actMsg:
 		return m, m.gotAct(msg)
 	case captureMsg:
 		return m, m.gotCapture(msg)
+	case panesMsg:
+		m.gotPanes(msg)
+	case checkMsg:
+		return m, m.gotCheck(msg)
+	case hostEditMsg:
+		return m, m.gotHostEdit(msg)
 	case infoMsg:
 		m.here = proto.Ref{Host: m.view.Self, Session: msg.info.session, Window: msg.info.window}
 		m.rebuild()
@@ -202,8 +268,28 @@ func (m *Model) quit() tea.Cmd {
 	return tea.Quit
 }
 
-func (m *Model) setNote(s string) { m.note, m.noteErr = s, false }
-func (m *Model) setErr(s string)  { m.note, m.noteErr = s, true }
+// setNote shows an outcome for noteTime.
+func (m *Model) setNote(s string) tea.Cmd {
+	m.noteN++
+	m.note = message{text: s, kind: noteInfo, id: m.noteN}
+	if s == "" {
+		return nil
+	}
+	id := m.noteN
+	return tea.Tick(noteTime, func(time.Time) tea.Msg { return noteExpireMsg{id: id} })
+}
+
+// setBusy shows what is in flight until its outcome replaces it.
+func (m *Model) setBusy(s string) {
+	m.noteN++
+	m.note = message{text: s, kind: noteBusy, id: m.noteN}
+}
+
+// setErr shows an error until the next key.
+func (m *Model) setErr(s string) {
+	m.noteN++
+	m.note = message{text: s, kind: noteErr, id: m.noteN}
+}
 
 // --- view reads and the watch ---
 
@@ -251,6 +337,7 @@ func (m *Model) gotView(msg viewMsg) tea.Cmd {
 		}
 		m.setErr("towerd: " + msg.err.Error())
 	} else {
+		first := !m.have
 		m.view, m.have, m.readAt = msg.dash, true, m.now()
 		m.gen = max(m.gen, msg.dash.Gen)
 		for k, h := range m.hidden {
@@ -258,15 +345,22 @@ func (m *Model) gotView(msg viewMsg) tea.Cmd {
 				delete(m.hidden, k)
 			}
 		}
-		first := len(m.shown) == 0
 		m.rebuild()
-		if m.want != nil {
-			m.place(*m.want)
-			m.want = nil
-		} else if first {
-			m.toTop()
+		if first {
+			m.find.toBest()
 		}
-		cmds = append(cmds, m.wantCapture())
+		if m.want != nil {
+			if it := m.w.find(*m.want); it != nil {
+				m.selectItem(it)
+				if m.mode == modeFind {
+					m.findSelect(it)
+				}
+				m.want = nil
+			} else if m.wantReads++; m.wantReads > 3 {
+				m.want = nil
+			}
+		}
+		cmds = append(cmds, m.wantCapture(), m.spinIfNeeded())
 		if msg.dash.Gen < m.gen {
 			m.dirty = true
 		}
@@ -316,7 +410,24 @@ func (m *Model) readInfo() tea.Cmd {
 	}
 }
 
-// --- rows and the cursor ---
+// spinIfNeeded runs the spinner while a host shows one.
+func (m *Model) spinIfNeeded() tea.Cmd {
+	if m.spinning || m.quitted || m.w == nil {
+		return nil
+	}
+	need := false
+	for _, h := range m.w.hosts {
+		need = need || loading(h.host)
+	}
+	for _, c := range m.checks {
+		need = need || c.running
+	}
+	if !need {
+		return nil
+	}
+	m.spinning = true
+	return tea.Tick(spinEvery, func(time.Time) tea.Msg { return spinMsg{} })
+}
 
 func (m *Model) loopID() string {
 	if m.view.Loop != "" {
@@ -325,190 +436,40 @@ func (m *Model) loopID() string {
 	return m.c.Loop
 }
 
-// rebuild derives the rows from the view, leaves hidden rows out and
-// filters by the query, keeping the cursor on its row.
+// onHome reports whether the dashboard runs on its view's home, where
+// the host list lives.
+func (m *Model) onHome() bool {
+	return m.view.Self != "" && (m.view.View.Home == "" || m.view.View.Home == m.view.Self)
+}
+
+// rebuild derives the lists from the view, leaves hidden rows out, and
+// keeps every cursor on its row; a row that went hands its place to its
+// nearest neighbour.
 func (m *Model) rebuild() {
 	if !m.have {
 		return
 	}
-	mk := marksFor(&m.view, m.loopID(), m.here)
-	var all []row
-	switch m.mode {
-	case modeWindows:
-		all = windowRows(&m.view, m.winOf, mk)
-	case modePrompt:
-		if m.prompt.back == modeWindows {
-			all = windowRows(&m.view, m.winOf, mk)
-		} else {
-			all = sessionRows(&m.view, mk, m.now().Sub(m.readAt))
-		}
-	default:
-		all = sessionRows(&m.view, mk, m.now().Sub(m.readAt))
-	}
-	m.rows = m.rows[:0]
-	for _, r := range all {
-		if _, hid := m.hidden[r.key]; !hid {
-			m.rows = append(m.rows, r)
-		}
-	}
-	m.cols = layout(m.rows)
-	m.refilter()
-}
-
-// refilter matches the rows against the query, best matches first (see
-// rank), and puts the cursor back on its row; when that row is gone, on
-// the nearest row after it that is still there, else before it.
-func (m *Model) refilter() {
-	old, oldAt := m.shown, m.at
-	type hit struct {
-		r   row
-		s   score
-		pos []int
-	}
-	q := fold(m.query)
-	var hits []hit
-	for _, r := range m.rows {
-		if s, pos, ok := rank(q, r.text, r.nameAt); ok {
-			hits = append(hits, hit{r, s, pos})
-		}
-	}
-	slices.SortStableFunc(hits, func(a, b hit) int {
-		switch {
-		case a.s.less(b.s):
-			return -1
-		case b.s.less(a.s):
-			return 1
-		}
-		return 0
-	})
-	m.shown, m.hits = make([]row, len(hits)), make([][]int, len(hits))
-	for i, h := range hits {
-		m.shown[i], m.hits[i] = h.r, h.pos
-	}
-	if i := m.index(m.cursor); i >= 0 {
-		m.at = i
+	if m.order == nil {
+		m.order = hostOrder(&m.view)
 	} else {
-		m.at = 0
-		found := false
-		for i := oldAt + 1; i < len(old) && !found; i++ {
-			if j := m.index(old[i].key); j >= 0 {
-				m.at, found = j, true
-			}
+		known := map[string]bool{}
+		for _, n := range m.order {
+			known[n] = true
 		}
-		for i := min(oldAt, len(old)) - 1; i >= 0 && !found; i-- {
-			if j := m.index(old[i].key); j >= 0 {
-				m.at, found = j, true
+		for _, h := range m.view.View.Hosts {
+			if !known[h.Name] {
+				m.order = append(m.order, h.Name)
 			}
 		}
 	}
-	m.sync()
-}
-
-func (m *Model) index(k rowKey) int {
-	for i := range m.shown {
-		if m.shown[i].key == k {
-			return i
-		}
+	old := m.w
+	mk := marksFor(&m.view, m.loopID(), m.here)
+	m.w = buildWorld(&m.view, mk, m.now().Sub(m.readAt), m.order, m.hidden, m.fresh)
+	if old == nil {
+		m.selectCurrent()
+	} else {
+		m.follow(old)
 	}
-	return -1
-}
-
-// sync makes the cursor key follow the index.
-func (m *Model) sync() {
-	if len(m.shown) == 0 {
-		m.at = 0
-		m.cursor = rowKey{}
-		return
-	}
-	m.at = min(max(m.at, 0), len(m.shown)-1)
-	m.cursor = m.shown[m.at].key
-	m.scroll()
-}
-
-func (m *Model) toTop() {
-	m.at = 0
-	m.sync()
-}
-
-// place puts the cursor on k when it is shown.
-func (m *Model) place(k rowKey) {
-	if i := m.index(k); i >= 0 {
-		m.at = i
-		m.sync()
-	}
-}
-
-func (m *Model) selected() *row {
-	if len(m.shown) == 0 {
-		return nil
-	}
-	return &m.shown[m.at]
-}
-
-func (m *Model) move(d int) tea.Cmd {
-	m.at += d
-	m.sync()
-	m.setNote("")
-	return m.wantCapture()
-}
-
-// --- the preview ---
-
-// wantCapture asks for the selected row's pane when it is not the one
-// shown. One capture is in flight at a time; its answer is dropped if the
-// selection moved meanwhile, and the next one asked then.
-func (m *Model) wantCapture() tea.Cmd {
-	r := m.selected()
-	if r == nil || r.sess == nil || m.capBusy || !r.host.Reachable() {
-		return nil
-	}
-	t := rowTarget(r)
-	t.ref.Window = paneWindow(r)
-	if r.key == m.capKey && t.ref.Window == m.capWin {
-		return nil
-	}
-	m.capBusy = true
-	c, ctx, key := m.c, m.ctx, r.key
-	return func() tea.Msg {
-		text, err := c.capture(ctx, t)
-		return captureMsg{key: key, win: t.ref.Window, text: text, err: err}
-	}
-}
-
-// paneWindow is the window whose active pane the preview shows: the
-// row's window, or its session's active window.
-func paneWindow(r *row) string {
-	if r.win != nil {
-		return r.win.ID
-	}
-	for _, w := range r.sess.Windows {
-		if w.Active {
-			return w.ID
-		}
-	}
-	return ""
-}
-
-func (m *Model) gotCapture(msg captureMsg) tea.Cmd {
-	m.capBusy = false
-	if r := m.selected(); r != nil && r.key == msg.key {
-		m.capKey, m.capWin, m.capText, m.capErr = msg.key, msg.win, msg.text, ""
-		if msg.err != nil {
-			m.capText, m.capErr = "", msg.err.Error()
-		}
-		return nil
-	}
-	return m.wantCapture()
-}
-
-// rowTarget is the target a row names, as drawn.
-func rowTarget(r *row) target {
-	t := target{host: r.host, sess: r.sess, ref: proto.Ref{Host: r.host.ID, Name: r.host.Name, Inst: r.host.Inst}}
-	if r.sess != nil {
-		t.ref.Session, t.ref.Label = r.sess.ID, r.sess.Name
-	}
-	if r.win != nil {
-		t.ref.Window = r.win.ID
-	}
-	return t
+	m.find.build(m.w, m.allDirs, false)
+	m.grow()
 }

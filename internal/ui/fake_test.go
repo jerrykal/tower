@@ -29,6 +29,7 @@ type fakeTowerd struct {
 	acts    []proto.Request
 	views   []proto.ViewArgs
 	watches int
+	retries int
 	// answer answers an act; nil answers OK.
 	answer func(proto.Request) proto.Ack
 	client *client.Client
@@ -108,6 +109,11 @@ func (f *fakeTowerd) serve(c net.Conn, done chan struct{}) {
 			f.mu.Unlock()
 		}
 		result = proto.WatchResult{Gen: gen}
+	case proto.CallNetChange:
+		f.mu.Lock()
+		f.retries++
+		f.mu.Unlock()
+		result = struct{}{}
 	case proto.CallAct:
 		var r proto.Request
 		json.Unmarshal(call.Args, &r)
@@ -308,6 +314,10 @@ func keyMsg(k string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "backspace":
 		return tea.KeyPressMsg{Code: tea.KeyBackspace}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
+	case "space":
+		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	}
 	if c, ok := strings.CutPrefix(k, "ctrl+"); ok {
 		return tea.KeyPressMsg{Code: rune(c[0]), Mod: tea.ModCtrl}
@@ -316,20 +326,27 @@ func keyMsg(k string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: r[0], Text: k}
 }
 
-// names are the shown rows as "host session" (or "idx:name").
+// names are the finder's rows as plain text.
 func names(m *Model) []string {
 	var s []string
-	for _, r := range m.shown {
-		s = append(s, r.text)
+	for i := range m.find.rows {
+		s = append(s, findText(&m.find.rows[i]))
 	}
 	return s
 }
 
+// cursorText is the finder's cursor row as plain text.
 func cursorText(m *Model) string {
-	if r := m.selected(); r != nil {
-		return r.text
+	if r := m.find.selected(); r != nil {
+		return findText(r)
 	}
 	return ""
+}
+
+// screen is the dashboard as plain text.
+func screen(m *Model) string {
+	cv, _, _ := m.render()
+	return cv.Plain()
 }
 
 var errTest = errors.New("test failure")

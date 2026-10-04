@@ -190,14 +190,19 @@ func TestS17(t *testing.T) {
 	if err := os.WriteFile(conf, []byte("run-shell 'sleep 6'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// The picker's ^n on N's row: the dashboard says it is starting tmux
-	// there while towerd waits for the slow config.
+	// n on N in the picker's columns: the dashboard says it is starting
+	// tmux there while towerd waits for the slow config.
 	term := w.Loop("t", a, nil)
-	term.Wait(`\(no sessions\)`, 6*time.Second)
-	term.Type("N no sessions")
+	term.Wait(Prompt, 6*time.Second)
+	term.Keys("C-l", "1", "/")
+	term.Type("N")
+	time.Sleep(100 * time.Millisecond)
+	term.Keys("Escape") // alone: ESC and a key at once read as alt+key
+	time.Sleep(100 * time.Millisecond)
+	term.Keys("l")
+	term.Wait(`n makes one`, 6*time.Second)
+	term.Keys("n")
 	time.Sleep(300 * time.Millisecond)
-	term.Keys("C-n")
-	time.Sleep(700 * time.Millisecond)
 	term.Type("fresh")
 	start := time.Now()
 	term.Keys("Enter")

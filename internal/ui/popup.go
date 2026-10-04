@@ -12,7 +12,6 @@ import (
 	"github.com/jerrykal/tower/internal/transport"
 )
 
-
 // Open is `tower` typed at a prompt inside tmux: it opens the dashboard
 // in a popup for its own client, as the key binding would, so tower never
 // nests tmux. env are the variables the popup's tower needs (its tmux

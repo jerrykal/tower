@@ -39,10 +39,11 @@ func (t *Term) CloseDash() {
 	time.Sleep(300 * time.Millisecond)
 }
 
-// rowRe matches the row of session name on host in the dashboard (the
-// plain row: host, then the name in its column, then the window count).
+// rowRe matches the finder's row of session name on host: the host,
+// padded to its column, then the name. (The breadcrumb puts a glyph
+// between the two, so it never matches.)
 func rowRe(host, name string) string {
-	return `(?m)` + regexp.QuoteMeta(host) + ` +` + regexp.QuoteMeta(name) + ` +\d+w`
+	return `(?m)(^|[\s▌])` + regexp.QuoteMeta(host) + ` {2,}` + regexp.QuoteMeta(name) + `( |$)`
 }
 
 func (h *Host) hasSession(name string) bool { return slices.Contains(h.Sessions(), name) }
