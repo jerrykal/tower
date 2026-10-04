@@ -163,7 +163,7 @@ first: reachable hosts' sessions, then their zoxide dirs (git roots; `^g`
 every entry), then unreachable hosts' cached sessions and dirs, dimmed.
 As in the sessions column, a run of dirs opens with a blank line, the
 `dirs · git roots ^g` header and a blank, and so do unreachable hosts'
-cached sessions (`sessions · cached on hosts that are down`).
+cached sessions (`sessions · cached on hosts not connected`).
 
 - **Words.** The query splits at spaces and `:`; each word goes to the
   host, session or window it matches best, in any order, and every word

@@ -116,6 +116,11 @@ func TestRefusedKeysSayWhy(t *testing.T) {
 	}
 	m2, _, _ := newTestModel(t, testDash(), false)
 	press(t, m2, "ctrl+l", "3", "/", "z", "z", "enter")
+	if m2.note.text != "no window matches · ^c clears" {
+		t.Fatalf("⏎ on no window while searching: %q", m2.note.text)
+	}
+	// esc leaves the search with its query; then esc clears it.
+	press(t, m2, "esc", "enter")
 	if m2.note.text != "no window matches · esc clears" {
 		t.Fatalf("⏎ on no window: %q", m2.note.text)
 	}

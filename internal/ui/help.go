@@ -12,7 +12,7 @@ type helpLine struct{ key, what string }
 var markerStyle = map[string]style{
 	glyphCur: sFoam, glyphBell: sGold, glyphAct: sFoam,
 	glyphClients + " N": sGold, glyphWindow + " N": sMuted, glyphSplit + " N": sMuted,
-	glyphGroup: sMuted, glyphBranch + " main*": sGold, "2h": sErr, glyphWarn: sErr.Bold(), "off": sMuted,
+	glyphGroup: sMuted, glyphBranch + " main*": sMuted, "2h": sErr, glyphWarn: sErr.Bold(), "off": sMuted,
 }
 
 var helpLeft = []struct {

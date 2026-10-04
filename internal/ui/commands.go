@@ -59,7 +59,11 @@ func (m *Model) enterColumn() tea.Cmd {
 		return m.enterItem(w)
 	}
 	if len(m.cs[colWindows].in.text) > 0 {
-		m.setErr("no window matches · esc clears")
+		clear := "esc clears"
+		if m.mode == modeSearch {
+			clear = "^c clears"
+		}
+		m.setErr("no window matches · " + clear)
 	}
 	return nil
 }

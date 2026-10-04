@@ -443,7 +443,7 @@ func TestDirs(t *testing.T) {
 	}
 	m.width, m.height = 100, 30
 	text := ansi.Strip(m.View().Content)
-	for _, s := range []string{"dirs · git roots", "sessions · cached on hosts that are down"} {
+	for _, s := range []string{"dirs · git roots", "sessions · cached on hosts not connected"} {
 		if !strings.Contains(text, s) {
 			t.Errorf("the finder lacks %q:\n%s", s, text)
 		}

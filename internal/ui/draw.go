@@ -783,7 +783,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-6)
 			putRight(cv, s.x+s.w-1, y, "^g", sMuted)
 		} else {
-			cv.put(s.x+2, y, "sessions · cached on hosts that are down", sMuted.Bold(), s.w-3)
+			cv.put(s.x+2, y, "sessions · cached on hosts not connected", sMuted.Bold(), s.w-3)
 		}
 	}
 	for i := range f.rows {
@@ -1162,9 +1162,6 @@ func (m *Model) drawFooter(cv *canvas, g geometry) {
 	switch {
 	case m.note.text != "":
 		right = m.note.text
-		if m.note.kind == noteErr {
-			rst = sErr
-		}
 	case m.pendingG:
 		right, rst = "g", sGold
 	case m.mode == modeNormal:

@@ -181,7 +181,7 @@ func (m *Model) drawPreview(cv *canvas, x, headY, y, w, h int) {
 		}
 	}
 	lw := cv.put(x+1, capY, label, sSubtle, bodyW)
-	if len(panes) > 1 && bodyW-lw > 20 {
+	if m.mode == modeNormal && len(panes) > 1 && bodyW-lw > 20 {
 		putRight(cv, x+1+bodyW, capY, "J K picks a pane", sMuted)
 	}
 	if capH < 3 {

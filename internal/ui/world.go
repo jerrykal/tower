@@ -342,13 +342,14 @@ func (w *world) groupPeers(it *item) []string {
 
 // groupPeerItems are the rows of the other members of s's group.
 func (w *world) groupPeerItems(it *item) []*item {
+	if it.sess == nil || it.sess.Group == "" {
+		return nil
+	}
 	var out []*item
 	ss := w.sessions[it.host.Name]
-	for _, n := range w.groupPeers(it) {
-		for i := range ss {
-			if ss[i].sess.Name == n {
-				out = append(out, &ss[i])
-			}
+	for i := range ss {
+		if ss[i].sess.Group == it.sess.Group && ss[i].sess.Name != it.sess.Name {
+			out = append(out, &ss[i])
 		}
 	}
 	return out
