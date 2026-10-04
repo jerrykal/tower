@@ -77,6 +77,7 @@ const (
 	OpHas     = "has"
 	OpSwitch  = "switch"
 	OpDup     = "dup"
+	OpPanes   = "panes" // a session's (or window's) panes: layout and what runs there
 )
 
 // Kinds of things a request acts on.
@@ -111,6 +112,7 @@ type Ack struct {
 	Ended bool   `json:"ended,omitempty"` // switch: the loop ended the old client
 	Gone  bool   `json:"gone,omitempty"`  // has: no such session (or no server)
 	Text  string `json:"text,omitempty"`  // capture
+	Panes []Pane `json:"panes,omitempty"` // capture (the target window's), panes
 	Ref   *Ref   `json:"ref,omitempty"`   // new, dup: what was made
 }
 

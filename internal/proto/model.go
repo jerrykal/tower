@@ -57,6 +57,36 @@ type Session struct {
 	Attached int      `json:"att,omitempty"`   // attached clients, towerd's own left out
 	Group    string   `json:"group,omitempty"` // session_group when grouped
 	Windows  []Window `json:"wins,omitempty"`
+	Git      *Git     `json:"git,omitempty"` // the session's directory, when it is in a git repo
+}
+
+// Git is what the dashboard shows of a directory in a git repo.
+type Git struct {
+	Branch string `json:"branch,omitempty"` // the branch, or a short commit when detached
+	Dirty  bool   `json:"dirty,omitempty"`
+	Repo   string `json:"repo,omitempty"` // a linked worktree: the main worktree's directory name
+}
+
+// Dir is a zoxide directory with no session yet.
+type Dir struct {
+	Path string `json:"path"`           // as the host spells it, ~ for its home
+	Root bool   `json:"root,omitempty"` // a git repo's root (a .git file or directory)
+	Git  *Git   `json:"git,omitempty"`  // branch and dirt, for a root
+	Net  bool   `json:"net,omitempty"`  // on a network mount: listed, never checked
+}
+
+// Pane is one pane of a window, for the layout preview and for saying
+// what a kill would end.
+type Pane struct {
+	ID      string `json:"id"`
+	Window  string `json:"w"`
+	Left    int    `json:"x"`
+	Top     int    `json:"y"`
+	Width   int    `json:"cols"`
+	Height  int    `json:"rows"`
+	Command string `json:"cmd,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Active  bool   `json:"active,omitempty"`
 }
 
 // Window is one tmux window.
@@ -108,6 +138,7 @@ type Host struct {
 	Inst     string    `json:"inst,omitempty"`
 	NoServer bool      `json:"nosrv,omitempty"`
 	Sessions []Session `json:"sessions,omitempty"`
+	Dirs     []Dir     `json:"dirs,omitempty"` // zoxide directories, most frecent first
 	Seen     int64     `json:"seen,omitempty"` // ms since last heard, for a host not up
 	RTT      int64     `json:"rtt,omitempty"`  // ms, the link's slow recent round trip
 	Link     int       `json:"link,omitempty"` // link generation: connects so far
@@ -168,6 +199,7 @@ type State struct {
 	Inst     string    `json:"inst,omitempty"`
 	NoServer bool      `json:"nosrv,omitempty"`
 	Sessions []Session `json:"sessions,omitempty"`
+	Dirs     []Dir     `json:"dirs,omitempty"`
 	Clients  []Client  `json:"clients,omitempty"` // only the receiving home's loops
 	Pad      string    `json:"pad,omitempty"`     // test padding (TOWER_TEST_PAD)
 }
