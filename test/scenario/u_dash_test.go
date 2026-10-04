@@ -53,12 +53,12 @@ func (t *Term) OpenDash() {
 	time.Sleep(200 * time.Millisecond)
 }
 
-// A01: the columns: ^l from the finder shows hosts, sessions and
+// U01: the columns: ^l from the finder shows hosts, sessions and
 // windows on the client's own session; h j l walk them, each column
 // remembering its row through live changes; ⏎ on a window of another
 // host hands off to that window.
-func TestA01(t *testing.T) {
-	w := NewWorld(t, "a01")
+func TestU01(t *testing.T) {
+	w := NewWorld(t, "u01")
 	a := w.Host("A", []string{"alpha", "apple"})
 	b := w.Host("B", []string{"bravo", "banana"})
 	b.MustTmux("new-window", "-d", "-t", "bravo:", "-n", "second")
@@ -92,11 +92,11 @@ func TestA01(t *testing.T) {
 	w.Eventually(5*time.Second, "B's client on 2:second", func() bool { return b.ClientWindow() == "2 second" })
 }
 
-// A02: the finder ranks what a query names first, so ⏎ takes it: a
+// U02: the finder ranks what a query names first, so ⏎ takes it: a
 // name before a longer one containing it, words in any order, a window
 // by name or by number.
-func TestA02(t *testing.T) {
-	w := NewWorld(t, "a02")
+func TestU02(t *testing.T) {
+	w := NewWorld(t, "u02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"s150", "s50", "train-llm"})
 	b.MustTmux("rename-window", "-t", "train-llm:1", "claude")
@@ -138,11 +138,11 @@ func TestA02(t *testing.T) {
 	w.Eventually(5*time.Second, "B's client on 2:train", func() bool { return b.ClientWindow() == "2 train" })
 }
 
-// A03: kill asks first and says what is at stake: windows and panes,
+// U03: kill asks first and says what is at stake: windows and panes,
 // the other clients it detaches, a last window taking its session;
 // any key but y keeps it; y hides the row at once and kills it.
-func TestA03(t *testing.T) {
-	w := NewWorld(t, "a03")
+func TestU03(t *testing.T) {
+	w := NewWorld(t, "u03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "victim", "solo"})
 	b.MustTmux("new-window", "-d", "-t", "victim:", "-n", "two")
@@ -192,10 +192,10 @@ func TestA03(t *testing.T) {
 	term.CloseDash()
 }
 
-// A04: rename asks with the name prefilled; a taken name keeps the
+// U04: rename asks with the name prefilled; a taken name keeps the
 // prompt open saying so; '.' and ':' become '_'.
-func TestA04(t *testing.T) {
-	w := NewWorld(t, "a04")
+func TestU04(t *testing.T) {
+	w := NewWorld(t, "u04")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "banana"})
 	stdSetup(w, a, b)
@@ -217,10 +217,10 @@ func TestA04(t *testing.T) {
 	term.CloseDash()
 }
 
-// A05: D duplicates a session as a grouped one, "<name> 2", and attaches
+// U05: D duplicates a session as a grouped one, "<name> 2", and attaches
 // it; D on the same session again attaches the one already made.
-func TestA05(t *testing.T) {
-	w := NewWorld(t, "a05")
+func TestU05(t *testing.T) {
+	w := NewWorld(t, "u05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
 	stdSetup(w, a, b)
@@ -245,11 +245,11 @@ func TestA05(t *testing.T) {
 	w.WaitLoop(a, "^B:bravo 2", 6*time.Second)
 }
 
-// A06: a session in a dir: named after it, made there and attached; a
+// U06: a session in a dir: named after it, made there and attached; a
 // taken name takes the first free "<name> <n>". With zoxide dirs in the
 // view, ⏎ on a dir row does the same from the dashboard.
-func TestA06(t *testing.T) {
-	w := NewWorld(t, "a06")
+func TestU06(t *testing.T) {
+	w := NewWorld(t, "u06")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"proj"})
 	stdSetup(w, a, b)
@@ -275,12 +275,12 @@ func TestA06(t *testing.T) {
 	}
 }
 
-// A07: adding a host from the dashboard: the picker offers the ssh
+// U07: adding a host from the dashboard: the picker offers the ssh
 // aliases not in the list; picking one runs tower host add's checks in
 // its row; a host that fails a check stays, marked, with the reason; x
 // removes it after y.
-func TestA07(t *testing.T) {
-	w := NewWorld(t, "a07")
+func TestU07(t *testing.T) {
+	w := NewWorld(t, "u07")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
 	w.Home(a)
@@ -334,17 +334,17 @@ func TestA07(t *testing.T) {
 	_ = b
 }
 
-// A08: the popup's start and a key's echo, measured on a pty against the
+// U08: the popup's start and a key's echo, measured on a pty against the
 // home's towerd: process start to the first frame on the terminal, then
 // a typed character to its echo. Run alone for the numbers that matter;
 // the thresholds only catch a regression by a multiple.
-func TestA08(t *testing.T) {
-	w := NewWorld(t, "a08")
+func TestU08(t *testing.T) {
+	w := NewWorld(t, "u08")
 	a := w.Host("A", []string{"alpha", "apple", "avocado"})
 	b := w.Host("B", []string{"bravo", "banana"})
 	stdSetup(w, a, b)
 	bin := towerBin
-	if o := os.Getenv("A08_BIN"); o != "" {
+	if o := os.Getenv("U08_BIN"); o != "" {
 		bin = o // an older build, to compare
 	}
 	ready := regexp.MustCompile(`FIND|sessions>`)
@@ -354,7 +354,7 @@ func TestA08(t *testing.T) {
 		starts = append(starts, start)
 		keys = append(keys, key)
 	}
-	logResults(t, "A08", map[string][]time.Duration{"start to first frame": starts, "key to echo": keys})
+	logResults(t, "U08", map[string][]time.Duration{"start to first frame": starts, "key to echo": keys})
 	if m := median(starts); m > 60*time.Millisecond {
 		t.Fatalf("the popup's first frame: median %v", m)
 	}
