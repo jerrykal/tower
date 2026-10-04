@@ -110,7 +110,7 @@ See [design/install.md](design/install.md).
 | LV04 | An open dashboard follows the view within a round trip plus its redraw | ui, towerd | pass |
 | LD01 | Dashboard requests at 150 and 400ms: rows right after every answer; a kill's row gone before the answer; a preview's windows before the capture | ui, towerd | pass |
 | LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | pass |
-| LD03 | `^x` three times fast kills three sessions | ui | pass |
+| LD03 | `^x y` three times fast kills three sessions | ui | pass |
 
 ## Atlas data
 
@@ -124,6 +124,19 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 | A03 | A dashboard on one remote gets another remote's panes (a session's, a window's) with their layout, and a capture with its window's layout | towerd | pass |
 | A04 | Through act from another remote: new in `~/dir` (expanded there), a gone dir refused, a grouped duplicate, a new window in its session's dir, a window renamed and killed, each in the rows read after its answer | towerd | pass |
 | A05 | Costs with 40 sessions in 40 repos and a 500-entry zoxide database: the state's size, and the CPU of a periodic refresh and of a look (measured, reported) | dirs, towerd | pass |
+
+## The dashboard (Atlas)
+
+| ID | What must hold | Package | Status |
+| --- | --- | --- | --- |
+| U01 | The finder's preview shows the window's layout; `^l` shows the columns on the client's session; `h j l` and a column query walk them, the selection kept through a live change; ⏎ on a window of another host hands off to that window | ui | pass |
+| U02 | The finder ranks what a query names first: `s50` before `s150`, a host word and a session's start, a window by name (folded, or under its session), `session:window-number`; ⏎ in the popup goes where the cursor is | ui | pass |
+| U03 | Kill asks first: windows and panes, the other clients it detaches, a command running (`panes`), a last window taking its session; `n` keeps it; `y` hides the row at once and kills it | ui, towerd | pass |
+| U04 | Rename asks with the name prefilled; a taken name keeps the prompt open saying so; `.` and `:` become `_` | ui | pass |
+| U05 | `D` makes the grouped `<name> 2` and attaches it; `D` again attaches the one made | ui, towerd | pass |
+| U06 | Zoxide dirs: a git root typed and ⏎ makes a session named after it there and attaches it; a dir that is no git root only after `^g`; a taken name opens the prompt with `<name> 2`; `tower _ui open` by path | ui, towerd | pass |
+| U07 | `a` offers the ssh config's aliases not in the list; picking one runs `tower host add`'s checks; a host that fails its ssh check is kept with the reason; `x`, `y` removes it | ui, hosts | pass |
+| U08 | The popup's first frame on a pty and a key's echo (measured; a regression by a multiple fails) | ui | pass |
 
 ## Standbys and the relay
 

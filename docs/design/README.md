@@ -19,6 +19,7 @@ internal/dirs        git state of directories, zoxide directories, network mount
 internal/towerd      the daemon: watch, registrations, keys, remote and home roles
 internal/relay       terminal modes, ptys, the relay, frame writes between sequences
 internal/loop        the attach loop, the attach shim, standbys
+internal/hosts       the host list's edits, naming rules, ssh aliases and checks
 internal/ui          the dashboard
 test/scenario        the acceptance harness and the fake ssh
 ```

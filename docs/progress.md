@@ -9,7 +9,7 @@ Where the build of v0.0.1 stands. A session resuming the work starts here.
 | 1. Skeleton, packaging, v0.0.0 | done |
 | 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; reviewed (`/code-review xhigh`) and every finding fixed |
 | 3. Install on connect | done: reviewed (`/code-review high`), its 10 findings fixed, R03 passes on `pc` and `831` |
-| 4. Dashboard (Atlas) | in progress: towerd's data sources done (A01–A05); the Atlas UI under way |
+| 4. Dashboard (Atlas) | built: towerd's data sources (A01–A05) and the Atlas UI (U01–U08); `/code-review medium` to do |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
 
 ## Step 2
@@ -90,6 +90,29 @@ the fixes: both shards pass (LC 5.4 min, the rest 7.5 min).
   12.4 KB); a periodic refresh about 0.3s of CPU a minute, a look 0.8–1s
   (141 git status runs, 0.2–0.3s wall)
 
+## Step 4: the Atlas UI
+
+- [x] `internal/ui` rewritten as the column dashboard
+  ([design/ui.md](design/ui.md)): hosts › sessions and dirs › windows ›
+  layout preview, the breadcrumb and footer, the finder (where the popup
+  and the loop's picker open), column search, `-` `.`, `J` `K`, `D`, `n`,
+  `r`, `x` with a confirm that says what is at stake, `^g`, the add-host
+  picker and host edits, help, mouse, width and long-name fitting, Rosé
+  Pine and Nerd Font glyphs, on a cell canvas of its own
+- [x] `internal/hosts`: `tower host` and the dashboard share the host
+  list's edits, naming rules, ssh aliases and checks
+- [x] kept: live updates, cursor by identity, kill without waiting, fresh
+  re-resolve, hand-off, `TOWER_LIVE=0`, `tower _ui` (now also `find`,
+  `ask-kill`, `open`, `dup`), `ui.Pick`
+- [x] the suite drives the finder (`Prompt` is its pill, `rowRe` its rows,
+  the cursor read from the breadcrumb; `^x y`); U01–U08 added; both shards
+  pass
+- Start-up (U08, pty, 15 runs): first frame 23–26ms median, a key's echo
+  8ms; the step-2 picker measured the same way 24ms and 8ms
+- Open: a pane picked with `J` `K` is selected by a local switch only (the
+  loop's attach selects the window); ⏎ on a down host retries every down
+  host (`netchange`, no per-host call)
+
 ## Blocked
 
 Nothing.
@@ -109,6 +132,5 @@ Paused here at the user's request, at a clean point: everything on
    scenarios.md); hosts clean after. R02 found standby shims left waiting
    behind Tailscale SSH; standbys now exit 30s after their loop's
    heartbeats stop (37896c5). A host may set `home` (TOWER_HOME there).
-4. Step 4: the Atlas dashboard (`docs/design/ui.md`, stage 2), then
-   `/code-review medium`.
+4. ~~Step 4: the Atlas dashboard.~~ Built; `/code-review medium` next.
 5. The final report (here and as an artifact), then step 5 with the user.
