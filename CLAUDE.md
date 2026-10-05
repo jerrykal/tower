@@ -40,29 +40,32 @@ server. Read [docs/overview.md](docs/overview.md) for the product,
 `test/scenario` is the acceptance suite: simulated hosts are tmux servers
 with their own `TOWER_HOME` and machine id, reached through the fake ssh.
 
-- **Isolate every run**: a short `TMUX_TMPDIR` (socket paths are limited to
-  104 bytes), a private `TOWER_TEST_DIR` and a private `TMPDIR`, and `unset
-  TMUX TMUX_PANE`. Parallel runs need their own three.
+- **Run it through `mise run scenarios`**, which isolates each run. A
+  direct `go test ./test/scenario` needs the same: a short `TMUX_TMPDIR`
+  (socket paths are limited to 104 bytes), a private `TOWER_TEST_DIR` and
+  `TMPDIR`, and `unset TMUX TMUX_PANE`.
 - **Run the suite in two foreground shards**, each one Bash call with a
   10-minute timeout, and read its result in the same turn:
   `mise run scenarios -run '^TestLC'` (about 6 minutes) and
   `mise run scenarios -skip '^TestLC'` (about 8). A family that outgrows
   its shard is split again. Run a single scenario with `-run`.
-- **Never end a turn while a run of yours is still going.** A run left in
-  the background can finish without waking you, and the work then stalls
-  with no report. If a run must go to the background, wait on it before
-  stopping (Monitor with an until-loop on its log), then report.
+- **Wait for every run you start and report it in the same turn.** A run
+  left in the background can finish without waking you, and the work then
+  stalls with no report. If a run must go to the background, wait on it
+  (Monitor with an until-loop on its log) before stopping.
 - **Timing checks are load-sensitive.** Rerun a failure alone before
   believing it, and never loosen a threshold to make a run pass.
 - `tmux` and `fzf` may be mise shims costing 60–80ms a call; tower resolves
   the real binaries (`internal/tmux.Resolve`). Keep every hot path on the
   resolved binary.
-- Leave no processes, tmux servers or temp directories behind; the harness
-  teardown checks.
+- Leave no processes, tmux servers or temp directories behind. Teardown
+  catches a stray tmux server; check processes and temp directories
+  yourself.
 
 ## Subagents
 
-- Brief every agent with the shard commands and the rule above.
+- Brief every agent with the shard commands, the wait-and-report rule, and
+  the Safety rules above.
 - An agent whose turn ends without its report has stalled: check its
   worktree (`git -C <worktree> log`, its processes) at once, and resume it
   with a direct instruction to finish and report, or take over its

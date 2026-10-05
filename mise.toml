@@ -64,7 +64,7 @@ echo "tower is now $(mise which tower 2>/dev/null || echo 'not installed')"
 """
 
 [tasks.scenarios]
-description = "Run the scenario suite, isolated (about 20 minutes); extra arguments go to go test, e.g. -run S00"
+description = "Run the scenario suite, isolated (about 14 minutes); extra arguments go to go test, e.g. -run S00"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
