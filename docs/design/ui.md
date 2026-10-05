@@ -119,8 +119,8 @@ when it lies in tmux's own socket directory, else `-S <path>`, so a
   ^j ^k move   ⏎ attach   tab windows   ^l columns   ^x kill   esc quit
 ```
 
-- **Top line**: the mode's pill (`FIND` rose, `NORMAL` iris, `SEARCH`
-  gold, a prompt's label and `ADD HOST` foam, `CONFIRM` love) and a `󰍉`,
+- **Top line**: the mode's pill (`FIND` and `SEARCH` rose, `NORMAL`, a
+  prompt's label and `ADD HOST` iris, `CONFIRM` love) and a `󰍉`,
   then what the mode edits: the query, the
   focused column's query, a prompt's input with what an empty ⏎ takes or
   why the last one was refused (`✗ banana is taken on B`), the question.
@@ -131,8 +131,9 @@ when it lies in tmux's own socket directory, else `-S <path>`, so a
   clients`; the host's link on the right (`local server`, `connected ·
   14ms`, `connecting…`, `installing tower…`, `not responding`,
   `unreachable · last seen 2h ago · <reason> · ⏎ retries`, `turned off ·
-  space turns it on`, a running host check or a failed one with `⏎ checks
-  again`; spinners gold). When it does not fit, the link shrinks to its icon, then the
+  space turns it on`, a running host check or `check failed · <reason> ·
+  ⏎ checks again`; spinners gold). An action after the state is a hint,
+  its key bold and its label muted, not the state's colour. When it does not fit, the link shrinks to its icon, then the
   clients, group and branch notes go, then the longest name loses its
   middle. Without the preview it shows the pane picked with `J` `K`.
 - **The columns** (`^l`, or the screen `f` returns to): `[1] hosts`,
@@ -143,8 +144,8 @@ when it lies in tmux's own socket directory, else `-S <path>`, so a
   that would only be refused (no `x remove` on the local server, `⏎
   reconnect` on a host that is down, `⏎ new session` on a dir); hints that
   do not fit drop whole from the right, keeping `? help`. On the right the
-  latest message as a pill (iris; love for an error), a pending `g`, or
-  `q quit`.
+  latest message as a pill (foam; gold while something is in flight; love
+  for an error), a pending `g` as a keycap, or `q quit`.
 
 ### Opening
 
@@ -160,10 +161,10 @@ the current session (⏎ then goes there) and `?` shows the keys.
 
 Every host's sessions in one list, each once, most recently attached
 first: reachable hosts' sessions, then their zoxide dirs (git roots; `^g`
-every entry), then unreachable hosts' cached sessions and dirs, dimmed.
-As in the sessions column, a run of dirs opens with a blank line, the
-`dirs · git roots ^g` header and a blank, and so do unreachable hosts'
-cached sessions (`sessions · cached on hosts not connected`).
+every entry), then hosts not connected: their cached sessions and then
+their dirs, dimmed. As in the sessions column, the dirs open with a blank
+line, the `dirs · git roots` header and a blank, and the cached block with
+one `cached · hosts not connected` header the same way.
 
 - **Words.** The query splits at spaces and `:`; each word goes to the
   host, session or window it matches best, in any order, and every word
@@ -190,11 +191,12 @@ cached sessions (`sessions · cached on hosts not connected`).
 
 ### The columns
 
-- **hosts**: OS logo (rose for this machine, foam for others, love for a
-  host that is down, muted when turned off), label, `󰧟`
+- **hosts**: OS logo (foam for this machine and other connected hosts,
+  love for a host that is down, muted when turned off or still
+  connecting), label (subtle when not connected), `󰧟`
   for the client's host, a bell or activity marker rolled up, and on the
   right the session count, or how many entries the sessions column's
-  query matches (gold, red for a cached list; hosts with none dimmed), a
+  query matches (text; hosts with none dimmed), a
   gold spinner while it
   connects, installs or is being checked, its last-seen age in red when
   down, `off`, or a red `!` when a check failed. With only this machine
@@ -207,22 +209,24 @@ cached sessions (`sessions · cached on hosts not connected`).
   the list, `󰍺 N` other clients, a bell or activity, and the age (`new`
   for a session this dashboard made and nobody attached yet). A linked
   worktree's session named `<repo><sep><branch>` dims the repo part, which
-  shrinks first. Then `dirs · git roots ^g` and the dirs with their branch.
+  shrinks first. Then `dirs · git roots` and the dirs with their branch.
   An empty column says why and the key that changes it: a gold spinner
   and `loading sessions…`, `no sessions · n makes one`, `turned off ·
-  space on the host turns it on`, `✗ down: <reason> · ⏎ on the host
-  retries`; an unreachable host's header says `cached 2h` on its right,
-  in red. Session icons are pine, dirs subtle (a non-git dir muted) with
-  their branch muted (its `*` when dirty too), so dirs sit below the
-  sessions.
+  space turns it on`, `✗ unreachable · <reason> · ⏎ retries`; an
+  unreachable host's header says `cached 2h` on its right, in red.
+  Session icons are pine (muted when the host is not connected), dirs
+  subtle (a non-git dir muted) with their branch subtle (its `*` when
+  dirty too), so dirs sit below the sessions.
 - **windows**: the number, `󰓩`, the name, `󰧟`; a bell or activity, and the
   pane count. A dir has `no session yet`.
-- **layout**: the selected window's panes at their real proportions
+- **preview**, headed `layout`, `dir` or `host` by what it shows: the
+  selected window's panes at their real proportions
   (capture's `Panes`), with command, path and size, the picked pane in
   iris; under it the picked pane's capture, its last lines, with `J K
   picks a pane` when there are several. A dir shows, in a box, its
   branch and the session ⏎ would make; a host its OS, tmux, tower and
-  status.
+  status, the status in its state's colour. A window on a host not
+  connected says `<host> is unreachable · <reason>` in red.
 
 ### Width and long names
 
@@ -246,21 +250,45 @@ sideways behind a `…`. Match highlights carry over to what remains.
 
 ### Look
 
-Rosé Pine (main). The focused column's cursor is an iris `▌` on the
-overlay colour, its name bold and its icon or window number iris; the
-other columns' remembered rows a grey `▌` on the surface colour. Rules
-and dividers are highlight-med; a column header's label is iris and bold
-when focused. Every cell sits on the palette's base colour, whatever the
-terminal's background. The finder's rows lead with the host's OS logo
-(coloured as in the hosts column) and the session's icon; its window
-rows carry their bell or activity, and
-`+N more · tab`. `?` lists keys in bold and the markers in their own
-colours, in two columns from 100 cells wide. Matches rose, bold, underlined; love (red) only for
-problems. Glyphs are JetBrains Mono Nerd Font's: tmux session `` and dir
-`` (as `session-picker.sh`), window `󰓩`, OS logos fa-apple, fa-linux,
-fa-windows, and the markers listed under `?`. All borders are square; a
-`┃` thumb on a divider marks a column that overflows. In tmux the program
-draws in true colour (tmux maps it to what the terminal outside supports).
+Rosé Pine (main). The same thing has the same colour on every surface:
+hue says state or interaction, brightness (text, subtle, muted) says
+importance in context, and bold marks the subject or a header.
+
+- **Text** for names and input; **subtle** for metadata (dir paths in
+  lists, finder host names, age, counts, branch, the group glyph, footer
+  labels) and names on a host not connected; **muted** for placeholders,
+  hint labels, separators, section headers and rows that do not match.
+- **Pine** is the session icon only. **Foam** is live: the logo of a host
+  that is up or local, `connected`, `local server`, activity, attached
+  here, `new`, an info message. **Gold** is working or attention:
+  spinners, bell, other clients, a busy message. **Love** is a problem:
+  a down logo and age, `!`, `✗`, errors, `cached 2h`, `CONFIRM`. **Iris**
+  is focus and mode: the cursor, the focused header, the mode pills,
+  the picked pane, overlay borders and titles. **Rose** is query and
+  match: the `FIND` and `SEARCH` pills, `/q` tags, and matches (bold,
+  underlined); typed queries are text.
+- A row on a host not connected drops one brightness level and loses its
+  accents; only the logo keeps the state's colour. The breadcrumb uses
+  the rows' colours, its names in regular weight.
+- Every key is text bold, on an overlay keycap in the footer; its label
+  is subtle in the footer and muted inline (`press / to search`, `⏎
+  retries`, `J K picks a pane`).
+
+The focused column's cursor is an iris `▌` on the overlay colour, its
+name bold and its icon or window number iris; the other columns' remembered
+rows a grey `▌` on the surface colour. Rules and dividers are
+highlight-med; a column header is iris and bold only while its column
+has focus in the columns or search, not under a prompt or an overlay.
+Every cell sits on the palette's base colour, whatever the terminal's
+background. The finder's rows lead with the host's OS logo and the
+session's icon; its window rows carry their bell or activity, and `+N
+more · tab`. `?` lists keys in bold and the markers in their row colours,
+in two columns from 100 cells wide. Glyphs are JetBrains Mono Nerd Font's:
+tmux session `` and dir `` (as `session-picker.sh`), window `󰓩`, OS
+logos fa-apple, fa-linux, fa-windows, and the markers listed under `?`.
+All borders are square; a `┃` thumb on a divider marks a column that
+overflows. In tmux the program draws in true colour (tmux maps it to what
+the terminal outside supports).
 
 ## Keys
 

@@ -116,10 +116,24 @@ func hostStatus(h *proto.Host) string {
 	switch h.Status {
 	case proto.StatusLocal, proto.StatusUp:
 		return ""
-	case proto.StatusDown, proto.StatusFailed, proto.StatusDup:
+	case proto.StatusDown:
 		if h.Reason != "" {
-			return h.Status + ": " + h.Reason
+			return "unreachable · " + h.Reason
 		}
+		return "unreachable"
+	case proto.StatusOff:
+		return "turned off"
+	case proto.StatusConnecting:
+		return "connecting…"
+	case proto.StatusInstalling:
+		return "installing tower…"
+	case proto.StatusStalled:
+		return "not responding"
+	case proto.StatusFailed, proto.StatusDup:
+		if h.Reason != "" {
+			return "check failed · " + h.Reason
+		}
+		return "check failed"
 	}
 	return h.Status
 }

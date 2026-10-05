@@ -11,8 +11,8 @@ type helpLine struct{ key, what string }
 // markerStyle draws the legend's markers in their own colours.
 var markerStyle = map[string]style{
 	glyphCur: sFoam, glyphBell: sGold, glyphAct: sFoam,
-	glyphClients + " N": sGold, glyphWindow + " N": sMuted, glyphSplit + " N": sMuted,
-	glyphGroup: sMuted, glyphBranch + " main*": sMuted, "2h": sErr, glyphWarn: sErr.Bold(), "off": sMuted,
+	glyphClients + " N": sGold, glyphWindow + " N": sSubtle, glyphSplit + " N": sSubtle,
+	glyphGroup: sSubtle, glyphBranch + " main*": sSubtle, "2h": sErr, glyphWarn: sErr.Bold(), "off": sMuted,
 }
 
 var helpLeft = []struct {
@@ -71,7 +71,7 @@ var helpRight = []struct {
 		{glyphSplit + " N", "N panes"},
 		{glyphGroup, "grouped session"},
 		{glyphBranch + " main*", "branch · * uncommitted"},
-		{"2h", "offline · cached 2h ago"},
+		{"2h", "not connected · cached 2h ago"},
 		{glyphWarn, "host check failed"},
 		{"off", "host turned off"},
 	}},
@@ -114,11 +114,10 @@ func (m *Model) drawHelp(cv *canvas, g geometry) {
 		cv.fill(x0, y, bw, style{})
 	}
 	box(cv, x0, y0, bw, bh, sIris)
-	cv.put(x0+2, y0, " keys ", sIris, -1)
-	putRight(cv, x0+bw-2, y0+bh-1, " any key closes ", sMuted)
+	cv.put(x0+2, y0, " keys ", sIris.Bold(), -1)
 	draw := func(x, y int, l helpLine) {
 		if strings.HasPrefix(l.key, "\x00") {
-			cv.put(x, y, l.key[1:], sPlain.Bold(), colW)
+			cv.put(x, y, l.key[1:], sMuted.Bold(), colW)
 			return
 		}
 		kst, ok := markerStyle[l.key]
@@ -150,7 +149,7 @@ func (m *Model) drawPicker(cv *canvas, g geometry) (int, int) {
 		cv.fill(x0, y, bw, style{})
 	}
 	box(cv, x0, y0, bw, bh, sIris)
-	cv.put(x0+2, y0, " add host ", sIris, -1)
+	cv.put(x0+2, y0, " add host ", sIris.Bold(), -1)
 	inner := bw - 4
 	text, at := inputView(p.in.text, len(p.in.text), inner)
 	cv.put(x0+2, y0+1, text, sPlain, inner)

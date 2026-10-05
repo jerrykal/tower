@@ -155,7 +155,7 @@ func TestScript(t *testing.T) {
 	if _, err := sh("goto", "B", "nope"); err == nil || err.Error() != "goto on B: selection is gone" {
 		t.Fatalf("goto gone: %v", err)
 	}
-	if _, err := sh("kill", "C", "charlie"); err == nil || err.Error() != "kill on C: C is down: timed out" {
+	if _, err := sh("kill", "C", "charlie"); err == nil || err.Error() != "kill on C: C is unreachable · timed out" {
 		t.Fatalf("kill on a down host: %v", err)
 	}
 	if _, err := sh("nope"); err == nil {

@@ -43,7 +43,8 @@ func (m *Model) render() (*canvas, int, int) {
 		cv.put(0, 0, "tower needs "+strconv.Itoa(minWidth)+"×"+strconv.Itoa(minHeight)+" (now "+
 			strconv.Itoa(g.w)+"×"+strconv.Itoa(g.h)+")", sErr, g.w)
 		if g.h > 1 {
-			cv.put(0, 1, "q quits", sMuted, g.w)
+			cv.put(0, 1, "q", sKey, 1)
+			cv.put(2, 1, "quits", sMuted, g.w-2)
 		}
 		return cv, -1, -1
 	}
@@ -82,15 +83,13 @@ func pill(cv *canvas, x, y int, label string, bg style) int {
 // drawTop draws the mode line and returns the text cursor's place.
 func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 	right := ""
-	var rightSt style = sMuted
+	rightSt := sMuted
 	switch m.mode {
 	case modeFind:
 		right = strconv.Itoa(m.find.found) + "/" + strconv.Itoa(m.find.total)
 	case modeNormal, modeSearch:
 		l := m.columnList(m.focus)
 		right = strconv.Itoa(len(l.items)) + "/" + strconv.Itoa(l.total)
-	case modeConfirm:
-		right, rightSt = "y/n", sErr
 	}
 	rx := g.w - width(right) - 1
 	cv.put(rx, 0, right, rightSt, -1)
@@ -108,17 +107,19 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 		x += cv.put(x, 0, glyphSearch+" ", sMuted, room())
 		x += cv.put(x, 0, colNames[m.focus]+" ", sSubtle, room())
 		if q := m.cs[m.focus].in.String(); q != "" {
-			cv.put(x, 0, "/"+q, sGold, room())
+			cv.put(x, 0, "/"+q, sRose, room())
 		} else {
-			cv.put(x, 0, "press / to search this column", sMuted, room())
+			x += cv.put(x, 0, "press ", sMuted, room())
+			x += cv.put(x, 0, "/", sKey, room())
+			cv.put(x, 0, " to search this column", sMuted, room())
 		}
 	case modeSearch:
-		x += pill(cv, x, 0, "SEARCH", sGold) + 1
-		x += cv.put(x, 0, glyphSearch+" ", sGold, room())
+		x += pill(cv, x, 0, "SEARCH", sRose) + 1
+		x += cv.put(x, 0, glyphSearch+" ", sRose, room())
 		x += cv.put(x, 0, colNames[m.focus]+" ", sSubtle, room())
 		q := &m.cs[m.focus].in
 		text, at := inputView(q.text, q.cur, room())
-		cv.put(x, 0, text, sGold, room())
+		cv.put(x, 0, text, sPlain, room())
 		cx, cy = x+at, 0
 	case modeFind, modeConfirm, modePrompt, modeAddHost:
 		if m.mode == modeFind {
@@ -140,7 +141,7 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 		}
 		if m.mode == modePrompt {
 			p := m.prompt
-			x += pill(cv, x, 0, p.pill, sFoam) + 1
+			x += pill(cv, x, 0, p.pill, sIris) + 1
 			tail := ""
 			if p.err != "" {
 				tail = "  " + glyphRefused + " " + p.err
@@ -156,12 +157,12 @@ func (m *Model) drawTop(cv *canvas, g geometry) (int, int) {
 			if p.err != "" {
 				x += cv.put(x, 0, tail, sErr, room())
 			} else {
-				x += cv.put(x, 0, tail, sMuted, room())
+				x += putHint(cv, x, 0, tail, room())
 			}
 			cv.put(x, 0, about, sSubtle, room())
 		}
 		if m.mode == modeAddHost {
-			pill(cv, x, 0, "ADD HOST", sFoam)
+			pill(cv, x, 0, "ADD HOST", sIris)
 		}
 	}
 	return cx, cy
@@ -272,8 +273,8 @@ func (m *Model) hostItem(h *item) *item {
 
 func (m *Model) colHeader(cv *canvas, g geometry, c col, s span, extra string) {
 	st, kst := sSubtle.Bold(), sMuted
-	if m.focus == c {
-		st, kst = sIris.Bold(), sKey
+	if m.focus == c && (m.mode == modeNormal || m.mode == modeSearch) {
+		st, kst = sIris.Bold(), sIris
 	}
 	end := s.x + s.w - 1
 	if extra != "" {
@@ -285,7 +286,7 @@ func (m *Model) colHeader(cv *canvas, g geometry, c col, s span, extra string) {
 	x += cv.put(x, g.headY, "["+strconv.Itoa(int(c)+1)+"] ", kst, max(end-x, 0))
 	x += cv.put(x, g.headY, colNames[c], st, max(end-x, 0))
 	if q := m.cs[c].in.String(); q != "" {
-		cv.put(x, g.headY, " /"+q, sGold, max(end-x, 0))
+		cv.put(x, g.headY, " /"+q, sRose, max(end-x, 0))
 	}
 }
 
@@ -297,6 +298,24 @@ func (m *Model) emptyText(c col) string {
 		return "no match · esc clears"
 	}
 	return ""
+}
+
+// hintKeys are the keys putHint sets apart in a hint's text.
+var hintKeys = []string{"esc", "^c", "⏎"}
+
+// putHint draws a hint muted, its key (the first of hintKeys in it) in
+// the key style, and returns the cells it took.
+func putHint(cv *canvas, x, y int, text string, room int) int {
+	for _, k := range hintKeys {
+		i := strings.Index(text, k)
+		if i < 0 {
+			continue
+		}
+		n := cv.put(x, y, text[:i], sMuted, room)
+		n += cv.put(x+n, y, k, sKey, max(room-n, 0))
+		return n + cv.put(x+n, y, text[i+len(k):], sMuted, max(room-n, 0))
+	}
+	return cv.put(x, y, text, sMuted, room)
 }
 
 func (m *Model) rowSelFor(c col, i, at int) rowSel {
@@ -336,10 +355,10 @@ func (m *Model) hostRight(it *item) (string, style) {
 	}
 	if len(m.cs[colSessions].in.text) > 0 && m.w != nil {
 		n := len(filter(m.w.entries(h.Name, m.allDirs), m.cs[colSessions].in.text).items)
-		if !h.Reachable() {
-			return strconv.Itoa(n), sErr // matches in a cached list
+		if n == 0 {
+			return "0", sMuted
 		}
-		return strconv.Itoa(n), sGold
+		return strconv.Itoa(n), sPlain
 	}
 	if !h.Reachable() {
 		if h.Seen > 0 {
@@ -347,7 +366,7 @@ func (m *Model) hostRight(it *item) (string, style) {
 		}
 		return glyphWarn, sErr
 	}
-	return strconv.Itoa(len(h.Sessions)), sMuted
+	return strconv.Itoa(len(h.Sessions)), sSubtle
 }
 
 func (m *Model) drawHosts(cv *canvas, g geometry, s span, l *list) {
@@ -370,7 +389,7 @@ func (m *Model) drawHosts(cv *canvas, g geometry, s span, l *list) {
 	m.cs[colHosts].top = scrollTo(m.cs[colHosts].top, at, g.bodyH, total)
 	top := m.cs[colHosts].top
 	if n == 0 && len(m.w.hosts) > 0 {
-		cv.put(s.x+2, g.bodyY, m.emptyText(colHosts), sMuted, s.w-2)
+		putHint(cv, s.x+2, g.bodyY, m.emptyText(colHosts), s.w-2)
 	}
 	matching := len(m.cs[colSessions].in.text) > 0
 	y := g.bodyY
@@ -385,15 +404,10 @@ func (m *Model) drawHosts(cv *canvas, g geometry, s span, l *list) {
 		} else if it.act {
 			rx = putRight(cv, rx-1, y, glyphAct, sFoam)
 		}
-		logo := sFoam
+		logo := m.logoStyle(it)
 		name := sPlain
-		switch {
-		case h.Status == proto.StatusOff || loading(h):
-			logo, name = sMuted, sMuted
-		case !h.Reachable():
-			logo, name = sErr, sMuted // down: the logo says so
-		case it.local:
-			logo = sRose
+		if !h.Reachable() {
+			name = sSubtle // the logo says which state
 		}
 		if matching && rt == "0" {
 			name = sMuted
@@ -479,7 +493,11 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 		msg, mst := m.emptyText(colSessions), sMuted
 		hint := func(key, what string) {
 			cv.put(s.x+2, g.bodyY+1, key, sKey, s.w-2)
-			cv.put(s.x+3+width(key), g.bodyY+1, what, sMuted, s.w-3-width(key))
+			room := s.x + s.w - 1 - (s.x + 3 + width(key))
+			for width(what) > room && strings.Contains(what, " ") {
+				what = what[:strings.LastIndex(what, " ")] // whole words only
+			}
+			cv.put(s.x+3+width(key), g.bodyY+1, what, sMuted, room)
 		}
 		switch {
 		case msg != "":
@@ -490,15 +508,19 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 			hint("n", "makes one")
 		case h.host.Status == proto.StatusOff:
 			msg = "turned off"
-			hint("space", "on the host turns it on")
+			hint("space", "turns it on")
 		default:
 			msg, mst = glyphRefused+" "+hostStatus(h.host), sErr
 			switch h.host.Status {
 			case proto.StatusDown, proto.StatusFailed:
-				hint("⏎", "on the host retries") // as enterHost
+				hint("⏎", "retries") // as enterHost
 			}
 		}
-		cv.put(s.x+2, g.bodyY, msg, mst, s.w-2)
+		if mst == sMuted {
+			putHint(cv, s.x+2, g.bodyY, msg, s.w-2)
+		} else {
+			cv.put(s.x+2, g.bodyY, msg, mst, s.w-2)
+		}
 	}
 	// Marker slots, as wide as the widest in the list.
 	clientsW, flags, ageW := 0, false, 0
@@ -530,8 +552,7 @@ func (m *Model) drawEntries(cv *canvas, g geometry, s span, h *item, l *list) {
 	}
 	if header >= 0 {
 		if y := g.bodyY + header - top; y >= g.bodyY && y < g.bodyY+g.bodyH {
-			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-6)
-			putRight(cv, s.x+s.w-1, y, "^g", sMuted)
+			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-3)
 		}
 	}
 	scrollbar(cv, s.x+s.w, g.bodyY, g.bodyH, top, total)
@@ -579,10 +600,7 @@ func (m *Model) drawSession(cv *canvas, x, y, end int, it *item, hits []int, cli
 		}
 	}
 	nx := x + 2
-	icon := fg(cPine)
-	if cursor {
-		icon = sIris
-	}
+	icon := sessIcon(it, cursor)
 	nx += cv.put(nx, y, glyphSession, icon, 1) + 1
 	room := rx - 1 - nx
 	if it.sess.Group != "" {
@@ -621,7 +639,7 @@ func (m *Model) drawName(cv *canvas, x, y, room int, it *item, hits []int, curso
 		return st
 	})
 	if it.sess.Group != "" {
-		n += cv.put(x+n, y, " "+glyphGroup, sMuted, 2)
+		n += cv.put(x+n, y, " "+glyphGroup, sSubtle, 2)
 	}
 	if it.cur {
 		n += cv.put(x+n, y, " "+glyphCur, sFoam, 2)
@@ -633,7 +651,11 @@ func (m *Model) drawDir(cv *canvas, x, y, end int, it *item, hits []int, cursor 
 	d := it.dir
 	rx := end
 	if b := gitText(d.Git); b != "" {
-		rx = putRight(cv, end, y, b, sMuted) // the * of a dirty tree with it
+		bst := sSubtle
+		if !it.host.Reachable() {
+			bst = sMuted
+		}
+		rx = putRight(cv, end, y, b, bst) // the * of a dirty tree with it
 	}
 	// Dirs sit below the sessions in weight: subtle, a non-git dir muted.
 	base, icon := sSubtle, sSubtle
@@ -660,7 +682,7 @@ func (m *Model) drawWindows(cv *canvas, g geometry, s span, e *item, l *list) {
 		cv.put(s.x+2, g.bodyY, "no session yet", sMuted, s.w-2)
 		return
 	case len(l.items) == 0:
-		cv.put(s.x+2, g.bodyY, m.emptyText(colWindows), sMuted, s.w-2)
+		putHint(cv, s.x+2, g.bodyY, m.emptyText(colWindows), s.w-2)
 		return
 	}
 	idxW, splitW, flags := 1, 0, false
@@ -683,7 +705,7 @@ func (m *Model) drawWindows(cv *canvas, g geometry, s span, e *item, l *list) {
 		if splitW > 0 {
 			rx -= splitW
 			if w.Panes > 1 {
-				cv.put(rx, y, glyphSplit+" "+strconv.Itoa(w.Panes), sMuted, -1)
+				cv.put(rx, y, glyphSplit+" "+strconv.Itoa(w.Panes), sSubtle, -1)
 			}
 		}
 		if flags {
@@ -737,12 +759,14 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			}
 		}
 	}
-	if n > 0 {
-		head += " · " + strconv.Itoa(n) + " loading"
-	}
 	x := s.x + 1
-	x += cv.put(x, g.headY, "[f] ", sKey, -1)
-	cv.put(x, g.headY, head, sPlain.Bold(), s.w-x)
+	x += cv.put(x, g.headY, "[f] ", sIris, -1)
+	x += cv.put(x, g.headY, head, sIris.Bold(), s.w-x)
+	if n > 0 {
+		x += cv.put(x, g.headY, " · ", sMuted, -1)
+		x += cv.put(x, g.headY, spinner[m.spin%len(spinner)]+" ", sGold, -1)
+		cv.put(x, g.headY, strconv.Itoa(n)+" loading", sMuted, -1)
+	}
 	f := &m.find
 	if len(f.rows) == 0 {
 		msg := "no sessions"
@@ -752,7 +776,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		case len(f.in.text) > 0:
 			msg = "no match · ^c clears"
 		}
-		cv.put(s.x+2, g.bodyY, msg, sMuted, s.w-2)
+		putHint(cv, s.x+2, g.bodyY, msg, s.w-2)
 		return
 	}
 	at := max(f.at(), 0)
@@ -779,11 +803,10 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		if y < g.bodyY || y >= g.bodyY+g.bodyH {
 			continue
 		}
-		if f.rows[i].kind == fDir {
-			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-6)
-			putRight(cv, s.x+s.w-1, y, "^g", sMuted)
+		if f.rows[i].band == 1 {
+			cv.put(s.x+2, y, m.dirsLabel(), sMuted.Bold(), s.w-3)
 		} else {
-			cv.put(s.x+2, y, "sessions · cached on hosts not connected", sMuted.Bold(), s.w-3)
+			cv.put(s.x+2, y, "cached · hosts not connected", sMuted.Bold(), s.w-3)
 		}
 	}
 	for i := range f.rows {
@@ -797,22 +820,14 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 		cursor := i == at
 		nx := s.x + 4 + hostW + 2
 		if r.kind == fSession || r.fold || r.kind == fDir {
-			hst, logo := sFoam, sFoam
-			switch {
-			case r.it.host.Status == proto.StatusOff || loading(r.it.host):
-				hst, logo = sMuted, sMuted
-			case !reach:
-				hst, logo = sMuted, sErr
-			case r.it.local:
-				hst, logo = sRose, sRose
+			hst, logo := sSubtle, m.logoStyle(r.it)
+			if !reach {
+				hst = sMuted
 			}
 			cv.put(s.x+2, y, osGlyph(r.it.host.OS), logo, 1)
 			cv.putFitted(s.x+4, y, fitMiddle(graphemes(r.it.host.Name), hostW, firstHit(r.hostHits)), hitStyle(hst, r.hostHits))
 		}
-		icon := fg(cPine)
-		if cursor {
-			icon = sIris
-		}
+		icon := sessIcon(r.it, cursor)
 		switch r.kind {
 		case fSession:
 			rx := end - ageW
@@ -834,7 +849,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			if winsW > 0 {
 				rx -= winsW + 1
 				if n := len(r.it.sess.Windows); n > 1 {
-					cv.put(rx, y, glyphWindow+" "+strconv.Itoa(n), sMuted, -1)
+					cv.put(rx, y, glyphWindow+" "+strconv.Itoa(n), sSubtle, -1)
 				}
 			}
 			if clientsW > 0 {
@@ -856,7 +871,7 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			w := r.win.win
 			rx := end
 			if w.Panes > 1 {
-				rx = putRight(cv, end, y, glyphSplit+" "+strconv.Itoa(w.Panes), sMuted)
+				rx = putRight(cv, end, y, glyphSplit+" "+strconv.Itoa(w.Panes), sSubtle)
 			}
 			switch {
 			case w.Bell:
@@ -866,8 +881,11 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 			}
 			x := nx
 			base := sPlain
-			if r.dim || !reach {
+			switch {
+			case r.dim:
 				base = sMuted
+			case !reach:
+				base = sSubtle
 			}
 			if cursor {
 				base = base.Bold()
@@ -894,8 +912,8 @@ func (m *Model) drawFinder(cv *canvas, g geometry) {
 				cv.put(x+1, y, glyphCur, sFoam, 1)
 			}
 		case fMore:
-			x := nx + cv.put(nx, y, glyphSubRow+" +"+strconv.Itoa(r.more)+" more", sMuted, end-nx)
-			cv.put(x, y, " · tab", sMuted, end-x)
+			x := nx + cv.put(nx, y, glyphSubRow+" +"+strconv.Itoa(r.more)+" more · ", sMuted, end-nx)
+			cv.put(x, y, "tab", sKey, end-x)
 		case fDir:
 			m.drawDir(cv, nx-2, y, end, r.it, r.nameHits, cursor)
 		}
@@ -936,36 +954,36 @@ func (m *Model) crumbSubject() (h *item, e *item, w *item) {
 	return h, e, m.windowList(e).cur()
 }
 
-func (m *Model) linkState(h *item) (full, icon string, st style) {
+func (m *Model) linkState(h *item) (full, icon string, st style, key, act string) {
 	hh := h.host
 	if c := m.checks[hh.Name]; c != nil {
 		if c.running {
 			sp := spinner[m.spin%len(spinner)]
-			return sp + " " + c.step.Name + ": " + c.step.Detail, sp, sGold
+			return sp + " " + c.step.Name + ": " + c.step.Detail, sp, sGold, "", ""
 		}
 		if c.failed() {
-			return glyphWarn + " " + c.reason() + " · ⏎ checks again", glyphWarn, sErr
+			return glyphWarn + " check failed · " + c.reason(), glyphWarn, sErr, "⏎", "checks again"
 		}
 	}
 	switch hh.Status {
 	case proto.StatusLocal:
-		return glyphLink + " local server", glyphLink, sRose
+		return glyphLink + " local server", glyphLink, sFoam, "", ""
 	case proto.StatusUp:
 		s := glyphLink + " connected"
 		if hh.RTT > 0 {
 			s += " · " + strconv.FormatInt(hh.RTT, 10) + "ms"
 		}
-		return s, glyphLink, sFoam
+		return s, glyphLink, sFoam, "", ""
 	case proto.StatusConnecting:
 		sp := spinner[m.spin%len(spinner)]
-		return sp + " connecting…", sp, sGold
+		return sp + " connecting…", sp, sGold, "", ""
 	case proto.StatusInstalling:
 		sp := spinner[m.spin%len(spinner)]
-		return sp + " installing tower…", sp, sGold
+		return sp + " installing tower…", sp, sGold, "", ""
 	case proto.StatusStalled:
-		return glyphUnlink + " not responding", glyphUnlink, sErr
+		return glyphUnlink + " not responding", glyphUnlink, sErr, "", ""
 	case proto.StatusOff:
-		return glyphUnlink + " turned off · space turns it on", glyphUnlink, sMuted
+		return glyphUnlink + " turned off", glyphUnlink, sMuted, "space", "turns it on"
 	case proto.StatusDown:
 		s := glyphUnlink + " unreachable"
 		if hh.Seen > 0 {
@@ -974,9 +992,9 @@ func (m *Model) linkState(h *item) (full, icon string, st style) {
 		if hh.Reason != "" {
 			s += " · " + hh.Reason
 		}
-		return s + " · ⏎ retries", glyphUnlink, sErr
+		return s, glyphUnlink, sErr, "⏎", "retries"
 	}
-	return glyphUnlink + " " + hostStatus(hh), glyphUnlink, sErr
+	return glyphUnlink + " " + hostStatus(hh), glyphUnlink, sErr, "", ""
 }
 
 func (m *Model) drawCrumb(cv *canvas, g geometry) {
@@ -984,7 +1002,10 @@ func (m *Model) drawCrumb(cv *canvas, g geometry) {
 	if h == nil {
 		return
 	}
-	full, icon, lst := m.linkState(h)
+	full, icon, lst, lkey, lact := m.linkState(h)
+	if lkey != "" {
+		full += " · " + lkey + " " + lact
+	}
 	hostPart := osGlyph(h.host.OS) + " " + h.host.Name
 	var sess, win, branch, group, clients, pane string
 	var dirPath string
@@ -1059,33 +1080,76 @@ func (m *Model) drawCrumb(cv *canvas, g geometry) {
 	}
 	y := g.crumbY
 	x := 1
-	x += cv.put(x, y, hostPart, sIris.Bold(), -1) + 2
+	reach := h.host.Reachable()
+	nameSt, sessSt := sPlain, fg(cPine)
+	if !reach {
+		nameSt, sessSt = sSubtle, sMuted
+	}
+	x += cv.put(x, y, osGlyph(h.host.OS)+" ", m.logoStyle(h), -1)
+	x += cv.put(x, y, h.host.Name, sPlain, -1) + 2
 	if sess != "" {
-		x += cv.put(x, y, glyphSession+" ", sFoam, -1)
-		x += cv.put(x, y, fitMiddle(graphemes(sess), nameRoom, -1).String(), sPlain.Bold(), -1) + 2
+		x += cv.put(x, y, glyphSession+" ", sessSt, -1)
+		x += cv.put(x, y, fitMiddle(graphemes(sess), nameRoom, -1).String(), nameSt, -1) + 2
 	}
 	if dirPath != "" {
-		x += cv.put(x, y, glyphDir+" ", fg(cPine), -1)
-		x += cv.put(x, y, fitPath(dirPath, nameRoom, nil).String(), sPlain.Bold(), -1) + 2
+		dst := sSubtle
+		if !e.dir.Root || !reach {
+			dst = sMuted
+		}
+		x += cv.put(x, y, glyphDir+" ", dst, -1)
+		x += cv.put(x, y, fitPath(dirPath, nameRoom, nil).String(), nameSt, -1) + 2
 	}
 	if win != "" {
 		x += cv.put(x, y, glyphWindow+" ", sMuted, -1)
-		x += cv.put(x, y, fitMiddle(graphemes(win), nameRoom, -1).String(), sPlain, -1)
+		x += cv.put(x, y, fitMiddle(graphemes(win), nameRoom, -1).String(), nameSt, -1)
 		if pane != "" {
 			x += cv.put(x, y, " · "+pane, sIris, -1)
 		}
 		x += 2
 	}
 	if branch != "" && !dropB {
-		x += cv.put(x, y, " "+glyphBranch+" "+branch, sGold, -1) + 2
+		x += cv.put(x, y, " "+glyphBranch+" "+branch, sSubtle, -1) + 2
 	}
 	if group != "" && !dropG {
-		x += cv.put(x, y, " "+glyphGroup+" "+group, sMuted, -1) + 2
+		x += cv.put(x, y, " "+glyphGroup+" "+group, sSubtle, -1) + 2
 	}
 	if clients != "" && !dropC {
 		cv.put(x, y, " "+glyphClients+" "+clients, sGold, -1)
 	}
+	if link == full && lkey != "" {
+		// The action after the state, as a hint: key bold, label muted.
+		tail := " · " + lkey + " " + lact
+		state := strings.TrimSuffix(link, tail)
+		rx := putRight(cv, g.w-1, y, lact, sMuted)
+		rx = putRight(cv, rx-1, y, lkey, sKey)
+		rx = putRight(cv, rx, y, " · ", sMuted)
+		putRight(cv, rx, y, ansi.Truncate(state, avail/2, glyphMore), lst)
+		return
+	}
 	putRight(cv, g.w-1, y, ansi.Truncate(link, avail/2, glyphMore), lst)
+}
+
+// logoStyle is a host's OS logo: its state, the same on every surface.
+func (m *Model) logoStyle(h *item) style {
+	switch {
+	case h.host.Status == proto.StatusOff || loading(h.host):
+		return sMuted
+	case !h.host.Reachable():
+		return sErr
+	}
+	return sFoam
+}
+
+// sessIcon is a session row's icon: pine, iris at the cursor, muted on a
+// host that isn't connected.
+func sessIcon(it *item, cursor bool) style {
+	switch {
+	case cursor:
+		return sIris
+	case !it.host.Reachable():
+		return sMuted
+	}
+	return fg(cPine)
 }
 
 // --- the footer ---
@@ -1163,22 +1227,31 @@ func (m *Model) drawFooter(cv *canvas, g geometry) {
 	case m.note.text != "":
 		right = m.note.text
 	case m.pendingG:
-		right, rst = "g", sGold
+		right, rst = "g", sCap
 	case m.mode == modeNormal:
-		right, rst = "q quit", sMuted
+		right, rst = "quit", sSubtle
 	}
 	rx := g.w - 1
 	if m.note.text != "" {
-		// A message is a pill: errors on love, the rest on iris.
-		bg := cIris
-		if m.note.kind == noteErr {
+		// A message is a pill: info on foam, busy on gold, errors on love.
+		bg := cFoam
+		switch m.note.kind {
+		case noteErr:
 			bg = cLove
+		case noteBusy:
+			bg = cGold
 		}
 		right = " " + cutMiddleText(right, max(g.w-6, 1)) + " "
 		rx = putRight(cv, g.w-1, y, right, fg(cBase).Bold().On(bg)) - 2
 	} else if right != "" {
 		right = cutMiddleText(right, max(g.w-4, 1))
+		if rst == sCap {
+			right = " " + right + " "
+		}
 		rx = putRight(cv, g.w-1, y, right, rst) - 2
+		if m.mode == modeNormal && !m.pendingG {
+			rx = putRight(cv, rx+1, y, " q ", sCap) - 2
+		}
 	}
 	hs := m.hints()
 	widthOf := func(h hint) int { return width(h.key) + 2 + 1 + width(h.label) + 2 }

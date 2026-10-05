@@ -391,13 +391,10 @@ func (f *finder) index(k rowKey) int {
 // header two lines above them.
 func (f *finder) lines() (line []int, heads []int, total int) {
 	line = make([]int, len(f.rows))
+	block := func(b int) int { return min(b, 2) } // live sessions, live dirs, cached
 	for i := range f.rows {
-		dir := f.rows[i].kind == fDir
-		head := dir || f.rows[i].band == 2
-		if i > 0 {
-			prev := &f.rows[i-1]
-			head = head && (dir != (prev.kind == fDir) || f.rows[i].band != prev.band && !dir)
-		}
+		b := block(f.rows[i].band)
+		head := b > 0 && (i == 0 || block(f.rows[i-1].band) != b)
 		if head {
 			if i > 0 {
 				total++

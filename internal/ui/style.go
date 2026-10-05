@@ -84,7 +84,7 @@ var (
 	sIris   = fg(cIris)
 	sRose   = fg(cRose)
 	sRule   = fg(cHLMed)
-	sKey    = fg(cIris)
+	sKey    = fg(cText).Bold() // a key in running text
 	sCap    = fg(cText).Bold().On(cOverlay) // a key in the footer: a keycap
 )
 

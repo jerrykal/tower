@@ -443,7 +443,7 @@ func TestDirs(t *testing.T) {
 	}
 	m.width, m.height = 100, 30
 	text := ansi.Strip(m.View().Content)
-	for _, s := range []string{"dirs · git roots", "sessions · cached on hosts not connected"} {
+	for _, s := range []string{"dirs · git roots", "cached · hosts not connected"} {
 		if !strings.Contains(text, s) {
 			t.Errorf("the finder lacks %q:\n%s", s, text)
 		}
@@ -583,11 +583,11 @@ func TestDownHost(t *testing.T) {
 	m, f, _ := newTestModel(t, testDash(), false)
 	// ⏎ on a down host's cached session retries the host now.
 	press(t, m, "c", "h", "a", "r", "enter")
-	if !strings.Contains(m.note.text, "C is down: timed out") || len(f.actsOf(proto.OpSwitch)) != 0 || f.retries != 1 || f.retried[0] != "C" {
+	if !strings.Contains(m.note.text, "C is unreachable · timed out") || len(f.actsOf(proto.OpSwitch)) != 0 || f.retries != 1 || f.retried[0] != "C" {
 		t.Fatalf("note %q retries %d %v", m.note.text, f.retries, f.retried)
 	}
 	press(t, m, "ctrl+x")
-	if m.note.text != "C is down: timed out" || len(f.actsOf(proto.OpKill)) != 0 || m.mode != modeFind {
+	if m.note.text != "C is unreachable · timed out" || len(f.actsOf(proto.OpKill)) != 0 || m.mode != modeFind {
 		t.Fatalf("kill on a down host: %q", m.note.text)
 	}
 	// A stalled host is refused, saying so.

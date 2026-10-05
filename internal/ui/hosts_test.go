@@ -194,7 +194,7 @@ func TestSearchMode(t *testing.T) {
 	}
 	// Host counts become matches while the sessions column has a query.
 	press(t, m, "/", "a", "p", "p", "esc")
-	if s, st := m.hostRight(m.w.host("A")); s != "1" || st != sGold {
+	if s, st := m.hostRight(m.w.host("A")); s != "1" || st != sPlain {
 		t.Fatalf("A's count with a sessions query: %q", s)
 	}
 	if s := screen(m); !strings.Contains(s, "no match · esc clears") {
@@ -239,7 +239,7 @@ func TestHelp(t *testing.T) {
 	m, _, _ := newTestModel(t, testDash(), false)
 	m.width, m.height = 130, 40
 	press(t, m, "?")
-	if s := screen(m); m.mode != modeHelp || !strings.Contains(s, "any key closes") || !strings.Contains(s, "find on every host") {
+	if s := screen(m); m.mode != modeHelp || !strings.Contains(s, "any key  closes") || !strings.Contains(s, "find on every host") {
 		t.Fatalf("help:\n%s", s)
 	}
 	press(t, m, "x")

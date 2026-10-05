@@ -141,11 +141,11 @@ func (m *Model) drawPreview(cv *canvas, x, headY, y, w, h int) {
 	}
 	switch {
 	case dir != nil:
-		cv.put(x+1, headY, "dir", sSubtle, w-1)
+		cv.put(x+1, headY, "dir", sSubtle.Bold(), w-1)
 		m.drawDirPreview(cv, x+1, y, w-2, h, dir)
 		return
 	case win == nil:
-		cv.put(x+1, headY, "layout", sSubtle, w-1)
+		cv.put(x+1, headY, "host", sSubtle.Bold(), w-1)
 		if hi := m.previewHost(); hi != nil {
 			m.drawHostPreview(cv, x+1, y, w-2, h, hi)
 		}
@@ -154,16 +154,17 @@ func (m *Model) drawPreview(cv *canvas, x, headY, y, w, h int) {
 	k := m.previewKey(win)
 	got := m.cap.cache[k]
 	panes := m.cap.panesOf(win.key)
-	head := "layout · " + winLabel(win)
+	head := winLabel(win)
 	switch n := max(len(panes), win.win.Panes); {
 	case n > 1:
 		head += " · " + strconv.Itoa(n) + " panes"
 	case len(panes) == 1:
 		head += " · single"
 	}
-	cv.put(x+1, headY, fitMiddle(graphemes(head), w-1, -1).String(), sSubtle, w-1)
+	hx := x + 1 + cv.put(x+1, headY, "layout", sSubtle.Bold(), w-1)
+	cv.put(hx, headY, fitMiddle(graphemes(" · "+head), max(w-1-(hx-x-1), 0), -1).String(), sSubtle, max(w-1-(hx-x-1), 0))
 	if !win.host.Reachable() {
-		cv.put(x+1, y, win.host.Name+" is "+hostStatus(win.host), sMuted, w-1)
+		cv.put(x+1, y, win.host.Name+" is "+hostStatus(win.host), sErr, w-1)
 		return
 	}
 	bodyW := w - 2
@@ -182,7 +183,8 @@ func (m *Model) drawPreview(cv *canvas, x, headY, y, w, h int) {
 	}
 	lw := cv.put(x+1, capY, label, sSubtle, bodyW)
 	if m.mode == modeNormal && len(panes) > 1 && bodyW-lw > 20 {
-		putRight(cv, x+1+bodyW, capY, "J K picks a pane", sMuted)
+		rx := putRight(cv, x+1+bodyW, capY, " picks a pane", sMuted)
+		putRight(cv, rx, capY, "J K", sKey)
 	}
 	if capH < 3 {
 		return
@@ -294,57 +296,75 @@ func (m *Model) drawPanes(cv *canvas, x, y, w, h int, panes []proto.Pane, picked
 // drawDirPreview is a dir's, in a box: its path, branch and what ⏎ would
 // make.
 func (m *Model) drawDirPreview(cv *canvas, x, y, w, h int, d *item) {
-	type line struct {
+	type part struct {
 		text string
 		st   style
 	}
-	lines := []line{{glyphDir + " " + fitPath(d.dir.Path, max(w-6, 1), nil).String(), sPlain.Bold()}}
+	icon := sSubtle
+	if !d.dir.Root {
+		icon = sMuted
+	}
+	lines := [][]part{{{glyphDir + " ", icon}, {fitPath(d.dir.Path, max(w-6, 1), nil).String(), sPlain.Bold()}}}
 	if g := gitText(d.dir.Git); g != "" {
-		lines = append(lines, line{glyphBranch + " " + g, sGold})
+		lines = append(lines, []part{{glyphBranch + " " + g, sSubtle}})
 	}
 	if d.dir.Net {
-		lines = append(lines, line{"on a network mount: not checked", sMuted})
+		lines = append(lines, []part{{"on a network mount: not checked", sMuted}})
 	}
 	name := freeName(d.host, dirSessionName(d.dir.Path))
-	lines = append(lines, line{}, line{"⏎ new session " + name + " on " + d.host.Name, sSubtle})
+	lines = append(lines, nil, []part{{"⏎", sKey}, {" new session ", sMuted}, {name, sPlain}, {" on " + d.host.Name, sMuted}})
 	bh := min(len(lines)+2, h)
 	if bh < 3 || w < 6 {
 		return
 	}
 	box(cv, x, y, w, bh, sRule)
 	for i := 0; i < bh-2; i++ {
-		cv.put(x+2, y+1+i, lines[i].text, lines[i].st, w-4)
+		lx := x + 2
+		for _, p := range lines[i] {
+			lx += cv.put(lx, y+1+i, p.text, p.st, max(x+w-2-lx, 0))
+		}
 	}
 }
 
 // drawHostPreview is a host's summary.
 func (m *Model) drawHostPreview(cv *canvas, x, y, w, h int, hi *item) {
 	hh := hi.host
-	lines := []string{hh.Name}
+	if h < 1 {
+		return
+	}
+	cv.put(x, y, hh.Name, sPlain.Bold(), w)
+	type field struct {
+		label, value string
+		st           style
+	}
+	var fs []field
 	if hh.OS != "" {
-		lines = append(lines, "os      "+hh.OS)
+		fs = append(fs, field{"os", hh.OS, sPlain})
 	}
 	if hh.Tmux != "" {
-		lines = append(lines, "tmux    "+hh.Tmux)
+		fs = append(fs, field{"tmux", hh.Tmux, sPlain})
 	}
 	if hh.Version != "" {
-		lines = append(lines, "tower   "+hh.Version)
+		fs = append(fs, field{"tower", hh.Version, sPlain})
 	}
-	if s := hostStatus(hh); s != "" {
-		lines = append(lines, "status  "+s)
+	_, _, lst, _, _ := m.linkState(hi)
+	switch s := hostStatus(hh); {
+	case hh.Status == proto.StatusLocal:
+		fs = append(fs, field{"status", "local server", lst})
+	case hh.Status == proto.StatusUp:
+		fs = append(fs, field{"status", "connected", lst})
+	default:
+		fs = append(fs, field{"status", s, lst})
 	}
 	if c := m.checks[hh.Name]; c != nil && c.failed() {
-		lines = append(lines, "check   "+c.reason())
+		fs = append(fs, field{"check", c.reason(), sErr})
 	}
-	for i, l := range lines {
-		if i >= h {
+	for i, f := range fs {
+		if i+1 >= h {
 			break
 		}
-		st := sSubtle
-		if i == 0 {
-			st = sIris
-		}
-		cv.put(x, y+i, l, st, w)
+		cv.put(x, y+1+i, f.label, sMuted, w)
+		cv.put(x+8, y+1+i, f.value, f.st, max(w-8, 0))
 	}
 }
 
