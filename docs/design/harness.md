@@ -153,9 +153,9 @@ ported so far.
 
 - `hosts/` holds the image (Ubuntu 24.04, OpenSSH, tmux built from
   source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
-  compose file with two hosts, `h1` and `h2`. `TestMain` brings the
-  project up (`tt-<pid>`, building the image if needed) and down at the
-  end; containers, network and image carry the label `tower-test`.
+  compose file with two hosts, `h1` and `h2`. `TestMain` builds the image
+  (`tt-scenario-host`, from cache after the first build; `TT_TMUX_VERSION`
+  picks tmux), brings the project up (`tt-<pid>`) and down at the end; containers, network and image carry the label `tower-test`.
 - The run's `TOWER_TEST_DIR`, `TMUX_TMPDIR` and `TMPDIR` are bind-mounted
   at their own paths, the container user `tt` has the test user's uid,
   and the containers share the machine's pids (`pid: host`). So a

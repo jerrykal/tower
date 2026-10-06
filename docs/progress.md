@@ -55,7 +55,7 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       the fake's, failures are no more frequent, and latency tracks the
       shaped RTT as the fake's does; else write down why and stop here.
 
-      Built (d63384a): `test/scenario/hosts/` (image with tmux 3.7c from
+      Built (155cfe7): `test/scenario/hosts/` (image with tmux 3.7c from
       source, compose file, sshd's `ForceCommand` wrapper), the backend
       in `container_test.go` (decision 113, design in
       [design/harness.md](design/harness.md#host-containers)); LC08 and
