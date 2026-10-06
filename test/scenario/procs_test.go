@@ -16,6 +16,29 @@ type proc struct {
 	env  []string
 }
 
+// pnode is a process in the process tree: procTree lists them per
+// platform.
+type pnode struct {
+	pid, ppid int
+	comm      string
+}
+
+// descendants are the processes under pid in tree, nearest first.
+func descendants(tree []pnode, pid int) []pnode {
+	kids := map[int][]pnode{}
+	for _, p := range tree {
+		kids[p.ppid] = append(kids[p.ppid], p)
+	}
+	var out []pnode
+	next := kids[pid]
+	for len(next) > 0 {
+		p := next[0]
+		next = append(next[1:], kids[p.pid]...)
+		out = append(out, p)
+	}
+	return out
+}
+
 // getenv is the value of k in the process's environment.
 func (p proc) getenv(k string) (string, bool) {
 	for _, kv := range p.env {

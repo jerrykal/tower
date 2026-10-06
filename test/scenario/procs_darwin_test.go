@@ -54,3 +54,17 @@ func parseProcArgs(pid int, b []byte) (proc, bool) {
 	}
 	return p, len(p.argv) == argc
 }
+
+// procTree lists every process of this user with its parent and command
+// name, from one kern.proc.uid read.
+func procTree() []pnode {
+	kps, err := unix.SysctlKinfoProcSlice("kern.proc.uid", os.Getuid())
+	if err != nil {
+		return nil
+	}
+	out := make([]pnode, 0, len(kps))
+	for _, kp := range kps {
+		out = append(out, pnode{pid: int(kp.Proc.P_pid), ppid: int(kp.Eproc.Ppid), comm: unix.ByteSliceToString(kp.Proc.P_comm[:])})
+	}
+	return out
+}
