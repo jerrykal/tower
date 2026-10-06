@@ -266,11 +266,10 @@ func TestS18(t *testing.T) {
 		t.Fatalf("N speaks protocol %d", l.Proto)
 	}
 	w.WaitLink(a, "F", "up", 6*time.Second)
-	time.Sleep(time.Second)
-	logb, _ := os.ReadFile(a.Paths().State("towerd.log"))
-	if !strings.Contains(string(logb), `ignoring unknown message type "future-thing"`) {
-		t.Fatal("the home did not log the unknown message type")
-	}
+	w.Eventually(3*time.Second, "the home logging the unknown message type", func() bool {
+		logb, _ := os.ReadFile(a.Paths().State("towerd.log"))
+		return strings.Contains(string(logb), `ignoring unknown message type "future-thing"`)
+	})
 	// A hand-off from N to the newer peer F, towerd's side: the dashboard
 	// on N stores the switch through the home, the loop is woken, holds,
 	// and after its client ends goes to F.

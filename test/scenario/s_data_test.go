@@ -172,10 +172,9 @@ func TestS22(t *testing.T) {
 	}
 	l := w.FakeLoop(a)
 	term := l.Attach(w.Ref(a, "B", "bravo"), b)
-	time.Sleep(300 * time.Millisecond)
-	if size := b.MustTmux("display-message", "-p", "-t", "bravo", "#{window_width}x#{window_height}"); !strings.HasPrefix(size, "110x") {
-		t.Fatalf("bravo's window is %s", size)
-	}
+	w.Eventually(3*time.Second, "bravo's window the terminal's width", func() bool {
+		return strings.HasPrefix(b.MustTmux("display-message", "-p", "-t", "bravo", "#{window_width}x#{window_height}"), "110x")
+	})
 	w.Eventually(3*time.Second, "the view counts bravo's client", func() bool {
 		for _, s := range HostIn(&a.View("").View, "B").Sessions {
 			if s.Name == "bravo" {
@@ -241,10 +240,10 @@ func TestS22(t *testing.T) {
 	}
 	name := cl[0][strings.LastIndex(cl[0], ":")+1:]
 	b.MustTmux("switch-client", "-c", name, "-t", "_tower:")
-	time.Sleep(500 * time.Millisecond)
-	if s := b.Clients(); len(s) != 1 || strings.HasPrefix(s[0], "_tower") {
-		t.Fatalf("a client stays on _tower: %v", s)
-	}
+	w.Eventually(3*time.Second, "no client on _tower", func() bool {
+		s := b.Clients()
+		return len(s) == 1 && !strings.HasPrefix(s[0], "_tower")
+	})
 	b.MustTmux("kill-session", "-t", "backup")
 	b.MustTmux("kill-session", "-t", "bravo")
 	w.Eventually(5*time.Second, "B's server exits", func() bool { return !b.HasServer() })

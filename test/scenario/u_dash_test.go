@@ -171,10 +171,10 @@ func TestU03(t *testing.T) {
 	}
 	// What runs there, when towerd answers panes.
 	b.MustTmux("send-keys", "-t", "victim:2.1", "sleep 300", "Enter")
-	time.Sleep(300 * time.Millisecond)
-	if out, _ := b.UI(cl, nil, "ask-kill", "B", "victim"); !strings.Contains(out, "sleep running") {
-		t.Fatalf("ask-kill with a command running: %q", out)
-	}
+	w.Eventually(3*time.Second, "ask-kill naming the command running", func() bool {
+		out, _ := b.UI(cl, nil, "ask-kill", "B", "victim")
+		return strings.Contains(out, "sleep running")
+	})
 	// In the popup: n keeps it, y kills it.
 	term.OpenDash()
 	term.Type("victim")

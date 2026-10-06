@@ -204,10 +204,7 @@ func TestS08(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	t2.DashTo("alpha")
 	w.clientsAre(a, 8*time.Second, "alpha")
-	time.Sleep(500 * time.Millisecond)
-	if n := len(b.Clients()); n != 2 {
-		t.Fatalf("B has %d clients", n)
-	}
+	w.Eventually(3*time.Second, "two clients on B", func() bool { return len(b.Clients()) == 2 })
 	var at []string
 	for _, l := range w.Loops(a) {
 		f := strings.SplitN(FormatRef(l.Cur), ":", 3)

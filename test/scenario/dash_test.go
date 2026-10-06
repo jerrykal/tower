@@ -93,10 +93,7 @@ func TestS01(t *testing.T) {
 	// A's loop leaves B through B's dashboard: the switch is relayed to A.
 	ta.DashTo("alpha")
 	w.WaitLoop(a, "^A:alpha", 8*time.Second)
-	time.Sleep(500 * time.Millisecond)
-	if got := b.Clients(); !slices.Equal(got, []string{"banana"}) {
-		t.Fatalf("B's clients after A's hand-off: %v", got)
-	}
+	w.Eventually(3*time.Second, "B's clients after A's hand-off: banana alone", func() bool { return slices.Equal(b.Clients(), []string{"banana"}) })
 	w.WaitLoop(b, "^B:banana", time.Second)
 	if p := b.Status().Detail.Pending; len(p) != 0 {
 		t.Fatalf("B's own loop has a switch pending: %+v", p)
@@ -181,10 +178,7 @@ func TestS11(t *testing.T) {
 	if out, err := a.UI(cl, nil, "goto", "A", "apple"); err != nil {
 		t.Fatalf("goto A apple: %v %s", err, out)
 	}
-	time.Sleep(300 * time.Millisecond)
-	if !slices.Contains(a.Clients(), "apple") {
-		t.Fatalf("A's clients: %v", a.Clients())
-	}
+	w.Eventually(3*time.Second, "a client on apple", func() bool { return slices.Contains(a.Clients(), "apple") })
 	// (c) … but no hand-off.
 	out, err := a.UI(cl, nil, "goto", "B", "bravo")
 	if err == nil || !strings.Contains(out, "⏎ on another host needs the attach loop (run tower outside tmux)") {
