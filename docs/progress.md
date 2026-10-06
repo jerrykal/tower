@@ -29,12 +29,66 @@ to scan).
       (`feat/tower-prototype`, `~/.dotfiles.feat-tower-prototype`) and
       `session-picker.sh`.
 
-## The scenario suite on Linux
+## Next: the scenario suite over real ssh
 
-Development moves to a Linux machine; the fake ssh is to be replaced by
-hosts reached over real ssh (containers on Linux, localhost sshd on
-macOS). On Linux the suite passes but for two quirks of the current
-harness, left for that replacement:
+The fake ssh (`test/scenario/fakessh`, `fakenet`) is a simulator, and it
+has drifted from ssh where it mattered (decisions 41 and 112). It is to
+be replaced: on Linux each simulated host is a container running sshd
+and tmux, reached over real ssh, its link shaped with `tc` and
+`iptables`; on macOS, where CI runners have no Docker, hosts are reached
+over localhost sshd. Each phase ends with both shards run and reported.
+
+**Phase 0, development on Linux: done.** The repo is developed on a Linux
+machine at `~/projects/tower`. The suite's first Linux runs found five
+harness bugs, fixed (a2e8739 to 35fdbfd): the fake ssh's `TERM`, XDG dirs
+leaking the user's zoxide database, U02's anchored target, a terminal
+that could not answer colour queries (tmux then holds ESC 500ms), U01's
+same-second recency tie. LC08 on Linux is the new latency baseline.
+
+- [ ] **Phase 1, spike (go or no-go).** A compose file with two host
+      containers (Ubuntu, sshd, tmux, `iproute2`, `iptables`), key auth,
+      the home and terminals on this machine. Port two scenarios to it:
+      LC08 (hand-off latency by RTT) and one hand-off-heavy LS scenario.
+      Measure against their fake-ssh runs: wall time, failures over 10
+      runs, hand-off latency per RTT; on Linux (native Docker) and on
+      macOS (Docker Desktop). Go when wall time is within about 1.5× of
+      the fake's, failures are no more frequent, and latency tracks the
+      shaped RTT as the fake's does; else write down why and stop here.
+- [ ] **Phase 2, a host backend behind `World`.** Start a host, its ssh
+      name, set a fault, reset; scenarios stop writing knobs. Each knob
+      gets a real mechanism: delay, jitter and bandwidth `tc netem`;
+      `Freeze` and `HalfOpenAt` `iptables` DROP on established
+      connections (or `docker pause`); `Drop` killing the connections;
+      `Down` stopping sshd (refused), a new host key (hostkey), no
+      authorized key (auth), key auth off (password), an unknown name
+      (resolve), DROP on SYN (timeout); `Mux` ssh's own ControlMaster.
+      No direct equivalent, decided per scenario (rewrite, a unit test
+      of how tower reads the error, or drop): `Exit`, `ODelayMs`,
+      `Stall`, `Pty`, `tscheck`.
+- [ ] **Phase 3, the container backend.** Long-lived containers reset
+      between scenarios (test tmux servers killed, `TOWER_HOME` wiped),
+      an ssh config and key per world with short ControlPaths, a small
+      agent in each container applying faults without a `docker exec`
+      per change.
+- [ ] **Phase 4, port the families**, one at a time, each passing on
+      the container backend before its knob code goes. Worlds that are
+      not timing-sensitive run with `t.Parallel`; the timing checks
+      become a serial latency tier. Sleeps give way to event waits
+      (`WaitMark`, the tracker) where a scenario waits on tower.
+- [ ] **Phase 5, the macOS backend.** Localhost sshd, each simulated
+      host its own `TOWER_HOME` through `hosts.toml`'s `home`
+      (decision 65), faults with `dnctl`/`pf` on `lo0`. Locally it needs
+      Remote Login and a test user, which the user sets up.
+- [ ] **Phase 6, CI.** Linux container shards on every pull request,
+      across tmux 3.2a to 3.7; the macOS shards nightly on `macos-latest`.
+- [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
+      update [design/harness.md](design/harness.md),
+      [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
+      and a decision superseding 3, 32 and the fake ssh's parts of 41
+      and 112. The real-host scenarios (R) stay as they are.
+
+Two quirks of the current harness on Linux are left for the
+replacement:
 
 - [ ] LS01 and LS10 wait for `LOOP-EXIT=137` after a `kill -9`, which the
       terminal prints after its launch command; whether it wraps at the
