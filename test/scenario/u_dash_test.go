@@ -60,7 +60,7 @@ func (t *Term) OpenDash() {
 func TestU01(t *testing.T) {
 	w := NewWorld(t, "u01")
 	a := w.Host("A", []string{"alpha", "apple"})
-	b := w.Host("B", []string{"bravo", "banana"})
+	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
 	b.MustTmux("new-window", "-d", "-t", "bravo:", "-n", "second")
 	stdSetup(w, a, b)
 	// tmux dates attaches in whole seconds: alpha's attach comes in a
@@ -105,7 +105,7 @@ func TestU01(t *testing.T) {
 func TestU02(t *testing.T) {
 	w := NewWorld(t, "u02")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"s150", "s50", "train-llm"})
+	b := w.Host("B", []string{"s150", "s50", "train-llm"}, SSHHost())
 	b.MustTmux("rename-window", "-t", "train-llm:1", "claude")
 	b.MustTmux("new-window", "-d", "-t", "train-llm:", "-n", "train")
 	b.MustTmux("new-window", "-d", "-t", "s150:", "-n", "tensorboard")
@@ -151,7 +151,7 @@ func TestU02(t *testing.T) {
 func TestU03(t *testing.T) {
 	w := NewWorld(t, "u03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "victim", "solo"})
+	b := w.Host("B", []string{"bravo", "victim", "solo"}, SSHHost())
 	b.MustTmux("new-window", "-d", "-t", "victim:", "-n", "two")
 	b.MustTmux("split-window", "-d", "-t", "victim:2")
 	stdSetup(w, a, b)
@@ -198,7 +198,7 @@ func TestU03(t *testing.T) {
 func TestU04(t *testing.T) {
 	w := NewWorld(t, "u04")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "banana"})
+	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	term.OpenDash()
@@ -223,7 +223,7 @@ func TestU04(t *testing.T) {
 func TestU05(t *testing.T) {
 	w := NewWorld(t, "u05")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	dup := func() {
@@ -257,7 +257,7 @@ func TestU06(t *testing.T) {
 	w.repo("work/proj")
 	os.MkdirAll(filepath.Join(w.UserHome, "notes"), 0o755)
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"}, Zoxide("~/src/proj", "~/work/proj", "~/notes"))
+	b := w.Host("B", []string{"bravo"}, Zoxide("~/src/proj", "~/work/proj", "~/notes"), SSHHost())
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.Eventually(6*time.Second, "B's dirs", func() bool {
@@ -311,7 +311,7 @@ func TestU06(t *testing.T) {
 func TestU07(t *testing.T) {
 	w := NewWorld(t, "u07")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a)
 	w.WaitUp(a, "A")
 	os.MkdirAll(filepath.Join(w.UserHome, ".ssh"), 0o700)
@@ -370,7 +370,7 @@ func TestU07(t *testing.T) {
 func TestU08(t *testing.T) {
 	w := NewWorld(t, "u08")
 	a := w.Host("A", []string{"alpha", "apple", "avocado"})
-	b := w.Host("B", []string{"bravo", "banana"})
+	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
 	stdSetup(w, a, b)
 	bin := towerBin
 	if o := os.Getenv("U08_BIN"); o != "" {

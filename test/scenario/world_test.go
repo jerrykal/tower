@@ -63,8 +63,9 @@ type World struct {
 
 	links map[string]*linkState // by ssh name
 
-	// real is set once a host is a container: from then on every host's
-	// ssh is real ssh with the world's config.
+	// real: on the container backend, every host's ssh is real ssh with
+	// the world's config, from the first host on (a tmux server keeps the
+	// environment it started with).
 	real bool
 }
 
@@ -72,7 +73,7 @@ type World struct {
 // goes into tmux socket names.
 func NewWorld(t *testing.T, id string) *World {
 	t.Helper()
-	w := &World{T: t, ID: strings.ToLower(id), hosts: map[string]*Host{}, timings: maps.Clone(testTimings)}
+	w := &World{T: t, ID: strings.ToLower(id), hosts: map[string]*Host{}, timings: maps.Clone(testTimings), real: ctrs != nil}
 	w.Dir = filepath.Join(root, w.ID)
 	os.RemoveAll(w.Dir)
 	w.Fake = filepath.Join(w.Dir, "fake")

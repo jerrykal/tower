@@ -79,8 +79,8 @@ func TestA01(t *testing.T) {
 	det := filepath.Join(w.UserHome, "src", "proj.det")
 	w.git(proj, "worktree", "add", "-q", "--detach", det)
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	b.MustTmux("new-session", "-d", "-s", "proj", "-c", proj)
 	b.MustTmux("new-session", "-d", "-s", "fix", "-c", wt+"/")
 	b.MustTmux("new-session", "-d", "-s", "det", "-c", det)
@@ -145,8 +145,8 @@ func TestA02(t *testing.T) {
 		Zoxide("~/src/lib", "~/notes", "~/nfs/data/repo", "~/src/proj", "~/gone", "~"),
 		// ~/nfs/data/repo does not exist: listed all the same, which only
 		// a directory never stat'ed can be.
-		MountTable("/dev/disk1 / apfs rw 0 0\nserver:/export ~/nfs nfs4 rw 0 0\n"))
-	c := w.Host("C", []string{"charlie"})
+		MountTable("/dev/disk1 / apfs rw 0 0\nserver:/export ~/nfs nfs4 rw 0 0\n"), SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	b.MustTmux("new-session", "-d", "-s", "proj", "-c", proj)
 	w.Home(a, b.Remote(), c.Remote())
 	w.WaitUp(a, "B", "C")
@@ -198,8 +198,8 @@ func TestA02(t *testing.T) {
 func TestA03(t *testing.T) {
 	w := NewWorld(t, "a03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	b.MustTmux("split-window", "-h", "-t", "=bravo:", "-c", w.UserHome)
 	b.MustTmux("split-window", "-v", "-t", "=bravo:")
 	b.MustTmux("new-window", "-d", "-t", "=bravo:")
@@ -258,8 +258,8 @@ func TestA04(t *testing.T) {
 	w := NewWorld(t, "a04")
 	proj := w.repo("src/proj")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	w.Home(a, b.Remote(), c.Remote())
 	w.WaitUp(a, "B", "C")
 	w.Eventually(3*time.Second, "B on C", func() bool { return HasSession(&c.View("").View, "B", "bravo") })
@@ -329,7 +329,7 @@ func TestA05(t *testing.T) {
 		list = append(list, "~/"+rel)
 	}
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"}, Zoxide(list...), Env("TOWER_DIRS_EVERY", "3000"), Env("TOWER_LOOK_EVERY", "100"))
+	b := w.Host("B", []string{"bravo"}, Zoxide(list...), Env("TOWER_DIRS_EVERY", "3000"), Env("TOWER_LOOK_EVERY", "100"), SSHHost())
 	var script strings.Builder
 	for i := range 40 {
 		dir := w.repo(fmt.Sprintf("work/project-%02d", i))

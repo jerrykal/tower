@@ -13,7 +13,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 FROM ubuntu:24.04
 ARG UID=1000
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      openssh-server openssh-client iproute2 iptables procps libevent-core-2.1-7t64 libncurses6 \
+      openssh-server openssh-client iproute2 iptables procps git libevent-core-2.1-7t64 libncurses6 \
  && rm -rf /var/lib/apt/lists/* \
  && (userdel -r ubuntu 2>/dev/null || true) \
  && useradd -m -u "$UID" -s /bin/sh tt && usermod -p '*' tt \

@@ -239,7 +239,6 @@ func (w *World) assign(h *Host) {
 			}
 			s.w = w
 			h.ctr = s
-			w.real = true
 			return
 		}
 	}
