@@ -1,6 +1,7 @@
 // Package scenario is tower's acceptance suite. Each simulated host is a
 // tmux server of its own with its own TOWER_HOME and machine id, reached
-// through the fake ssh; each terminal is a pane of yet another tmux
+// through the fake ssh or, with TOWER_HOSTS=container, a host container
+// reached over real ssh; each terminal is a pane of yet another tmux
 // server, running the attach loop, driven with send-keys and read with
 // capture-pane. Nothing touches the user's tmux servers.
 package scenario

@@ -9,6 +9,12 @@ Timings in the suite are shortened (keepalive 1s, the home gives up a
 silent stream after 2s, backoff 200ms → 3s, stable period 3s) except where
 a scenario measures what a user would see.
 
+Every scenario runs on either backend: remote hosts through the fake ssh,
+or as host containers over real ssh (`TOWER_HOSTS=container`). The steps
+real ssh cannot be made to take run on the fake only: ssh itself exiting
+42 or 43 (S06, LS09) and the Tailscale check (S15). A status is the
+fake's unless it says otherwise.
+
 ## Core edge cases
 
 | ID | What must hold | Package | Status |
@@ -95,7 +101,7 @@ See [design/install.md](design/install.md).
 | --- | --- | --- | --- |
 | LC01 | Cold start, attach, wake, upgrade: the host never shows up empty; a reattach after a wake is fast | towerd, loop | pass |
 | LC02 | A clean drop reconnects within 200ms of a stable link | towerd | pass |
-| LC03 | A link half-open after a network change: the client back in seconds, faster with the interface watcher | towerd | pass |
+| LC03 | A link half-open after a network change: the client back in seconds, faster with the interface watcher | towerd | pass; over real ssh fail at RTT 400 (progress.md) |
 | LC04 | A 20s blackout: the loop's reattach does not sleep through the link's return | loop, towerd | pass |
 | LC05 | A slow but live link (200–800ms each way, 30s) is never dropped | stream, towerd | pass |
 | LC06 | A switch to a host half-open 1s ago lands in seconds | towerd, loop | pass |
@@ -156,9 +162,9 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 
 LS06 and LS07 are tests of `internal/relay` (`go test ./internal/relay`):
 they need no host. LS08 is there too against a command given the terminal
-(`mise run test:full` for its 200 MiB runs), and in this suite through the
-fake ssh to a host with a pty, relayed against the fake ssh given the
-terminal (`ls08_test.go`).
+(`mise run test:full` for its 200 MiB runs), and in this suite through
+ssh to a host with a pty, relayed against ssh given the terminal
+(`ls08_test.go`).
 
 ## Real hosts
 

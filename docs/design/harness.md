@@ -2,7 +2,21 @@
 
 `test/scenario` is the acceptance suite. It runs only on request
 (`TOWER_SCENARIOS=1`, which `mise run scenarios` sets with an isolated
-`TMUX_TMPDIR`, `TOWER_TEST_DIR` and `TMPDIR`).
+`TMUX_TMPDIR`, `TOWER_TEST_DIR` and `TMPDIR`), on either backend: the
+fake ssh, or host containers over real ssh (`TOWER_HOSTS=container`).
+
+## Tiers
+
+A scenario that measures or bounds a time runs alone: the serial tier
+(LC, LH, LV, LD, LS08, U08, A01, S15, S20, S23, `TestHarnessLinks`, the
+R family), which `go test` runs first. Every other scenario calls
+`parallel(t)` first thing and runs, once the serial tier is done,
+alongside the others: `TOWER_PARALLEL` worlds at a time (4 by default),
+as `-test.parallel`, which `TestMain` sets unless the command line gives
+it. A parallel test's time is counted from its turn. Nothing a world
+makes is shared with another (its directory, tmux sockets, ssh config,
+containers), and the sweeps match a world's own directory with its
+trailing `/`, so `i04` does not reach `i04-dev`.
 
 ## Pieces
 
@@ -17,11 +31,12 @@
 | `fakessh/` | the fake ssh |
 | `link_test.go` | links and faults: the World's calls, put in place as the fake's knobs or by the container backend |
 | `links_check_test.go` | `TestHarnessLinks`: each link setting and fault checked on either backend |
-| `container_test.go`, `hosts/` | the container backend: host containers reached over real ssh (`TOWER_HOSTS=container`) |
+| `tiers_test.go` | the serial and parallel tiers |
+| `container_test.go`, `hosts/`, `hostagent/` | the container backend: host containers reached over real ssh (`TOWER_HOSTS=container`), and the agent in each |
 | `sshcall/` | an ssh command line read as ssh does, and the call log (`fake/ssh.log`) both ssh stand-ins write |
 | `sshwrap/` | ssh for container hosts: logs the call, then runs real ssh with the world's config |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
-| `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls08`, `a_atlas` so far |
+| `s*_test.go` … | the scenarios, one file per family (`s_core`, `s_links`, `s_data`, `s_handoff`, `s_loop`, `dash`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls`, `a_atlas`, `u_dash`, `r`, …) |
 
 ## Hosts
 
@@ -33,9 +48,11 @@ it (`w.SSH`, below). A host's processes run with:
 
 - `HOME` and `XDG_CONFIG_HOME` in an empty directory, so tmux servers tower
   starts read no user config;
-- `TOWER_HOME=<dir>/home-<machine>`, `TOWER_MACHINE_ID=<machine>`,
+- `TOWER_HOME=<dir>/home-<machine>`, `TOWER_MACHINE_ID=<machine>` (a
+  container's own `/etc/machine-id` for a container host),
   `TOWER_TMUX=-L <sock>`;
-- `TOWER_SSH=<the fake ssh>`, `TOWER_FAKE_DIR=<dir>/fake`;
+- `TOWER_SSH=<the fake ssh>` (`sshwrap` on the container backend),
+  `TOWER_FAKE_DIR=<dir>/fake`;
 - `TOWER_TEST_TIMING=<dir>/marks` (timing marks, `config.Mark`),
   `TOWER_TEST_NAME=<host>`;
 - the test timings below, then the host's own extras.
@@ -142,18 +159,19 @@ a host on this machine, real mechanisms for a container.
 | Call | The fake ssh | A host container |
 | --- | --- | --- |
 | `w.Shape(alias, f)`: `DelayMs`, `JitterMs`, `BwKBps` | delayed, paced chunks | `tc netem` delay, jitter and rate on `eth0` and, through `ifb0`, its ingress |
-| `Shape`: `WindowKB` | bytes in flight per direction | none: ssh's channel window is 2 MB (fails the scenario) |
+| `Shape`: `WindowKB` | bytes in flight per direction | none: ssh's channel window is 2 MB, so a stalled pipe needs `Stall` alone (`lhWindow`: LH, LS09); any other use fails the scenario |
 | `Shape`: `Pty`, `Mux` | a pty for `ssh -t`; a shared master | always: ssh's own |
-| `w.Freeze(alias, on)` | new connections hang; sessions off a master give up after the alive window (those on a master ride it out) | `iptables` DROP of all TCP (`TT-FREEZE`): every connection gives up, the far side never hears |
+| `w.Freeze(alias, on)` | new connections hang; sessions off a master give up after the alive window (those on a master ride it out) | `iptables` DROP of the name's port, both ways (`TT-FREEZE-IN` by destination port, `TT-FREEZE-OUT` by source port): every connection gives up, the far side never hears |
 | `w.NetworkChange(alias, at)` | masters made before `at` dead from `at` | DROP, both ways and for good, of each connection established now (`TT-HALFOPEN`); `at` not in the future |
-| `w.Stall(alias, on)` | no byte moves; ssh never gives up | the processes ssh sessions run there (descendants of `sshd: tt@…`) stopped by the agent, and new ones as they come, every 20ms; sshd still answers |
-| `w.Drop(alias)` | live connections closed | the container's `sshd: tt…` processes killed |
+| `w.Stall(alias, on)` | no byte moves; ssh never gives up | the processes the name's sessions run there (their `SSH_CONNECTION` names its port) stopped by the agent, and new ones as they come, every 20ms; sshd still answers, other names' sessions run on |
+| `w.Drop(alias)` | live connections closed | the sshd processes holding the name's port's connections (`ss -p`) killed |
 | `w.Down(alias, how)` | ssh's message for `how` | per name in the world's ssh config: `refused` port 1, `timeout` port 2222 (SYNs dropped), `password` port 2223 (an sshd with key auth off), `resolve` an `.invalid` name, `hostkey` a known_hosts with another key, `auth` a key no host authorizes; `tscheck` none |
-| `w.ExitWith(alias, code)`, `w.SlowControl(alias, ms)` | forced exit status; a slow `ssh -O` | none (fails the scenario) |
+| `w.ExitWith(alias, code)`, `w.SlowControl(alias, ms)` | forced exit status; a slow `ssh -O` | none (fails the scenario): exit 255 is a `Drop`; 42 and 43 from ssh itself are fake-only steps (S06 (c), LS09 3–4), towerd's reading of them unit-tested; a wedged master is the home's real one stopped (`w.masterPid`, LH05) |
 | `w.Heal(alias)`, `w.Reset(alias)` | faults off (and the link unshaped) | the same; a network change's connections stay dead |
 
-On a container the link and every fault but `Down` belong to the
-container, whichever of its names sets them. `TestHarnessLinks` checks
+On a container the shape and a network change belong to the container,
+whichever of its names sets them, as a machine's network does; a
+freeze, a stall, a drop and `Down` belong to the name (its port). `TestHarnessLinks` checks
 each row on either backend: a session on a master at RTT 100ms takes
 205–208ms, 512 KiB at 256 KB/s 1.9–2.2s, each `Down` reads as tower
 expects, a drop or a freeze ends a session (the frozen one after the
@@ -187,13 +205,16 @@ dead and give up after the alive window).
 
 With `TOWER_HOSTS=container` a host made with `SSHHost()` is a container
 running sshd and tmux, reached over real ssh; without it, or for a host
-made without `SSHHost()`, the fake ssh as before. LC08 and LS10 are
-ported so far.
+made without `SSHHost()`, the fake ssh as before. Every scenario's
+remote hosts are `SSHHost()`; homes stay on this machine. What only the
+fake can do stays in fake-only steps (`if !w.real`): tower's own exit
+codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
 
 - `hosts/` holds the image (Ubuntu 24.04, OpenSSH, tmux built from
   source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
-  compose file: a pool of `TT_HOSTS` hosts (6 by default),
-  `tt-<run>-host-<n>`. `TestMain` builds the image (`tt-scenario-host`,
+  compose file: a pool of `TT_HOSTS` hosts (by default 4 for each world
+  that runs at once, the most a world takes: S18), `tt-<run>-host-<n>`.
+  The image has git, for the dashboard's repo data. `TestMain` builds the image (`tt-scenario-host`,
   from cache after the first build; `TT_TMUX_VERSION` picks tmux), takes
   down earlier runs' projects whose process is gone (a `go test`
   timeout skips teardown), brings the project up (`tt-<pid>`) and down
@@ -204,15 +225,20 @@ ported so far.
   uid, so a container host's `TOWER_HOME`, timing marks and tmux and
   towerd sockets are where the harness looks; only ssh crosses the
   network. `h.Tmux` starts a container host's server in the container
-  (any command with `-f`, through the agent) and reaches it through its
-  socket otherwise.
+  (any command with `-f`, through the agent, by tmux's path there) and
+  reaches it through its socket otherwise; `h.Run` runs any of the host's
+  commands there (towerd started detached), and a terminal on a
+  container host is a `docker exec -it` as `tt`, `LANG` and `LC_*`
+  passed.
 - Each container has pids of its own, as a machine has, with tini as
   pid 1 to reap what daemons leave. This machine still sees its
   processes, under other pids: a pid read on a container host (a pid
   file, a tmux client) is translated before the harness signals it
   (`h.HostPid`, from `NSpid` in `/proc`; `h.TowerdPid` and teardown do).
   The sweeps by `TOWER_HOME` and by control path see container
-  processes as any other.
+  processes as any other; `h.SplitFar` sets a container's apart (a far
+  side real ssh strands, LS03). The agent has `SYS_PTRACE` to read a
+  session process's environment and `ss -p` across users.
 - An agent in each container (`hostagent`, root) serves the harness on
   `$TOWER_TEST_DIR/slots/<hostname>.sock`, owned by the test user, one
   JSON call per connection: `assign` (the world's environment file,
@@ -221,22 +247,28 @@ ported so far.
   root), `netem`, `freeze`, `halfopen`, `drop`, `stall`. It sees only its
   container's processes, so whatever it signals is the container's; a
   change costs a unix-socket call, not a `docker exec`.
-- A world takes a free container for each `SSHHost()` host
-  (`assign`); teardown, once its own checks are done, resets it
-  (`release`) for the next world.
+- A world takes a free container for each machine of its `SSHHost()`
+  hosts (`assign`; hosts with one `Machine` share it, waiting while the
+  pool is taken); teardown, once its own checks are done, resets it
+  (`release`) for the next world. Each container writes a random
+  machine id at start, which its hosts' `TOWER_MACHINE_ID` reports.
 - sshd takes key auth only and runs every command through `tt-run`
-  (`ForceCommand`), which sources the host's environment from
-  `$TOWER_TEST_DIR/slots/<hostname>.env`, written when the world makes
-  the host; then `sh -c` the command, as sshd runs it. Everything else is
-  sshd's default, `MaxSessions` included.
-- From its first container host on, every host of the world has
-  `TOWER_SSH=sshwrap`, which logs the call to `fake/ssh.log` as the fake
+  (`ForceCommand`), which sources the environment of the host the ssh
+  name stands for: `<world>/ctr-<hostname>/<port>.env`, picked by the
+  server port in `SSH_CONNECTION`, in the directory `assign` wrote to
+  `/etc/tt-env-dir`; then `sh -c` the command, as sshd runs it.
+  Everything else is sshd's default, `MaxSessions` included.
+- On the container backend every host of every world has
+  `TOWER_SSH=sshwrap` from the world's start (`w.real`), so a tmux
+  server started before the first container host has it too. It logs
+  the call to `fake/ssh.log` as the fake
   does (`w.SSHLog` reads both) and runs `ssh -F $TOWER_TEST_SSH_CONFIG`:
   the world's names to the containers' addresses, the run's keys and
   known hosts, neither the user's nor the system's config. One key per
   run serves every world (each world's names, config and control
   masters are its own); the control paths are tower's own, short
-  enough.
+  enough. `w.masterPid(home, alias)` is a home's control master
+  (`ssh -O check`).
 - Each ssh name of a container gets a port of its own (sshd listens on
   22 and 2201–2215, IPv4 only, its limit of 16 sockets): ssh keys a
   control master by host, port and user, so names of one host would
@@ -249,7 +281,8 @@ ported so far.
 Terminals first (a live loop would restart a towerd), then every towerd
 (SIGCONT, SIGTERM, SIGKILL after 5s), the holders, every session of every
 server; each server must exit within 10s, or the test fails. Leftover
-processes with the world's `TOWER_HOME` are killed. The world's directory
+processes with the world's `TOWER_HOME`, or naming the world's directory
+(`pkill -f <dir>/`), are killed. The world's directory
 is removed when the test passed. Over real ssh, the home's control
 masters are ended by their control path: ssh's `[mux]` process title
 overwrites their environment.
