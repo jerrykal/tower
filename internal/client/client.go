@@ -192,14 +192,7 @@ func (c *Client) start() error {
 	if err != nil {
 		return err
 	}
-	args := []string{"towerd"}
-	if c.Bridged {
-		args = append(args, "--bridged")
-	}
-	if len(c.Env.Tmux) > 0 {
-		args = append(args, "--tmux", strings.Join(c.Env.Tmux, " "))
-	}
-	cmd := exec.Command(self, args...)
+	cmd := exec.Command(self, c.startArgs()...)
 	cmd.Env = append(os.Environ(), "TOWER_MKEY="+c.Env.MKey)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Dir = "/"
@@ -208,6 +201,18 @@ func (c *Client) start() error {
 	}
 	go cmd.Wait() // reap a starter that lost the lock
 	return nil
+}
+
+// startArgs are the arguments of the towerd start launches. --tmux is
+// always there: without it an empty selection (the default server) would
+// be read from TOWER_TMUX in the environment the towerd inherits, which
+// may name another server (a remote's shell profile, a bridge's session).
+func (c *Client) startArgs() []string {
+	args := []string{"towerd"}
+	if c.Bridged {
+		args = append(args, "--bridged")
+	}
+	return append(args, "--tmux", strings.Join(c.Env.Tmux, " "))
 }
 
 // killWedged SIGKILLs the towerd in towerd.pid if it holds the lock and

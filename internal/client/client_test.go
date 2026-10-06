@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -83,6 +84,25 @@ func TestNoTowerd(t *testing.T) {
 	err := (&Client{Env: e}).Call(context.Background(), "status", nil, nil)
 	if !errors.Is(err, ErrNoTowerd) {
 		t.Fatal(err)
+	}
+}
+
+// The default server (no tmux arguments) is named as such: a towerd
+// started for it never takes TOWER_TMUX from its environment.
+func TestStartArgs(t *testing.T) {
+	for _, tc := range []struct {
+		tmux    []string
+		bridged bool
+		want    []string
+	}{
+		{[]string{}, true, []string{"towerd", "--bridged", "--tmux", ""}},
+		{nil, false, []string{"towerd", "--tmux", ""}},
+		{[]string{"-L", "work"}, false, []string{"towerd", "--tmux", "-L work"}},
+	} {
+		c := &Client{Env: &config.Env{Tmux: tc.tmux}, Bridged: tc.bridged}
+		if got := c.startArgs(); !slices.Equal(got, tc.want) {
+			t.Errorf("tmux %q, bridged %v: %q, want %q", tc.tmux, tc.bridged, got, tc.want)
+		}
 	}
 }
 
