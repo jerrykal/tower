@@ -26,7 +26,9 @@ type Term struct {
 }
 
 // Term starts a terminal running argv with host h's environment plus
-// extra. After argv exits the pane prints LOOP-EXIT=<code>.
+// extra. After argv exits the pane prints LOOP-EXIT=<code>. On a
+// container host argv runs in the container, on a terminal of its own
+// there (docker exec): a user at that machine.
 func (w *World) Term(name string, h *Host, extra map[string]string, argv ...string) *Term {
 	w.T.Helper()
 	t := &Term{w: w, Name: name, Sock: "tt-" + w.ID + "-term-" + name}
@@ -37,15 +39,23 @@ func (w *World) Term(name string, h *Host, extra map[string]string, argv ...stri
 	var b strings.Builder
 	b.WriteString("env -u TMUX -u TMUX_PANE")
 	for _, k := range keys {
-		if strings.HasPrefix(k, "TOWER_") || k == "PATH" || k == "HOME" || strings.HasPrefix(k, "XDG_") && strings.HasSuffix(k, "_HOME") || k == "TMPDIR" || k == "TMUX_TMPDIR" {
+		if strings.HasPrefix(k, "TOWER_") || k == "PATH" || k == "HOME" || strings.HasPrefix(k, "XDG_") && strings.HasSuffix(k, "_HOME") || k == "TMPDIR" || k == "TMUX_TMPDIR" ||
+			h.ctr != nil && (k == "LANG" || strings.HasPrefix(k, "LC_")) {
 			b.WriteString(" " + transport.ShellQuote(k+"="+env[k]))
 		}
 	}
 	b.WriteString(" TERM=xterm-256color")
-	for _, a := range argv {
+	for i, a := range argv {
+		if i == 0 && h.ctr != nil && a == tmux.Bin() {
+			a = "tmux" // the container's own
+		}
 		b.WriteString(" " + transport.ShellQuote(a))
 	}
-	b.WriteString("; echo LOOP-EXIT=$?; sleep 600")
+	cmd := b.String()
+	if h.ctr != nil {
+		cmd = "docker exec -it -u tt -w " + transport.ShellQuote(env["HOME"]) + " " + h.ctr.ctr + " /bin/sh -c " + transport.ShellQuote(cmd)
+	}
+	cmd += "; echo LOOP-EXIT=$?; sleep 600"
 	// The server's options are in place before its pane starts. The
 	// colours make the terminal answer colour queries, as a real one
 	// does: a tmux client still waiting on one holds a lone ESC for 500ms
@@ -53,7 +63,7 @@ func (w *World) Term(name string, h *Host, extra map[string]string, argv ...stri
 	if _, err := t.tmux("-f", "/dev/null", "start-server", ";",
 		"set", "-g", "escape-time", "0", ";",
 		"set", "-g", "window-style", "fg=#e0def4,bg=#191724", ";",
-		"new-session", "-d", "-s", "term", "-x", "110", "-y", "32", b.String()); err != nil {
+		"new-session", "-d", "-s", "term", "-x", "110", "-y", "32", cmd); err != nil {
 		w.T.Fatal(err)
 	}
 	w.terms = append(w.terms, t)

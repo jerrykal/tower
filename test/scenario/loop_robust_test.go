@@ -20,7 +20,7 @@ func (w *World) downHost(name string) {
 func TestLoopCtrlC(t *testing.T) {
 	w := NewWorld(t, "ctlc")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	stdSetup(w, a, b)
 
 	// Reconnecting: B lost under the attach, prepare waiting for it.

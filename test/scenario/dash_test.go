@@ -55,7 +55,7 @@ func (h *Host) hasSession(name string) bool { return slices.Contains(h.Sessions(
 func TestS01(t *testing.T) {
 	w := NewWorld(t, "s01")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "banana"})
+	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
 	stdSetup(w, a, b)
 	w.Home(b) // B's towerd, started by A's bridge: a reload makes it a home
 	st := b.Status()
@@ -114,7 +114,7 @@ func TestS01(t *testing.T) {
 func TestS09(t *testing.T) {
 	w := NewWorld(t, "s09")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "doomed"})
+	b := w.Host("B", []string{"bravo", "doomed"}, SSHHost())
 	stdSetup(w, a, b)
 	still := map[string]string{"TOWER_LIVE": "0"}
 	t1 := w.Loop("t1", a, still)
@@ -153,7 +153,7 @@ func TestS09(t *testing.T) {
 func TestS11(t *testing.T) {
 	w := NewWorld(t, "s11")
 	a := w.Host("A", []string{"alpha", "apple"})
-	b := w.Host("B", []string{"bravo", "berry"})
+	b := w.Host("B", []string{"bravo", "berry"}, SSHHost())
 	stdSetup(w, a, b)
 
 	// (a) tower typed in a tmux session opens the popup there.
@@ -222,8 +222,8 @@ func TestS11(t *testing.T) {
 func TestS19(t *testing.T) {
 	w := NewWorld(t, "s19")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	stdSetup(w, a, b, c)
 	names := []string{"a b", "x:y", "p.q", "h#sh", "#{pid}", "q'uote", `dq"x`, "ünï😀", "-lead", "=eq",
 		`back\slash`, "$HOME", "~tilde", "semi;colon", "brace{}", "%end 1 1"}

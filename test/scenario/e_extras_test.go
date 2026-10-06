@@ -28,7 +28,7 @@ func TestE02(t *testing.T) {
 	w := NewWorld(t, "e02")
 	w.Timing(map[string]string{"TOWER_IDLE": "1500"})
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitLink(a, "B", "up", 5*time.Second)
 	apid, bpid := a.TowerdPid(), b.TowerdPid()
@@ -51,7 +51,7 @@ func TestE02(t *testing.T) {
 func TestE03(t *testing.T) {
 	w := NewWorld(t, "e03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
 	w.Freeze("B", true)
@@ -70,7 +70,7 @@ func TestE03(t *testing.T) {
 func TestE04(t *testing.T) {
 	w := NewWorld(t, "e04")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a)
 	out, err := a.Tower("host", "add", "B", "--name", "bee", "--tmux", "-L "+b.Sock, "--tower", towerBin)
 	t.Logf("host add:\n%s", out)
