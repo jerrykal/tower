@@ -386,7 +386,8 @@ type loopRec struct {
   host: still there → exit (a pending switch discarded, said so); gone →
   the previous session if nobody is on it, else the most recently used
   session nobody is on, on any reachable host ("tower: X ended; now on
-  Y"), else exit.
+  Y"), else exit. A client of this home's whose attach is over (an older
+  generation than its loop's, not yet reaped) is nobody.
 - `standby`: offers for up, unstalled hosts up for 1s, standby allowed,
   not the loop's current host; key `link gen | towerd id | version | tmux
   args | tower path`.

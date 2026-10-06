@@ -777,18 +777,30 @@ func (h *homeRole) sessionGone(ctx context.Context, r proto.Ref) (bool, error) {
 
 // moveOn picks where a loop goes when its session ended: its previous
 // session if nobody is on it, else the most recently used session nobody
-// is on, on any reachable host.
+// is on, on any reachable host. A client of this home's whose attach is
+// over (an older generation than its loop's) is nobody: the session
+// counts it attached only until the reap detaches it (decision 112), and
+// the previous session is where the loop's own last attach was.
 func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
 	v := h.buildView(time.Now())
+	over := map[[2]string]int{}
+	for hostID, cs := range h.clientsB {
+		for _, c := range cs {
+			if l := h.loops[c.Loop]; c.Home == h.d.id && l != nil && c.Gen != l.gen {
+				over[[2]string{hostID, c.Session}]++
+			}
+		}
+	}
+	taken := func(hostID string, s proto.Session) bool { return s.Attached > over[[2]string{hostID, s.ID}] }
 	free := func(r proto.Ref) bool {
 		host := v.HostByID(r.Host)
 		if host == nil || !host.Reachable() || host.Inst != r.Inst && r.Inst != "" {
 			return false
 		}
 		i := slices.IndexFunc(host.Sessions, func(s proto.Session) bool { return s.ID == r.Session })
-		return i >= 0 && host.Sessions[i].Attached == 0
+		return i >= 0 && !taken(host.ID, host.Sessions[i])
 	}
 	if l := h.loops[loop]; l != nil && !l.prev.IsZero() && !l.prev.SameSession(ended) && free(l.prev) {
 		p := l.prev
@@ -802,7 +814,7 @@ func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 			continue
 		}
 		for _, s := range host.Sessions {
-			if s.Attached > 0 || host.ID == ended.Host && s.ID == ended.Session {
+			if taken(host.ID, s) || host.ID == ended.Host && s.ID == ended.Session {
 				continue
 			}
 			if bestAgo < 0 || s.Ago < bestAgo {

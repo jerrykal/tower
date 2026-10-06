@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/config"
+	"github.com/jerrykal/tower/internal/dirs"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
 )
@@ -379,6 +380,40 @@ func TestLastFollowsTheClientThatMoved(t *testing.T) {
 	d.mu.Unlock()
 	if h.last.Session != "$2" {
 		t.Fatalf("last is %+v, want the client that moved, on $2", h.last)
+	}
+}
+
+// A session ended, the loop goes back to its previous session even while
+// the loop's own older client is still attached there, not yet reaped; a
+// client of anyone else's keeps it taken.
+func TestMoveOnPassesOverTheLoopsOwnOldClient(t *testing.T) {
+	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{}), env: &config.Env{StateDir: t.TempDir()}}
+	d.dirs = dirs.New(dirs.Options{Home: t.TempDir()})
+	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, savedAt: time.Now()}
+	d.home = h
+	d.snap = &snapshot{At: time.Now(), Sessions: []proto.Session{
+		{ID: "$1", Name: "prev", Attached: 1, Ago: 5000},
+		{ID: "$2", Name: "other", Ago: 9000},
+	}}
+	ended := proto.Ref{Host: "home0001", Session: "$3"}
+	h.loops["L"] = &loopRec{id: "L", gen: 3, cur: ended, prev: proto.Ref{Host: "home0001", Session: "$1"}, seen: true}
+	for _, tc := range []struct {
+		name   string
+		client proto.Client
+		want   string
+	}{
+		{"its own older attach", proto.Client{Loop: "L", Gen: 2, Home: "home0001", Session: "$1"}, "$1"},
+		{"another home's client", proto.Client{Loop: "L", Gen: 2, Home: "home0002", Session: "$1"}, "$2"},
+		{"another loop's live client", proto.Client{Loop: "M", Gen: 1, Home: "home0001", Session: "$1"}, "$2"},
+	} {
+		h.clientsB["home0001"] = []proto.Client{tc.client}
+		if tc.client.Loop == "M" {
+			h.loops["M"] = &loopRec{id: "M", gen: 1, seen: true}
+		}
+		next, ok := h.moveOn("L", ended)
+		if !ok || next.Session != tc.want {
+			t.Fatalf("%s: moved on to %+v (%v), want %s", tc.name, next, ok, tc.want)
+		}
 	}
 }
 
