@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -137,8 +138,7 @@ func handle(r Request) Reply {
 			`iptables -A TT-HALFOPEN -p tcp -s "$ip" --sport "$port" --dport "$lport" -j DROP; ` +
 			`iptables -A TT-HALFOPEN -p tcp -d "$ip" --dport "$port" --sport "$lport" -j DROP; done`)
 	case "drop":
-		// The sshd processes holding the port's connections: they close.
-		return sh(fmt.Sprintf(`ss -Htnp state established '( sport = :%d )' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u | xargs -r kill -9`, r.Port))
+		return drop(r.Port)
 	case "stall":
 		if r.On {
 			stallOn(r.Port)
@@ -221,6 +221,24 @@ func run(cmdline string, root bool, vars map[string]string, ms int) Reply {
 }
 
 // sh runs a root script whose failure is an error.
+// drop kills the sshd processes holding the port's connections, which
+// closes them. One that exits meanwhile is gone already.
+func drop(port int) Reply {
+	out, err := exec.Command("ss", "-Htnp", "state", "established", fmt.Sprintf("( sport = :%d )", port)).Output()
+	if err != nil {
+		return Reply{Err: "ss: " + err.Error()}
+	}
+	for _, m := range pidRE.FindAllSubmatch(out, -1) {
+		pid, _ := strconv.Atoi(string(m[1]))
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return Reply{Err: fmt.Sprintf("kill %d: %v", pid, err)}
+		}
+	}
+	return Reply{}
+}
+
+var pidRE = regexp.MustCompile(`pid=(\d+)`)
+
 func sh(script string) Reply {
 	rep := run(script, true, nil, 0)
 	if rep.Code != 0 && rep.Err == "" {
