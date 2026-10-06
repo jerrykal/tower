@@ -46,10 +46,16 @@ func (w *World) Term(name string, h *Host, extra map[string]string, argv ...stri
 		b.WriteString(" " + transport.ShellQuote(a))
 	}
 	b.WriteString("; echo LOOP-EXIT=$?; sleep 600")
-	if _, err := t.tmux("-f", "/dev/null", "new-session", "-d", "-s", "term", "-x", "110", "-y", "32", b.String()); err != nil {
+	// The server's options are in place before its pane starts. The
+	// colours make the terminal answer colour queries, as a real one
+	// does: a tmux client still waiting on one holds a lone ESC for 500ms
+	// (up to 5s after it attaches) instead of its escape-time.
+	if _, err := t.tmux("-f", "/dev/null", "start-server", ";",
+		"set", "-g", "escape-time", "0", ";",
+		"set", "-g", "window-style", "fg=#e0def4,bg=#191724", ";",
+		"new-session", "-d", "-s", "term", "-x", "110", "-y", "32", b.String()); err != nil {
 		w.T.Fatal(err)
 	}
-	t.tmux("set", "-g", "escape-time", "0")
 	w.terms = append(w.terms, t)
 	return t
 }
