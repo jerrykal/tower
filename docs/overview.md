@@ -74,12 +74,12 @@ tmux wherever the network allows, and the same habits.
 
   ```toml
   [[host]]
-  name = "gb200"
-  ssh  = "gb200"
+  name = "charlie"
+  ssh  = "charlie"
 
   [[host]]
-  name = "pp"
-  ssh  = "pp"
+  name = "delta"
+  ssh  = "delta"
   enabled = false
   ```
 
@@ -127,14 +127,14 @@ flowchart LR
         home -- "tmux -C" --> tmuxL
         loop -- "tmux attach" --> tmuxL
     end
-    subgraph gb200["gb200"]
+    subgraph charlie["charlie"]
         remA(["towerd<br/>remote"])
         tmuxA[("tmux server")]
         dashA["dashboard"]
         remA -- "tmux -C" --> tmuxA
         dashA -- "unix socket" --> remA
     end
-    subgraph pc["pc"]
+    subgraph alpha["alpha"]
         remB(["towerd<br/>remote"])
         tmuxB[("tmux server")]
         remB -- "tmux -C" --> tmuxB

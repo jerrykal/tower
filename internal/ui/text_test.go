@@ -100,7 +100,7 @@ func TestCanvas(t *testing.T) {
 }
 
 func TestMatchWords(t *testing.T) {
-	ws := splitQuery([]rune("gb200:train-llm:2 tens"))
+	ws := splitQuery([]rune("charlie:train-llm:2 tens"))
 	if len(ws) != 4 || ws[2].num != 2 || !ws[2].index || ws[0].index {
 		t.Fatalf("split: %+v", ws)
 	}

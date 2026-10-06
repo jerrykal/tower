@@ -133,7 +133,7 @@ and an install end to end through a local runner.
 | I03 | A pinned `tower =` host is never installed to; a missing pinned binary is `failed: tower is not installed` |
 | I04 | Another platform: the build comes from the dist cache; missing there, it is downloaded from the release server with its checksum verified; a bad checksum is refused; a dev build with no cache fails with the `mise run dist` fix |
 | I05 | Two homes installing on one host at once leave one whole binary and a valid `current` |
-| R03 | `pc` and `831`: install into `~/.cache/tower-test/harness/install` over real ssh, stream, and clean up |
+| R03 | `alpha` and `bravo`: install into `~/.cache/tower-test/harness/install` over real ssh, stream, and clean up |
 
 The suite simulates another platform with a `uname` shim first on that
 host's PATH (`Platform("Linux x86_64")`); the archives it serves hold the

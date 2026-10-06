@@ -611,10 +611,10 @@ func TestSSHReasonKept(t *testing.T) {
 	ssh := filepath.Join(w.root, "ssh")
 	// Plenty of noise first, so a reader that stops early misses the end.
 	noise := filepath.Join(w.root, "noise")
-	os.WriteFile(noise, []byte(strings.Repeat("debug1: a line of ssh's chatter to fill the pipe\n", 1200)+"pc: Permission denied (publickey).\n"), 0o600)
+	os.WriteFile(noise, []byte(strings.Repeat("debug1: a line of ssh's chatter to fill the pipe\n", 1200)+"alpha: Permission denied (publickey).\n"), 0o600)
 	os.WriteFile(ssh, []byte("#!/bin/sh\ncat "+noise+" >&2\nexit 255\n"), 0o755)
 	t.Setenv("TOWER_SSH", ssh)
-	a.hosts(config.Host{Name: "pc", SSH: "pc"})
+	a.hosts(config.Host{Name: "alpha", SSH: "alpha"})
 	d, err := Start(Options{Env: a.env, Version: "0.0.1-unit", Transport: newSSHTransport(a.env.CMDir()), Self: w.keep, LogTo: a.log, Name: "A"})
 	if err != nil {
 		t.Fatal(err)
@@ -624,13 +624,13 @@ func TestSSHReasonKept(t *testing.T) {
 	// the reason.
 	seen := 0
 	for seen < 5 {
-		before := a.link("pc").Attempts
+		before := a.link("alpha").Attempts
 		w.eventually(5*time.Second, "another attempt down", func() bool {
-			l := a.link("pc")
+			l := a.link("alpha")
 			return l.Attempts > before && l.Status == proto.StatusDown
 		})
-		if r := a.link("pc").Reason; !strings.Contains(r, "ssh-add") {
-			t.Fatalf("attempt %d: pc is down for %q, want ssh's reason and its fix", a.link("pc").Attempts, r)
+		if r := a.link("alpha").Reason; !strings.Contains(r, "ssh-add") {
+			t.Fatalf("attempt %d: alpha is down for %q, want ssh's reason and its fix", a.link("alpha").Attempts, r)
 		}
 		seen++
 	}

@@ -78,8 +78,8 @@ func TestMsgRoundTripAndUnknown(t *testing.T) {
 }
 
 func TestRef(t *testing.T) {
-	r := Ref{Host: "abcd", Name: "pc", Session: "$3", Label: "work", Window: "@2"}
-	if r.String() != "pc:work:@2" {
+	r := Ref{Host: "abcd", Name: "alpha", Session: "$3", Label: "work", Window: "@2"}
+	if r.String() != "alpha:work:@2" {
 		t.Fatal(r.String())
 	}
 	if (Ref{}).IsZero() != true || r.IsZero() {

@@ -162,11 +162,13 @@ terminal (`ls08_test.go`).
 
 ## Real hosts
 
-Run by hand, never by an agent: `TOWER_REAL=pc,831 mise run scenarios -run R0`.
+Run by hand, never by an agent:
+`TOWER_REAL=<host>,<host> mise run scenarios -run R0`. Below, `alpha` and
+`bravo` stand for the first and second host named.
 
 | ID | What must hold | Status |
 | --- | --- | --- |
-| R01 | laptop → `pc` → `831` over real ssh: bridge start, an unresolvable host, control paths, attach, hand-off, a kill relayed, a remote dashboard, a wake reset; teardown leaves nothing | pass (bridges up 0.49s; picker → pc 0.29s; hand-off pc → 831 0.35s; kill relayed 831 → home → pc 131ms, 115ms of it ssh; streams back 0.15s and the client 0.27s after a wake) |
+| R01 | laptop → `alpha` → `bravo` over real ssh: bridge start, an unresolvable host, control paths, attach, hand-off, a kill relayed, a remote dashboard, a wake reset; teardown leaves nothing | pass (bridges up 0.49s; picker → alpha 0.29s; hand-off alpha → bravo 0.35s; kill relayed bravo → home → alpha 131ms, 115ms of it ssh; streams back 0.15s and the client 0.27s after a wake) |
 | R03 | Install on connect over real ssh into `~/.cache/tower-test/harness/install` (`TOWER_INSTALL_DIR`), the linux/amd64 build from a dist cache; up, `current` swapped, no install again on reconnect | pass (installed and up in 1.8–3.8s) |
-| R02 | A hand-off from `pc` to the laptop and back, recorded at the terminal: held across the teardown and the new attach; back through `pc`'s standby | pass (switch stored → new client: pc → laptop 11ms, laptop → pc through its standby 17–23ms; held across the leave and the enter; a standby shim exits 30s after its loop) |
-| R04 | Hand-offs `pc` → `831` → `pc` → `831` → the laptop through standbys: each host left keeps no client, the host the terminal is on only its own | pass (the host left clean at the first look, 0.1–0.25s with the look's ssh; clean without the home's detach as well: the leak seen in real use does not show here) |
+| R02 | A hand-off from `alpha` to the laptop and back, recorded at the terminal: held across the teardown and the new attach; back through `alpha`'s standby | pass (switch stored → new client: alpha → laptop 11ms, laptop → alpha through its standby 17–23ms; held across the leave and the enter; a standby shim exits 30s after its loop) |
+| R04 | Hand-offs `alpha` → `bravo` → `alpha` → `bravo` → the laptop through standbys: each host left keeps no client, the host the terminal is on only its own | pass (the host left clean at the first look, 0.1–0.25s with the look's ssh; clean without the home's detach as well: the leak seen in real use does not show here) |

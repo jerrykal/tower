@@ -145,7 +145,7 @@ func TestHostsRoundTrip(t *testing.T) {
 		t.Fatal("a missing file is an empty list")
 	}
 	off := false
-	in := []Host{{Name: "gb200", SSH: "gb200"}, {Name: "pp", SSH: "pp", Enabled: &off, Tmux: "-L work"}}
+	in := []Host{{Name: "charlie", SSH: "charlie"}, {Name: "delta", SSH: "delta", Enabled: &off, Tmux: "-L work"}}
 	if err := SaveHosts(p, in); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestDefaultName(t *testing.T) {
 		// An address stays whole rather than cut at its first dot or
 		// colon; loopback, as the repo names no host's address.
 		"me@[::1]:2222":         "::1",
-		"gb200":                 "gb200",
+		"charlie":               "charlie",
 		"user@host.example.com": "host",
 	}
 	for in, want := range cases {
@@ -179,18 +179,18 @@ func TestDefaultName(t *testing.T) {
 
 func TestHostSame(t *testing.T) {
 	f1, f2, tr := false, false, true
-	a := Host{Name: "pc", SSH: "pc", Standby: &f1}
-	b := Host{Name: "pc", SSH: "pc", Standby: &f2}
+	a := Host{Name: "alpha", SSH: "alpha", Standby: &f1}
+	b := Host{Name: "alpha", SSH: "alpha", Standby: &f2}
 	if !a.Same(b) {
 		t.Fatal("equal settings behind different pointers are the same")
 	}
-	if a.Same(Host{Name: "pc", SSH: "pc", Standby: &tr}) {
+	if a.Same(Host{Name: "alpha", SSH: "alpha", Standby: &tr}) {
 		t.Fatal("standby differs")
 	}
-	if !(Host{Name: "pc", Enabled: &tr}).Same(Host{Name: "pc"}) {
+	if !(Host{Name: "alpha", Enabled: &tr}).Same(Host{Name: "alpha"}) {
 		t.Fatal("enabled = true is the default")
 	}
-	if a.Same(Host{Name: "pc", SSH: "pc", Standby: &f1, Tmux: "-L x"}) {
+	if a.Same(Host{Name: "alpha", SSH: "alpha", Standby: &f1, Tmux: "-L x"}) {
 		t.Fatal("tmux differs")
 	}
 }

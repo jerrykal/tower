@@ -21,11 +21,11 @@ import (
 )
 
 // The real-host scenarios run over real ssh against the hosts named in
-// TOWER_REAL (e.g. pc,831), from the main session only. On each host they
-// use only the tmux socket realSock and only realBase; the user's own
-// tmux, tower and demo there are never touched. Teardown stops the home
-// first (a live home would reconnect and start the remote towerd again),
-// then cleans each host and checks it is clean.
+// TOWER_REAL (two ssh hosts, comma-separated), from the main session
+// only. On each host they use only the tmux socket realSock and only
+// realBase; the user's own tmux, tower and demo there are never touched.
+// Teardown stops the home first (a live home would reconnect and start the
+// remote towerd again), then cleans each host and checks it is clean.
 const (
 	realSock = "tower-test-harness"
 	realBase = ".cache/tower-test/harness" // under the remote home
@@ -34,7 +34,7 @@ const (
 func realHosts(t *testing.T) []string {
 	v := os.Getenv("TOWER_REAL")
 	if v == "" {
-		t.Skip("real hosts: set TOWER_REAL=pc,831")
+		t.Skip("real hosts: set TOWER_REAL=<host>,<host>")
 	}
 	return strings.Split(v, ",")
 }

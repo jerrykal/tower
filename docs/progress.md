@@ -11,13 +11,13 @@ to scan).
 | --- | --- |
 | 1. Skeleton, packaging, v0.0.0 | done |
 | 2. Core: proto, stream, towerd, transport, loop, relay, harness | done; `/code-review xhigh`, all 15 findings fixed |
-| 3. Install on connect | done; `/code-review high`, all 10 findings fixed; R03 passes on `pc` and `831` |
+| 3. Install on connect | done; `/code-review high`, all 10 findings fixed; R03 passes on `alpha` and `bravo` |
 | 4. Dashboard (Atlas) | done; `/code-review medium`, all 5 findings fixed |
 | 5. `prefix o`, daily use, tag v0.0.1 | waits for the user |
 
 ## Waiting for the user
 
-- [ ] The first real install into `~/.local/share/tower` on `pc` and `831`:
+- [ ] The first real install into `~/.local/share/tower` on `alpha` and `bravo`:
       tower installs itself on connect; until now it was only installed
       into `~/.cache/tower-test/harness/install` (R03). Running `tower`
       from a home whose `hosts.toml` lists them does it.
@@ -77,14 +77,14 @@ breadcrumb); alone it passed 5 of 5. Recorded, not loosened.
 | Dashboard data | A01–A05 | pass |
 | Dashboard (Atlas) | U01–U08 | pass (U01: one failure under load, see above) |
 | Standbys and the relay | LS01–LS09 | pass |
-| Real hosts | R01–R03 | pass on `pc` and `831` |
+| Real hosts | R01–R03 | pass on `alpha` and `bravo` |
 
 ## Latency measured
 
 | What | Measured | Reference (prototype) |
 | --- | --- | --- |
-| Switch stored → new client, `pc` → laptop (real ssh) | 11ms | 11ms |
-| Switch stored → new client, laptop → `pc` through its standby | 17–23ms | 17ms |
+| Switch stored → new client, `alpha` → laptop (real ssh) | 11ms | 11ms |
+| Switch stored → new client, laptop → `alpha` through its standby | 17–23ms | 17ms |
 | ⏎ → target's shim, standby, laptop → remote at RTT 0/50/150/400ms (LC08) | 21/45/96/221ms | 4/30/80/206ms |
 | same, remote → remote | 7/57/159/408ms | 2/54/156/410ms |
 | `prefix d` gives the terminal back | 4–11ms | about 100ms |
@@ -95,7 +95,7 @@ breadcrumb); alone it passed 5 of 5. Recorded, not loosened.
 | Keystroke through the relay (LS07) | +4–9µs | +7µs |
 | 200 MiB `cat` through the relay (LS08) | 205–223 MB/s | 118–136 MB/s |
 | Remote towerd up over real ssh (R01) | 0.49s | 0.5s |
-| Kill relayed 831 → home → pc (R01) | 131ms (115ms ssh) | 150ms (120ms ssh) |
+| Kill relayed bravo → home → alpha (R01) | 131ms (115ms ssh) | 150ms (120ms ssh) |
 | Client back after a wake (R01) | 0.27s | 1.2s |
 
 ## Code reviews
@@ -139,7 +139,7 @@ Nothing.
 - A local attach's frame hold can still land inside an escape sequence
   while tmux floods the terminal (only relayed sessions order the writes).
 - The new pty and Linux code paths of the relay ran on Linux only in CI
-  and on `pc`/`831` through the real-host scenarios.
+  and on `alpha`/`bravo` through the real-host scenarios.
 
 ## How the work was done
 

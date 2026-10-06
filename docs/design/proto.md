@@ -179,7 +179,7 @@ type Ack struct {
     ID     string
     OK     bool
     Err    string
-    Note   string // e.g. "already gone", "starting tmux on pc…"
+    Note   string // e.g. "already gone", "starting tmux on alpha…"
     Ended  bool   // switch: the loop ended the old client
     Gone   bool   // has: the session does not exist (or no server)
     Text   string // capture

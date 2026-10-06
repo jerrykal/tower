@@ -172,7 +172,7 @@ one `cached · hosts not connected` header the same way.
   (the tightest span, at most three times the word); among substrings the
   whole name, then its start, then a word start, each nearer the front.
   A number next to `:` names a window by its number only
-  (`gb200:train-llm:2`); a plain number also may, below a name holding it.
+  (`charlie:train-llm:2`); a plain number also may, below a name holding it.
   Ties keep recency.
 - **Windows** a word is a substring of are listed under their session
   (`└ 2:train`), best first, three and then `└ +N more`; a scattered

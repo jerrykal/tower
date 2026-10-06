@@ -37,13 +37,13 @@ func TestOptions(t *testing.T) {
 	fake := filepath.Join(dir, "ssh")
 	os.WriteFile(fake, []byte("#!/bin/sh\necho 'OpenSSH_9.6p1, LibreSSL 3.3.6' >&2\n"), 0o755)
 	s := &SSH{Bin: fake, CMDir: "/run/cm"}
-	o := strings.Join(s.Options(config.Host{Name: "pc"}), " ")
+	o := strings.Join(s.Options(config.Host{Name: "alpha"}), " ")
 	for _, want := range []string{"BatchMode=yes", "ConnectTimeout=5", "ServerAliveInterval=5", "ControlMaster=auto", "ControlPersist=10m", "ControlPath=/run/cm/%C", "ObscureKeystrokeTiming=no"} {
 		if !strings.Contains(o, want) {
 			t.Errorf("missing %s in %s", want, o)
 		}
 	}
-	if o := strings.Join(s.Options(config.Host{Name: "pc", ObscureKeystrokes: true}), " "); strings.Contains(o, "ObscureKeystrokeTiming") {
+	if o := strings.Join(s.Options(config.Host{Name: "alpha", ObscureKeystrokes: true}), " "); strings.Contains(o, "ObscureKeystrokeTiming") {
 		t.Error("a host that keeps obscuring gets ssh's default")
 	}
 	old := filepath.Join(dir, "ssh-old")
@@ -51,8 +51,8 @@ func TestOptions(t *testing.T) {
 	if o := strings.Join((&SSH{Bin: old}).Options(config.Host{}), " "); strings.Contains(o, "ObscureKeystrokeTiming") {
 		t.Error("an older ssh does not know the option")
 	}
-	argv := s.Attach(config.Host{Name: "pc", SSH: "me@pc"}, "tower attach")
-	if argv[1] != "-t" || !slices.Contains(argv, "me@pc") || argv[len(argv)-2] != "--" {
+	argv := s.Attach(config.Host{Name: "alpha", SSH: "me@alpha"}, "tower attach")
+	if argv[1] != "-t" || !slices.Contains(argv, "me@alpha") || argv[len(argv)-2] != "--" {
 		t.Fatalf("attach argv %v", argv)
 	}
 }
@@ -63,18 +63,18 @@ func TestClassify(t *testing.T) {
 		stderr     string
 		class, has string
 	}{
-		{127, "sh: tower: command not found", Failed, "tower is not installed on pc"},
-		{255, "No ED25519 host key is known for pc and you have requested strict checking.\nHost key verification failed.", Down, "host key"},
-		{255, "pc: Permission denied (publickey,password).", Down, "ssh-add"},
-		{255, "ssh: Could not resolve hostname pc: nodename nor servname provided", Down, "cannot resolve host name"},
-		{255, "ssh: connect to host pc port 22: Connection refused", Down, "connection refused"},
-		{255, "ssh: connect to host pc port 22: Operation timed out", Down, "timed out"},
-		{255, "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/x", Down, "Tailscale SSH wants a check: run `ssh pc` once"},
-		{255, "Connection to pc closed by remote host.", Down, "connection lost"},
+		{127, "sh: tower: command not found", Failed, "tower is not installed on alpha"},
+		{255, "No ED25519 host key is known for alpha and you have requested strict checking.\nHost key verification failed.", Down, "host key"},
+		{255, "alpha: Permission denied (publickey,password).", Down, "ssh-add"},
+		{255, "ssh: Could not resolve hostname alpha: nodename nor servname provided", Down, "cannot resolve host name"},
+		{255, "ssh: connect to host alpha port 22: Connection refused", Down, "connection refused"},
+		{255, "ssh: connect to host alpha port 22: Operation timed out", Down, "timed out"},
+		{255, "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/x", Down, "Tailscale SSH wants a check: run `ssh alpha` once"},
+		{255, "Connection to alpha closed by remote host.", Down, "connection lost"},
 		{3, "", Down, "ssh exited 3"},
 	}
 	for _, c := range cases {
-		f := Classify("pc", c.exit, c.stderr)
+		f := Classify("alpha", c.exit, c.stderr)
 		if f.Class != c.class || !strings.Contains(f.Reason, c.has) {
 			t.Errorf("Classify(%d, %q) = %+v", c.exit, c.stderr, f)
 		}

@@ -26,9 +26,9 @@ server. Read [docs/overview.md](docs/overview.md) for the product,
   `-L tower-demo` server, belong to the user: leave them alone, and never
   run `kill-server`.
 - **The repo is public.** Host names in code, docs and tests are only the
-  aliases `pc`, `831`, `gb200` and `pp`; no IPs, no ssh config, nothing
-  under other users' homes.
-- **Real hosts** (`TOWER_REAL=pc,831`) are for the main session only, never
+  placeholders `alpha`, `bravo`, `charlie` and `delta`, never a real host
+  name; no IPs, no ssh config, nothing under other users' homes.
+- **Real hosts** (`TOWER_REAL=<host>,<host>`) are for the main session only, never
   a subagent. They use only `tmux -L tower-test-…` sockets and only
   `~/.cache/tower-test/harness/`, never the rest of `~/.cache/tower-test`
   (the user's demo lives there). Teardown stops the home before cleaning
