@@ -107,7 +107,7 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       rest 83 passed, 4 skipped (R01–R04, without `TOWER_REAL`) in 498s, LS03 failing once under load (no loop on
       `^B:bravo` within 10s after B's towerd was killed); alone it
       passed 3 of 3. Recorded, not loosened.
-- [ ] **Phase 2, a host backend behind `World`.** Start a host, its ssh
+- [x] **Phase 2, a host backend behind `World`.** Start a host, its ssh
       name, set a fault, reset; scenarios stop writing knobs. Each knob
       gets a real mechanism: delay, jitter and bandwidth `tc netem`;
       `Freeze` and `HalfOpenAt` `iptables` DROP on established
@@ -118,6 +118,50 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       No direct equivalent, decided per scenario (rewrite, a unit test
       of how tower reads the error, or drop): `Exit`, `ODelayMs`,
       `Stall`, `Pty`, `tscheck`.
+
+      Built (c7c53cc to 78f251d, decision 114, the table in
+      [design/harness.md](design/harness.md#links-and-faults)): scenarios
+      call `w.Shape`, `Freeze`, `NetworkChange`, `Stall`, `Drop`, `Down`,
+      `Heal` and `Reset`, and no longer touch the knobs; the container
+      backend puts each in place with a real mechanism. `Stall` got one
+      too: the session processes stopped while sshd answers. `Freeze`
+      and `NetworkChange` are `iptables` chains; `Down` lives in the
+      world's ssh config, per name, so each name has a port of its own.
+      `TestHarnessLinks` passes on both backends (59s fake, 69s
+      containers). Shards on the fake: `^TestLC` 8/8 in 315s, the rest
+      85 passed, 4 skipped (R01–R04), 0 failed in 555s.
+
+      Decided per scenario, done in Phase 4:
+      - `Exit` 255 (LS09 step 2) becomes a `Drop`, which makes real ssh
+        exit 255. 42 and 43 (S-handoff (c), LS09 steps 3–4) are tower's
+        own codes, read by towerd's `after`, unit-tested in
+        `towerd/daemon_test.go`; those steps stay on the fake only.
+      - `ODelayMs` (LH05, a wedged master) becomes the home's real
+        master for W stopped (`SIGSTOP`), found by its control path.
+      - `Pty`, `Mux`: always on over real ssh. Scenarios that ran
+        without them on the fake get both; whether any relied on their
+        absence is checked as each family is ported.
+      - `tscheck` (S15 `ts`, `ts2`): dropped from the container run;
+        `transport` unit-tests the reading of Tailscale's check.
+      - `WindowKB` (LH02–LH04, LS09): no mechanism, since real ssh's
+        channel window is 2 MB. Either the LH family pads past it, or
+        its stalls rely on `Stall` alone; measured when it is ported.
+
+      Found on the way, for Phase 4:
+      - Over real ssh, a session on a master that dies gets exit 255
+        and an empty stderr, so tower shows "ssh exited 255" where the
+        fake gave "connection lost" or "connection timed out".
+      - Real ssh gives up a frozen link after 18–20s, not 15s
+        (ServerAlive 5s × 3 counts from the last traffic); LC03's 8s
+        and 12s limits are to be measured over real ssh.
+      - The fake's freeze spares sessions on a master. Real ones die,
+        so LC04 (freeze and network change together) behaves the same
+        either way.
+      - The containers share the machine's pids (decision 113), so
+        faults signal exact, cgroup-checked pids, never by name.
+        Whether Phase 3 gives each container its own pid namespace
+        (the sweeps and the stall reading pids through the container
+        agent) is to be decided there.
 - [ ] **Phase 3, the container backend.** Long-lived containers reset
       between scenarios (test tmux servers killed, `TOWER_HOME` wiped),
       an ssh config and key per world with short ControlPaths, a small

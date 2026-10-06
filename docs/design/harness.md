@@ -15,7 +15,11 @@
 | `towerd_test.go` | towerd-side helpers (pids, live homes, registrations, `view` and `act` calls, other binaries) and `FakeLoop` |
 | `fakenet/` | the knobs contract between the harness and the fake ssh |
 | `fakessh/` | the fake ssh |
+| `link_test.go` | links and faults: the World's calls, put in place as the fake's knobs or by the container backend |
+| `links_check_test.go` | `TestHarnessLinks`: each link setting and fault checked on either backend |
 | `container_test.go`, `hosts/` | the container backend: host containers reached over real ssh (`TOWER_HOSTS=container`) |
+| `sshcall/` | an ssh command line read as ssh does, and the call log (`fake/ssh.log`) both ssh stand-ins write |
+| `sshwrap/` | ssh for container hosts: logs the call, then runs real ssh with the world's config |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
 | `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls08`, `a_atlas` so far |
 
@@ -24,8 +28,8 @@
 `w.Host(name, sessions, opts…)` makes a tmux server `-L tt-<id>-<name>`
 with a generated config (`exit-empty on`, `/bin/sh`, `base-index`,
 `detach-on-destroy no-detached`, `M-o` running the dashboard in a full-size
-popup, `M-l` running `tower last`) and registers the fake ssh name `name`
-for it. A host's processes run with:
+popup, `M-l` running `tower last`) and registers the ssh name `name` for
+it (`w.SSH`, below). A host's processes run with:
 
 - `HOME` and `XDG_CONFIG_HOME` in an empty directory, so tmux servers tower
   starts read no user config;
@@ -128,6 +132,41 @@ answered` (LD01: a row goes before its answer), `standby: start <host>`,
 `standby: ready <host>`, `standby: go`, `standby: taken`, `standby: drop
 <host>`.
 
+## Links and faults
+
+Scenarios shape links and set faults per ssh name through the World,
+never the fake's knobs; `w.SSH(alias, host)` registers another name for
+a host. Each host's backend puts them in place: the fake ssh's knobs for
+a host on this machine, real mechanisms for a container.
+
+| Call | The fake ssh | A host container |
+| --- | --- | --- |
+| `w.Shape(alias, f)`: `DelayMs`, `JitterMs`, `BwKBps` | delayed, paced chunks | `tc netem` delay, jitter and rate on `eth0` and, through `ifb0`, its ingress |
+| `Shape`: `WindowKB` | bytes in flight per direction | none: ssh's channel window is 2 MB (fails the scenario) |
+| `Shape`: `Pty`, `Mux` | a pty for `ssh -t`; a shared master | always: ssh's own |
+| `w.Freeze(alias, on)` | new connections hang; sessions off a master give up after the alive window (those on a master ride it out) | `iptables` DROP of all TCP (`TT-FREEZE`): every connection gives up, the far side never hears |
+| `w.NetworkChange(alias, at)` | masters made before `at` dead from `at` | DROP, both ways and for good, of each connection established now (`TT-HALFOPEN`); `at` not in the future |
+| `w.Stall(alias, on)` | no byte moves; ssh never gives up | the processes ssh sessions run there (descendants of `sshd: tt@…`) stopped, and new ones as they come, every 50ms; sshd still answers |
+| `w.Drop(alias)` | live connections closed | the container's `sshd: tt…` processes killed |
+| `w.Down(alias, how)` | ssh's message for `how` | per name in the world's ssh config: `refused` port 1, `timeout` port 2222 (SYNs dropped), `password` port 2223 (an sshd with key auth off), `resolve` an `.invalid` name, `hostkey` a known_hosts with another key, `auth` a key no host authorizes; `tscheck` none |
+| `w.ExitWith(alias, code)`, `w.SlowControl(alias, ms)` | forced exit status; a slow `ssh -O` | none (fails the scenario) |
+| `w.Heal(alias)`, `w.Reset(alias)` | faults off (and the link unshaped) | the same; a network change's connections stay dead |
+
+On a container the link and every fault but `Down` belong to the
+container, whichever of its names sets them. `TestHarnessLinks` checks
+each row on either backend: a session on a master at RTT 100ms takes
+205–208ms, 512 KiB at 256 KB/s 1.9–2.2s, each `Down` reads as tower
+expects, a drop or a freeze ends a session (the frozen one after the
+alive window, 15s on the fake, 18–20s over real ssh, its far side still
+running), a network change leaves the old master to give up and a new
+one working, a stall stops output for the alive window and more without
+ssh giving up.
+
+Over real ssh a session riding a master that dies hears nothing: its
+ssh exits 255 with stderr empty, so tower reads "ssh exited 255"; off a
+master (or from the fake) it reads "connection lost" or "connection
+timed out".
+
 ## The fake ssh
 
 Parses options like ssh (the first `-o` value wins), logs every call as a
@@ -170,13 +209,20 @@ ported so far.
   host; then `sh -c` the command, as sshd runs it. Everything else is
   sshd's default, `MaxSessions` included.
 - A world gives each `SSHHost()` host a free container and, from then on,
-  every host of the world `TOWER_SSH=<dir>/ssh`: `ssh -F <dir>/ssh_config`,
-  the world's names to the containers' addresses, the run's key and
-  known hosts, neither the user's nor the system's config.
-- `w.Knobs` on a container host maps what has a mechanism: `DelayMs` and
-  `JitterMs` to `tc netem` on the container's `eth0` and, through an
-  `ifb0` redirect, its ingress (one-way delay each way, as the fake's);
-  `Pty` and `Mux` are ssh's own. Any other knob fails the scenario.
+  every host of the world `TOWER_SSH=sshwrap`, which logs the call to
+  `fake/ssh.log` as the fake does (`w.SSHLog` reads both) and runs
+  `ssh -F $TOWER_TEST_SSH_CONFIG`: the world's names to the containers'
+  addresses, the run's keys and known hosts, neither the user's nor the
+  system's config.
+- Each ssh name of a container gets a port of its own (sshd listens on
+  22 and 2201–2215, IPv4 only, its limit of 16 sockets): ssh keys a
+  control master by host, port and user, so names of one host would
+  otherwise share one.
+- The containers share the machine's pids, so a fault never signals a
+  process by name: only pids whose cgroup is the container's, checked
+  again where they are signalled. Drop kills as root in the container
+  (comparing with its own cgroup there); a stall stops and continues the
+  test user's processes from the harness.
 
 ## Teardown
 
