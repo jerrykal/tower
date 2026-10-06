@@ -45,7 +45,7 @@ leaking the user's zoxide database, U02's anchored target, a terminal
 that could not answer colour queries (tmux then holds ESC 500ms), U01's
 same-second recency tie. LC08 on Linux is the new latency baseline.
 
-- [ ] **Phase 1, spike (go or no-go).** A compose file with two host
+- [x] **Phase 1, spike (go or no-go).** A compose file with two host
       containers (Ubuntu, sshd, tmux, `iproute2`, `iptables`), key auth,
       the home and terminals on this machine. Port two scenarios to it:
       LC08 (hand-off latency by RTT) and one hand-off-heavy LS scenario.
@@ -54,6 +54,57 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       macOS (Docker Desktop). Go when wall time is within about 1.5× of
       the fake's, failures are no more frequent, and latency tracks the
       shaped RTT as the fake's does; else write down why and stop here.
+
+      Built (d63384a): `test/scenario/hosts/` (image with tmux 3.7c from
+      source, compose file, sshd's `ForceCommand` wrapper), the backend
+      in `container_test.go` (decision 113, design in
+      [design/harness.md](design/harness.md#host-containers)); LC08 and
+      LS10 make B and C with `SSHHost()`. Measured on Linux, Docker 28,
+      each scenario alone, 10 runs per backend:
+
+      | | fake ssh | containers |
+      | --- | --- | --- |
+      | LC08 wall (test) | 139.4s (138.0s) | 147.4s (144.3s): 1.06× |
+      | LS10 wall (test) | 32.8–33.9s (31.4–32.4s) | 8.8s (6.3s) |
+      | failures | LC08 0/10, LS10 0/10 | LC08 0/10, LS10 0/10 |
+
+      A container run adds about 3s per `go test` (compose up and down,
+      the image cached; its first build takes 34s) and about 1.5s per
+      world (a `docker exec` per tmux server and link change). LS10 is
+      shorter because over real ssh the killed loop's client goes with
+      its ssh at once, where the fake keeps the session and the home
+      detaches it 28s later (below). LC08's medians match the fake's to
+      the millisecond through a standby and for the hops that reuse a
+      session, at every RTT; the hops that open a new session on the
+      master (dashboard and eager modes, to a remote) take 3–5ms more,
+      the real channel open, sshd's fork and pty (ms, fake / containers):
+
+      | RTT | standby r→r, r→l, l→r | eager r→r, l→r | dashboard r→r, l→r |
+      | --- | --- | --- | --- |
+      | 0 | 2/2, 3/3, 4/4 | 6/10, 7/12 | 8/12, 8/11 |
+      | 50 | 52/52, 29/28, 29/29 | 107/110, 83/87 | 160/163, 83/87 |
+      | 150 | 152/152, 79/79, 79/79 | 307/310, 233/237 | 461/464, 233/237 |
+      | 400 | 402/402, 204/204, 204/204 | 807/811, 608/612 | 1212/1214, 609/612 |
+
+      Found on the way: real OpenSSH 9.6 at both ends ends a session when
+      its mux client is killed (checked by hand with `ssh -tt … sleep`
+      over a master, too), unlike the fake and decision 112's
+      observation on `bravo` and `charlie`; LS10's "still there 2s later"
+      now holds on the fake only. ssh's `[mux]` title overwrites its
+      environment, so teardown ends real masters by control path.
+
+      **Not measured: macOS (Docker Desktop).** This machine is Linux.
+      The design leans on native Docker: sockets through bind mounts,
+      shared pids and routable container addresses do not cross Docker
+      Desktop's VM, so on macOS the backend would need a `docker exec`
+      per host command and published ports. The recommendation is go on
+      Linux, with macOS left to Phase 5's localhost sshd; the go or
+      no-go is the user's.
+
+      Shards at the end (fake ssh, as before): `^TestLC` 8/8 in 315s; the
+      rest 83 passed, 4 skipped (R01–R04, without `TOWER_REAL`) in 498s, LS03 failing once under load (no loop on
+      `^B:bravo` within 10s after B's towerd was killed); alone it
+      passed 3 of 3. Recorded, not loosened.
 - [ ] **Phase 2, a host backend behind `World`.** Start a host, its ssh
       name, set a fault, reset; scenarios stop writing knobs. Each knob
       gets a real mechanism: delay, jitter and bandwidth `tc netem`;
@@ -90,11 +141,13 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
 Two quirks of the current harness on Linux are left for the
 replacement:
 
-- [ ] LS01 and LS10 wait for `LOOP-EXIT=137` after a `kill -9`, which the
+- [x] LS01 and LS10 wait for `LOOP-EXIT=137` after a `kill -9`, which the
       terminal prints after its launch command; whether it wraps at the
       110-column edge depends on the length of the run's temp path
       (`/tmp/tsc-<pid>`), and `Term.Screen` does not join wrapped lines.
-      They pass on macOS and fail on Linux with 6-digit pids.
+      They pass on macOS and fail on Linux with 6-digit pids. Fixed
+      (56f805d): `Term.Screen` joins wrapped lines (`capture-pane -J`);
+      both pass on Linux.
 - [ ] tmux holds a lone ESC for 500ms while a client waits on a terminal
       query; the scenario terminals now answer colour queries
       (`window-style`), so U01 passes, but any other query a tmux pane

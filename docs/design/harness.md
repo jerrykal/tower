@@ -15,6 +15,7 @@
 | `towerd_test.go` | towerd-side helpers (pids, live homes, registrations, `view` and `act` calls, other binaries) and `FakeLoop` |
 | `fakenet/` | the knobs contract between the harness and the fake ssh |
 | `fakessh/` | the fake ssh |
+| `container_test.go`, `hosts/` | the container backend: host containers reached over real ssh (`TOWER_HOSTS=container`) |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
 | `s*_test.go` … | the scenarios, one file per family: `s_core`, `s_links`, `s_data`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls08`, `a_atlas` so far |
 
@@ -88,7 +89,9 @@ pipe fills); the connection family (LC) and LH06 with `ProductionTimings`.
 `w.Loop(name, home, extra)` starts the attach loop in a terminal of its
 own (`-L tt-<id>-term-<name>`, 110×32). `t.Pick(query)` types a query into
 the dashboard and presses Enter; `t.DashTo(query)` opens the dashboard with
-`M-o` first. The dashboard's prompt is `sessions>`. `t.Until(re, present,
+`M-o` first. `t.Screen()` joins wrapped lines (`capture-pane -J`), so
+what a line says does not depend on where it wraps. The dashboard's
+prompt is `sessions>`. `t.Until(re, present,
 d)` polls the screen every 3ms (the dashboard's timings), `t.CloseDash()`
 closes an open popup, and `rowRe(host, name)` matches a session's row.
 `h.UI(client, extra, args…)` runs `tower _ui …` on a host as the dashboard
@@ -141,10 +144,46 @@ existing master whatever its `ControlMaster`, `no` only declines to make
 one, as with ssh; `-O exit` ends its sessions) and `halfopen_at` (a network change: masters made before it are
 dead and give up after the alive window).
 
+## Host containers
+
+With `TOWER_HOSTS=container` a host made with `SSHHost()` is a container
+running sshd and tmux, reached over real ssh; without it, or for a host
+made without `SSHHost()`, the fake ssh as before. LC08 and LS10 are
+ported so far.
+
+- `hosts/` holds the image (Ubuntu 24.04, OpenSSH, tmux built from
+  source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
+  compose file with two hosts, `h1` and `h2`. `TestMain` brings the
+  project up (`tt-<pid>`, building the image if needed) and down at the
+  end; containers, network and image carry the label `tower-test`.
+- The run's `TOWER_TEST_DIR`, `TMUX_TMPDIR` and `TMPDIR` are bind-mounted
+  at their own paths, the container user `tt` has the test user's uid,
+  and the containers share the machine's pids (`pid: host`). So a
+  container host's `TOWER_HOME`, timing marks, tmux socket and towerd
+  socket are where the harness looks, its processes are swept like any
+  other, and only ssh crosses the network. `h.Tmux` starts a container
+  host's server in the container (`docker exec`, any command with `-f`)
+  and reaches it through its socket otherwise.
+- sshd takes key auth only and runs every command through `tt-run`
+  (`ForceCommand`), which sources the host's environment from
+  `$TOWER_TEST_DIR/slots/<slot>.env`, written when the world makes the
+  host; then `sh -c` the command, as sshd runs it. Everything else is
+  sshd's default, `MaxSessions` included.
+- A world gives each `SSHHost()` host a free container and, from then on,
+  every host of the world `TOWER_SSH=<dir>/ssh`: `ssh -F <dir>/ssh_config`,
+  the world's names to the containers' addresses, the run's key and
+  known hosts, neither the user's nor the system's config.
+- `w.Knobs` on a container host maps what has a mechanism: `DelayMs` and
+  `JitterMs` to `tc netem` on the container's `eth0` and, through an
+  `ifb0` redirect, its ingress (one-way delay each way, as the fake's);
+  `Pty` and `Mux` are ssh's own. Any other knob fails the scenario.
+
 ## Teardown
 
 Terminals first (a live loop would restart a towerd), then every towerd
 (SIGCONT, SIGTERM, SIGKILL after 5s), the holders, every session of every
 server; each server must exit within 10s, or the test fails. Leftover
 processes with the world's `TOWER_HOME` are killed. The world's directory
-is removed when the test passed.
+is removed when the test passed. Over real ssh, the home's control
+masters are ended by their control path: ssh's `[mux]` process title
+overwrites their environment.
