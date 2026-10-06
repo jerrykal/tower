@@ -105,6 +105,18 @@ Family timings: the slow-host family (LH) runs with `TOWER_SILENCE=15000`
 and `TOWER_TEST_PAD=30000` (states and views padded to 30 KB, so a stalled
 pipe fills); the connection family (LC) and LH06 with `ProductionTimings`.
 
+Recoveries (LC03, LC04, LC06: a fault, the network's return or a pick,
+until the client is back) are checked in three parts (`checkRecoveries`),
+since a new connection costs what the ssh at the other end makes it
+cost: the fake's about 6.5 round trips, real ssh's 13. The connection,
+from the link's last attempt to the link up (ssh, tower started there,
+the hello, the first state), is at most 14 round trips past R0's in the
+same world, counted at RTT 150 and 400 and only for a connection begun
+within the recovery. Tower's part, the rest, is within the scenario's
+limit less 6.5 round trips: the time the limit left tower on the fake.
+The client is back within 1s and 4 round trips of its link (of the last
+pick, in LC06). The tracker gives each part (`lastattempt`).
+
 ## Terminals
 
 `w.Loop(name, home, extra)` starts the attach loop in a terminal of its

@@ -184,17 +184,16 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       take about 1s longer to bring up than two. `TestHarnessLinks` and
       LS10 pass over the agent. Shards on the fake: `^TestLC` 8/8 in 316s,
       the rest 85 passed, 4 skipped, 0 failed in 554s.
-- [ ] **Phase 4, port the families**, one at a time, each passing on
+- [x] **Phase 4, port the families**, one at a time, each passing on
       the container backend before its knob code goes. Worlds that are
       not timing-sensitive run with `t.Parallel`; the timing checks
       become a serial latency tier. Sleeps give way to event waits
       (`WaitMark`, the tracker) where a scenario waits on tower.
 
-      Done but for one decision, LC03 at RTT 400 (below); 526713c to
-      98cf94e, decisions 116 to 119, the harness in
-      [design/harness.md](design/harness.md). Every scenario's remote
+      Done (526713c to a380620, decisions 116 to 120, the harness in
+      [design/harness.md](design/harness.md)): every scenario's remote
       hosts are containers on that backend, and every scenario passes
-      there but LC03.
+      on both.
 
       What porting took:
       - Hosts on one machine share a container. Each ssh name has an
@@ -257,23 +256,34 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       Knob code: scenarios stopped writing knobs in Phase 2; what is
       left is the fake's backend, which goes with the fake (Phase 7).
 
+      LC03 at RTT 400 over real ssh failed every run: the client back
+      after 12.7–12.9s with the link silent (limit 12s; the fake
+      10.0–10.8s), 8.04–8.06s after a network change (limit 8s; the fake
+      5.0–6.4s). Tower's steps took the same on both; the difference was
+      the new connection, 13 round trips over real ssh (5.35s) against
+      the fake's 6.5 (2.6s). LC06 passed with 0.3s to spare for the same
+      reason. **Decided** (decision 120, 2d9cdee): a recovery's limit
+      holds tower's part of it, the limit less the fake's 6.5 round
+      trips; the connection is at most 14 round trips past R0's; the
+      client is back within 1s and 4 round trips of its link. Measured
+      at RTT 400 (fake / containers): tower's part with the link silent
+      7.4s / 7.2–7.6s (limit 9.4s), after a network change 2.5s / 2.6–2.9s
+      (5.4s), LC06 6.0s / 6.3s (9.4s); the connection 6.5 / 12.9–13.0
+      round trips; the client 0.6s after its link on both (2.6s).
+
+      LS03 (c) failed 1 run in 5 alone on the fake (Phase 1 had put it
+      down to load): the test switched to B while the dashboard still
+      refused it as connecting, B's towerd just killed, then waited for
+      a switch that had never been made. It now switches once B is back
+      on a new link, the moment that step is about (a380620): 10 of 10
+      on the fake, 3 of 3 on containers.
+
       Shards at the end, unit tests passing:
 
       | | fake ssh | containers |
       | --- | --- | --- |
-      | `^TestLC` | 8/8 in 314s | 7/8 in 367s (LC03) |
-      | the rest | 85 passed, 4 skipped (R01–R04), 0 failed in 359s | 85 passed, 4 skipped, 0 failed in 405s |
-
-      **Open, the user's decision: LC03 at RTT 400 over real ssh.** In
-      every run the client is back after 12.7–12.9s with the link
-      silent (limit 12s; the fake 10.0–10.8s) and 8.04–8.06s after a
-      network change (limit 8s; the fake 5.0–6.4s). The difference is
-      the connect: given up at 6.8s on both, the link is back 5.35s
-      later over real ssh against 2.6s on the fake, a new connection at
-      RTT 400 taking about 13 round trips. Not loosened. Either LC03's
-      limits over real ssh are set from this measurement, or tower
-      reconnects sooner (say, a new connection opened while the stalled
-      one is still being given up).
+      | `^TestLC` | 8/8 in 314s | 8/8 in 367s |
+      | the rest | 85 passed, 4 skipped (R01–R04), 0 failed in 364s | 85 passed, 4 skipped, 0 failed in 421s |
 - [ ] **Phase 5, the macOS backend.** Localhost sshd, each simulated
       host its own `TOWER_HOME` through `hosts.toml`'s `home`
       (decision 65), faults with `dnctl`/`pf` on `lo0`. Locally it needs

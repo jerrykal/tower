@@ -12,8 +12,10 @@ a scenario measures what a user would see.
 Every scenario runs on either backend: remote hosts through the fake ssh,
 or as host containers over real ssh (`TOWER_HOSTS=container`). The steps
 real ssh cannot be made to take run on the fake only: ssh itself exiting
-42 or 43 (S06, LS09) and the Tailscale check (S15). A status is the
-fake's unless it says otherwise.
+42 or 43 (S06, LS09) and the Tailscale check (S15). A recovery's limit
+(LC03, LC04, LC06) holds tower's part of it; the connection and the
+client's return have limits of their own, as
+[design/harness.md](design/harness.md) says.
 
 ## Core edge cases
 
@@ -101,7 +103,7 @@ See [design/install.md](design/install.md).
 | --- | --- | --- | --- |
 | LC01 | Cold start, attach, wake, upgrade: the host never shows up empty; a reattach after a wake is fast | towerd, loop | pass |
 | LC02 | A clean drop reconnects within 200ms of a stable link | towerd | pass |
-| LC03 | A link half-open after a network change: the client back in seconds, faster with the interface watcher | towerd | pass; over real ssh fail at RTT 400 (progress.md) |
+| LC03 | A link half-open after a network change: the client back in seconds, faster with the interface watcher | towerd | pass |
 | LC04 | A 20s blackout: the loop's reattach does not sleep through the link's return | loop, towerd | pass |
 | LC05 | A slow but live link (200–800ms each way, 30s) is never dropped | stream, towerd | pass |
 | LC06 | A switch to a host half-open 1s ago lands in seconds | towerd, loop | pass |
