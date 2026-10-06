@@ -45,8 +45,8 @@ func lc08(t *testing.T, rtt int) map[lc08Key][]time.Duration {
 	out := map[lc08Key][]time.Duration{}
 	w := NewWorld(t, fmt.Sprintf("lc08-%d", rtt))
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
 		w.Knobs(n, func(k *fakenet.Knobs) { k.Mux, k.Pty, k.DelayMs = true, true, rtt/2 })
 	}

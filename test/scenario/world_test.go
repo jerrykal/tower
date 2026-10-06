@@ -19,6 +19,7 @@ import (
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
+	"github.com/jerrykal/tower/internal/transport"
 	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
@@ -61,6 +62,12 @@ type World struct {
 	spawned []*exec.Cmd
 	sockets []string // tmux servers to end at teardown
 	timings map[string]string
+
+	// The container backend: real is set once a host is a container,
+	// and then every host's ssh is real ssh with the world's config.
+	real       bool
+	ctrAliases map[string]*Host
+	ctrKnobs   map[string]*fakenet.Knobs
 }
 
 // NewWorld makes scenario id's world. id is short ("s00", "lc08-150"): it
@@ -100,6 +107,7 @@ type Host struct {
 	uname     string   // what uname -s -m says on the host; empty: the truth
 	zoxide    []string // what a fake zoxide on the host lists; nil: the PATH's zoxide
 	mounts    string   // the host's mount table (TOWER_TEST_MOUNTS); empty: the real one
+	ctr       *ctrSlot // the host's container; nil: a tmux server on this machine
 }
 
 // Zoxide puts a zoxide first on the host's PATH that lists dirs (~ for
@@ -134,7 +142,7 @@ func Env(k, v string) HostOpt { return func(h *Host) { h.extra[k] = v } }
 func Platform(uname string) HostOpt { return func(h *Host) { h.uname = uname } }
 
 // Host makes a host with the given sessions (none: no tmux server). It is
-// also registered with the fake ssh under its name.
+// also registered as an ssh name: with the fake ssh, or for a container.
 func (w *World) Host(name string, sessions []string, opts ...HostOpt) *Host {
 	w.T.Helper()
 	h := &Host{w: w, Name: name, Machine: name, BaseIndex: 1, extra: map[string]string{},
@@ -145,14 +153,17 @@ func (w *World) Host(name string, sessions []string, opts ...HostOpt) *Host {
 	if h.HomeDir == "" {
 		h.HomeDir = filepath.Join(w.Dir, "home-"+h.Machine)
 	}
+	if h.ctr != nil {
+		w.assign(h)
+	}
 	w.hosts[name] = h
 	w.order = append(w.order, name)
 	w.sockets = append(w.sockets, h.Sock)
 	h.writeConf()
+	w.SSH(name, h, fakenet.Knobs{})
 	for _, s := range sessions {
 		h.NewSession(s)
 	}
-	w.SSH(name, h, fakenet.Knobs{})
 	return h
 }
 
@@ -186,13 +197,17 @@ func (h *Host) Set(k, v string) { h.extra[k] = v }
 // EnvMap is the environment of a process "on" the host.
 func (h *Host) EnvMap() map[string]string {
 	m := map[string]string{}
-	for _, kv := range os.Environ() {
-		k, v, _ := strings.Cut(kv, "=")
-		// _ZO_*: zoxide's own settings could point it at the user's database.
-		if k == "TMUX" || k == "TMUX_PANE" || strings.HasPrefix(k, "TOWER_") || strings.HasPrefix(k, "_ZO_") {
-			continue
+	if h.ctr != nil {
+		m = ctrEnv()
+	} else {
+		for _, kv := range os.Environ() {
+			k, v, _ := strings.Cut(kv, "=")
+			// _ZO_*: zoxide's own settings could point it at the user's database.
+			if k == "TMUX" || k == "TMUX_PANE" || strings.HasPrefix(k, "TOWER_") || strings.HasPrefix(k, "_ZO_") {
+				continue
+			}
+			m[k] = v
 		}
-		m[k] = v
 	}
 	m["HOME"] = h.w.UserHome
 	// Every XDG base dir under the world's home: zoxide's database is in
@@ -205,6 +220,9 @@ func (h *Host) EnvMap() map[string]string {
 	m["TOWER_MACHINE_ID"] = h.Machine
 	m["TOWER_TMUX"] = "-L " + h.Sock
 	m["TOWER_SSH"] = fakeSSH
+	if h.w.real {
+		m["TOWER_SSH"] = h.w.sshWrapper()
+	}
 	m["TOWER_FAKE_DIR"] = h.w.Fake
 	m["TOWER_TEST_TIMING"] = h.w.Marks
 	m["TOWER_TEST_NAME"] = h.Name
@@ -248,8 +266,17 @@ func (h *Host) getenv(k string) string { return h.EnvMap()[k] }
 // TmuxArgs select the host's server.
 func (h *Host) TmuxArgs() []string { return []string{"-L", h.Sock} }
 
-// Tmux runs a tmux command on the host's server.
+// Tmux runs a tmux command on the host's server. A container host's
+// server starts in its container (-f); other commands reach it through
+// its socket, which the container shares.
 func (h *Host) Tmux(args ...string) (string, error) {
+	if h.ctr != nil && slices.Contains(args, "-f") {
+		q := []string{"tmux"}
+		for _, a := range append(h.TmuxArgs(), args...) {
+			q = append(q, transport.ShellQuote(a))
+		}
+		return h.ctrExec(strings.Join(q, " "))
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, tmux.Bin(), append(h.TmuxArgs(), args...)...)
@@ -428,6 +455,10 @@ func (h *Host) TowerEnv(extra map[string]string, args ...string) (string, error)
 // target with the given knobs.
 func (w *World) SSH(alias string, target *Host, k fakenet.Knobs) {
 	w.T.Helper()
+	if target.ctr != nil {
+		w.ctrSSH(alias, target, k)
+		return
+	}
 	if k.Env == nil {
 		k.Env = target.EnvMap()
 	}
@@ -439,6 +470,11 @@ func (w *World) SSH(alias string, target *Host, k fakenet.Knobs) {
 // Knobs changes alias's knobs; live connections see it within 20ms.
 func (w *World) Knobs(alias string, f func(*fakenet.Knobs)) {
 	w.T.Helper()
+	if k, ok := w.ctrKnobs[alias]; ok {
+		f(k)
+		w.applyKnobs(alias)
+		return
+	}
 	k, err := fakenet.Load(w.Fake, alias)
 	if err != nil {
 		w.T.Fatal(err)

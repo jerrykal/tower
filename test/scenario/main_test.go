@@ -50,9 +50,12 @@ func TestMain(m *testing.M) {
 	}
 	if err := setup(); err != nil {
 		fmt.Fprintln(os.Stderr, "scenario:", err)
+		containerTeardown()
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	containerTeardown()
+	os.Exit(code)
 }
 
 func setup() error {
@@ -98,6 +101,9 @@ func setup() error {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("build %s: %v\n%s", b.pkg, err, out)
 		}
+	}
+	if os.Getenv("TOWER_HOSTS") == "container" {
+		return containerSetup()
 	}
 	return nil
 }

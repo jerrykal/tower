@@ -1,0 +1,41 @@
+# Two simulated hosts for the scenario suite (TOWER_HOSTS=container).
+# The harness brings the project up and down; every container, network
+# and image carries the label tower-test and a tt- name.
+name: tt-${TT_RUN}
+
+x-host: &host
+  image: tt-scenario-host:latest
+  build:
+    context: .
+    args:
+      UID: ${TT_UID}
+      TMUX_VERSION: ${TT_TMUX_VERSION:-3.7c}
+    labels: [tower-test]
+  labels: [tower-test]
+  cap_add: [NET_ADMIN]
+  # The suite finds, signals and sweeps a host's processes by pid.
+  pid: host
+  networks: [hosts]
+  volumes:
+    - ${TOWER_TEST_DIR}:${TOWER_TEST_DIR}
+    - ${TMUX_TMPDIR}:${TMUX_TMPDIR}
+    - ${TMPDIR}:${TMPDIR}
+
+services:
+  h1:
+    <<: *host
+    container_name: tt-${TT_RUN}-h1
+    environment:
+      TT_PUBKEY: ${TT_PUBKEY}
+      TT_ENV: ${TOWER_TEST_DIR}/slots/h1.env
+  h2:
+    <<: *host
+    container_name: tt-${TT_RUN}-h2
+    environment:
+      TT_PUBKEY: ${TT_PUBKEY}
+      TT_ENV: ${TOWER_TEST_DIR}/slots/h2.env
+
+networks:
+  hosts:
+    name: tt-${TT_RUN}-net
+    labels: [tower-test]

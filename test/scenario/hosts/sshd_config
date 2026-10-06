@@ -1,0 +1,11 @@
+# Key auth only, as the user tt, every command through tt-run (which
+# sets the simulated host's environment). Everything else is sshd's
+# default, MaxSessions included.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+UsePAM no
+PrintMotd no
+PrintLastLog no
+AllowUsers tt
+ForceCommand /usr/local/bin/tt-run

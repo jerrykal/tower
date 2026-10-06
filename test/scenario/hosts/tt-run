@@ -1,0 +1,10 @@
+#!/bin/sh
+# Every ssh session's command (sshd's ForceCommand), and the harness's
+# docker exec: the simulated host's environment from the file the harness
+# writes for the current world, then the command as sshd runs it.
+f=$(cat /etc/tt-env-path)
+[ -r "$f" ] && . "$f"
+if [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+	exec /bin/sh -c "$SSH_ORIGINAL_COMMAND"
+fi
+exec /bin/sh -l
