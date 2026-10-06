@@ -20,7 +20,6 @@ import (
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
 	"github.com/jerrykal/tower/internal/transport"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // Timings every simulated host runs with: shortened so the suite runs in
@@ -63,11 +62,11 @@ type World struct {
 	sockets []string // tmux servers to end at teardown
 	timings map[string]string
 
-	// The container backend: real is set once a host is a container,
-	// and then every host's ssh is real ssh with the world's config.
-	real       bool
-	ctrAliases map[string]*Host
-	ctrKnobs   map[string]*fakenet.Knobs
+	links map[string]*linkState // by ssh name
+
+	// real is set once a host is a container: from then on every host's
+	// ssh is real ssh with the world's config.
+	real bool
 }
 
 // NewWorld makes scenario id's world. id is short ("s00", "lc08-150"): it
@@ -160,7 +159,7 @@ func (w *World) Host(name string, sessions []string, opts ...HostOpt) *Host {
 	w.order = append(w.order, name)
 	w.sockets = append(w.sockets, h.Sock)
 	h.writeConf()
-	w.SSH(name, h, fakenet.Knobs{})
+	w.SSH(name, h)
 	for _, s := range sessions {
 		h.NewSession(s)
 	}
@@ -221,7 +220,8 @@ func (h *Host) EnvMap() map[string]string {
 	m["TOWER_TMUX"] = "-L " + h.Sock
 	m["TOWER_SSH"] = fakeSSH
 	if h.w.real {
-		m["TOWER_SSH"] = h.w.sshWrapper()
+		m["TOWER_SSH"] = sshWrap
+		m["TOWER_TEST_SSH_CONFIG"] = h.w.sshConfig()
 	}
 	m["TOWER_FAKE_DIR"] = h.w.Fake
 	m["TOWER_TEST_TIMING"] = h.w.Marks
@@ -451,49 +451,8 @@ func (h *Host) TowerEnv(extra map[string]string, args ...string) (string, error)
 	return string(out), err
 }
 
-// SSH registers ssh name alias with the fake ssh, running commands on
-// target with the given knobs.
-func (w *World) SSH(alias string, target *Host, k fakenet.Knobs) {
-	w.T.Helper()
-	if target.ctr != nil {
-		w.ctrSSH(alias, target, k)
-		return
-	}
-	if k.Env == nil {
-		k.Env = target.EnvMap()
-	}
-	if err := fakenet.Save(w.Fake, alias, &k); err != nil {
-		w.T.Fatal(err)
-	}
-}
-
-// Knobs changes alias's knobs; live connections see it within 20ms.
-func (w *World) Knobs(alias string, f func(*fakenet.Knobs)) {
-	w.T.Helper()
-	if k, ok := w.ctrKnobs[alias]; ok {
-		f(k)
-		w.applyKnobs(alias)
-		return
-	}
-	k, err := fakenet.Load(w.Fake, alias)
-	if err != nil {
-		w.T.Fatal(err)
-	}
-	f(k)
-	if err := fakenet.Save(w.Fake, alias, k); err != nil {
-		w.T.Fatal(err)
-	}
-}
-
-// ResetKnobs puts alias back to an unshaped link, keeping its environment.
-func (w *World) ResetKnobs(alias string) {
-	w.Knobs(alias, func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env, Drop: k.Drop} })
-}
-
-// Drop closes alias's live connections.
-func (w *World) Drop(alias string) { w.Knobs(alias, func(k *fakenet.Knobs) { k.Drop++ }) }
-
-// SSHLog is every call the fake ssh logged.
+// SSHLog is every ssh call of the world (the fake ssh and the real-ssh
+// wrapper log alike).
 func (w *World) SSHLog() []map[string]any {
 	b, _ := os.ReadFile(filepath.Join(w.Fake, "ssh.log"))
 	var out []map[string]any

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/relay"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 	"golang.org/x/sys/unix"
 )
 
@@ -308,7 +307,7 @@ func TestLS08(t *testing.T) {
 	w := NewWorld(t, "ls08")
 	home := w.Host("A", nil)
 	w.Host("B", nil)
-	w.Knobs("B", func(k *fakenet.Knobs) { k.Pty = true })
+	w.Shape("B", func(l *Link) { l.Pty = true })
 
 	t.Run("cat", func(t *testing.T) {
 		if testing.Short() {

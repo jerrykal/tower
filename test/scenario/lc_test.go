@@ -11,7 +11,6 @@ import (
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // lcRTTs are the connection family's round trips, one remote each.
@@ -23,7 +22,7 @@ type lcWorld struct {
 	w     *World
 	a     *Host
 	hosts []*Host
-	knobs func(rtt int, k *fakenet.Knobs)
+	knobs func(rtt int, l *Link)
 	terms []*Term
 }
 
@@ -36,13 +35,13 @@ func lcSession(rtt int) string { return fmt.Sprintf("s%d", rtt) }
 
 // newLC makes the world and starts the home; entry, when set, edits each
 // remote's hosts.toml entry first.
-func newLC(t *testing.T, id string, knobs func(rtt int, k *fakenet.Knobs)) *lcWorld {
+func newLC(t *testing.T, id string, knobs func(rtt int, l *Link)) *lcWorld {
 	x := makeLC(t, id, knobs)
 	x.start(nil)
 	return x
 }
 
-func makeLC(t *testing.T, id string, knobs func(rtt int, k *fakenet.Knobs)) *lcWorld {
+func makeLC(t *testing.T, id string, knobs func(rtt int, l *Link)) *lcWorld {
 	w := NewWorld(t, id)
 	w.Timing(ProductionTimings)
 	x := &lcWorld{w: w, knobs: knobs}
@@ -50,7 +49,7 @@ func makeLC(t *testing.T, id string, knobs func(rtt int, k *fakenet.Knobs)) *lcW
 	for _, rtt := range lcRTTs {
 		h := w.Host(lcName(rtt), []string{lcSession(rtt)})
 		x.hosts = append(x.hosts, h)
-		w.Knobs(h.Name, func(k *fakenet.Knobs) { x.shape(rtt, k) })
+		w.Shape(h.Name, func(l *Link) { x.shape(rtt, l) })
 	}
 	return x
 }
@@ -74,10 +73,10 @@ func (x *lcWorld) start(entry func(rtt int, h *config.Host)) {
 
 // shape sets a remote's link: a shared master, delay rtt/2, then the
 // scenario's own knobs.
-func (x *lcWorld) shape(rtt int, k *fakenet.Knobs) {
-	k.Mux, k.DelayMs = true, rtt/2
+func (x *lcWorld) shape(rtt int, l *Link) {
+	l.Mux, l.DelayMs = true, rtt/2
 	if x.knobs != nil {
-		x.knobs(rtt, k)
+		x.knobs(rtt, l)
 	}
 }
 
@@ -393,9 +392,9 @@ func TestLC03(t *testing.T) {
 			x.attachAll()
 			time.Sleep(time.Duration(rand.IntN(1000)) * time.Millisecond)
 			tr := x.track()
-			at := time.Now().UnixMilli()
-			for i, rtt := range lcRTTs {
-				x.w.Knobs(x.hosts[i].Name, func(k *fakenet.Knobs) { x.shape(rtt, k); k.HalfOpenAt = at })
+			at := time.Now()
+			for _, h := range x.hosts {
+				x.w.NetworkChange(h.Name, at)
 			}
 			tr.reset()
 			if mode == "netchange" {
@@ -429,20 +428,17 @@ func TestLC04(t *testing.T) {
 	x.attachAll()
 	tr := x.track()
 	at := time.Now()
-	for i, rtt := range lcRTTs {
-		x.w.Knobs(x.hosts[i].Name, func(k *fakenet.Knobs) { x.shape(rtt, k); k.Freeze, k.HalfOpenAt = true, at.UnixMilli() })
+	for _, h := range x.hosts {
+		x.w.Freeze(h.Name, true)
+		x.w.NetworkChange(h.Name, at)
 	}
 	tr.reset()
 	for _, h := range x.hosts {
 		t.Logf("%s down after %v", h.Name, tr.wait(h.Name, "down", 30*time.Second))
 	}
 	time.Sleep(time.Until(at.Add(20 * time.Second)))
-	for i, rtt := range lcRTTs {
-		x.w.Knobs(x.hosts[i].Name, func(k *fakenet.Knobs) {
-			*k = fakenet.Knobs{Env: k.Env, Drop: k.Drop}
-			x.shape(rtt, k)
-			k.HalfOpenAt = at.UnixMilli()
-		})
+	for _, h := range x.hosts {
+		x.w.Freeze(h.Name, false)
 	}
 	tr.reset()
 	for _, h := range x.hosts {
@@ -458,9 +454,9 @@ func TestLC04(t *testing.T) {
 // LC05: a slow but live link (200–800ms each way at R400) for 30s,
 // with network changes every 3s, is never dropped.
 func TestLC05(t *testing.T) {
-	x := newLC(t, "lc05", func(rtt int, k *fakenet.Knobs) {
-		k.DelayMs = rtt/2 + 3*rtt/4
-		k.JitterMs = 3 * rtt / 4
+	x := newLC(t, "lc05", func(rtt int, l *Link) {
+		l.DelayMs = rtt/2 + 3*rtt/4
+		l.JitterMs = 3 * rtt / 4
 	})
 	x.attachAll()
 	tr := x.track()
@@ -512,9 +508,9 @@ func TestLC06(t *testing.T) {
 		terms = append(terms, term)
 	}
 	time.Sleep(3 * time.Second)
-	at := time.Now().UnixMilli()
-	for i, rtt := range lcRTTs {
-		x.w.Knobs(x.hosts[i].Name, func(k *fakenet.Knobs) { x.shape(rtt, k); k.HalfOpenAt = at })
+	at := time.Now()
+	for _, h := range x.hosts {
+		x.w.NetworkChange(h.Name, at)
 	}
 	time.Sleep(time.Second)
 	type result struct {

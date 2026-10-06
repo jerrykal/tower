@@ -1,0 +1,162 @@
+package scenario
+
+import (
+	"time"
+
+	"github.com/jerrykal/tower/test/scenario/fakenet"
+)
+
+// Links and faults: what the network and the far side do to an ssh
+// name. Scenarios set them through the World; each host's backend puts
+// them in place: the fake ssh's knobs for a host on this machine, real
+// mechanisms for a container (container_test.go).
+
+// Link is the shape of the link to an ssh name.
+type Link struct {
+	DelayMs  int // one-way delay, each direction
+	JitterMs int // ± on the delay
+	BwKBps   int // KB/s per direction; 0 unlimited
+	WindowKB int // bytes in flight per direction (the fake's; 2048 by default)
+	// The fake's sessions get no pty and share no master unless asked;
+	// real ssh always has both (tower asks for a master).
+	Pty bool
+	Mux bool
+}
+
+// ptyLink is a link like ssh's: ssh -t gets a pty, sessions share a master.
+func ptyLink(l *Link) { l.Mux, l.Pty = true, true }
+
+// linkState is an ssh name's link and faults.
+type linkState struct {
+	Link
+	target     *Host
+	env        map[string]string // the target's environment, for the fake
+	freeze     bool              // half-open: nothing moves, ssh gives up after its alive window
+	stall      bool              // the far side stops reading and writing; ssh never gives up
+	down       string            // refused, hostkey, auth, password, resolve, timeout, tscheck
+	drops      int               // each one closes the live connections
+	halfOpenAt int64             // unix ms: connections made before it are half-open from then on
+	exit       *int              // the fake's: ssh's exit status when the remote command ends
+	oDelayMs   int               // the fake's: every ssh -O takes this long
+	port       int               // a container's sshd port for this name
+}
+
+// SSH registers ssh name alias for target, with an unshaped link.
+func (w *World) SSH(alias string, target *Host) {
+	w.T.Helper()
+	if w.links == nil {
+		w.links = map[string]*linkState{}
+	}
+	s := &linkState{target: target}
+	if target.ctr == nil {
+		s.env = target.EnvMap()
+	}
+	w.links[alias] = s
+	if target.ctr != nil {
+		w.ctrName(alias, target)
+	}
+	w.apply(alias, linkState{target: target})
+}
+
+// Shape changes alias's link.
+func (w *World) Shape(alias string, f func(*Link)) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { f(&s.Link) })
+}
+
+// Freeze makes alias's link half-open (nothing moves; ssh gives up after
+// its alive window, the far side never hears of it), or ends that.
+func (w *World) Freeze(alias string, on bool) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.freeze = on })
+}
+
+// Stall stops the far side of alias's connections reading and writing
+// (ssh still answers, so it never gives up), or ends that.
+func (w *World) Stall(alias string, on bool) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.stall = on })
+}
+
+// NetworkChange makes every connection to alias made before at
+// half-open from at on (the laptop moved networks): masters made since
+// work.
+func (w *World) NetworkChange(alias string, at time.Time) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.halfOpenAt = at.UnixMilli() })
+}
+
+// Down makes new connections to alias fail as ssh does: refused,
+// hostkey, auth, password, resolve, timeout or tscheck. Live ones stay
+// (Drop ends them).
+func (w *World) Down(alias, how string) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.down = how })
+}
+
+// Drop closes alias's live connections.
+func (w *World) Drop(alias string) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.drops++ })
+}
+
+// ExitWith makes ssh to alias exit with code when its remote command ends
+// (the fake's only).
+func (w *World) ExitWith(alias string, code int) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.exit = &code })
+}
+
+// SlowControl makes every ssh -O to alias take ms (a wedged master; the
+// fake's only).
+func (w *World) SlowControl(alias string, ms int) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) { s.oDelayMs = ms })
+}
+
+// Heal ends alias's faults, keeping its link. Connections a network
+// change left half-open stay so.
+func (w *World) Heal(alias string) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) {
+		s.freeze, s.stall, s.down, s.exit, s.oDelayMs = false, false, "", nil, 0
+	})
+}
+
+// Reset heals alias and unshapes its link.
+func (w *World) Reset(alias string) {
+	w.T.Helper()
+	w.change(alias, func(s *linkState) {
+		s.Link = Link{}
+		s.freeze, s.stall, s.down, s.exit, s.oDelayMs = false, false, "", nil, 0
+	})
+}
+
+func (w *World) change(alias string, f func(*linkState)) {
+	w.T.Helper()
+	s, ok := w.links[alias]
+	if !ok {
+		w.T.Fatalf("no ssh name %s", alias)
+	}
+	prev := *s
+	f(s)
+	w.apply(alias, prev)
+}
+
+// apply puts alias's state in place, prev being what is in place now.
+func (w *World) apply(alias string, prev linkState) {
+	w.T.Helper()
+	s := w.links[alias]
+	if s.target.ctr != nil {
+		w.ctrApply(alias, prev, s)
+		return
+	}
+	k := fakenet.Knobs{
+		Env: s.env, Down: s.down, Exit: s.exit, Freeze: s.freeze, Drop: s.drops, ODelayMs: s.oDelayMs,
+		DelayMs: s.DelayMs, JitterMs: s.JitterMs, BwKBps: s.BwKBps, WindowKB: s.WindowKB,
+		Stall: s.stall, Pty: s.Pty, Mux: s.Mux, HalfOpenAt: s.halfOpenAt,
+	}
+	if err := fakenet.Save(w.Fake, alias, &k); err != nil {
+		w.T.Fatal(err)
+	}
+}

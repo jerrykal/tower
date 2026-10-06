@@ -4,14 +4,13 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
-// downHost makes the fake ssh refuse h and drops its live connections:
-// the home's link goes down and stays down.
+// downHost makes h refuse new connections and drops its live ones: the
+// home's link goes down and stays down.
 func (w *World) downHost(name string) {
-	w.Knobs(name, func(k *fakenet.Knobs) { k.Down = "refused"; k.Drop++ })
+	w.Down(name, "refused")
+	w.Drop(name)
 }
 
 // TestLoopCtrlC: ctrl-c while the loop waits between attaches gives the

@@ -9,7 +9,6 @@ import (
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // S02: two homes for one host; one crashes, one exits. One stream per
@@ -84,9 +83,9 @@ func TestS03(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
 	broot := w.Host("Broot", []string{"rootwork"}, Machine("B"), HomeName("Broot"))
-	w.SSH("b", b, fakenet.Knobs{})
-	w.SSH("b-lan", b, fakenet.Knobs{})
-	w.SSH("b-root", broot, fakenet.Knobs{})
+	w.SSH("b", b)
+	w.SSH("b-lan", b)
+	w.SSH("b-root", broot)
 	w.Home(a,
 		config.Host{Name: "b", SSH: "b", Tmux: "-L " + b.Sock, Tower: towerBin},
 		config.Host{Name: "b-lan", SSH: "b-lan", Tmux: "-L " + b.Sock, Tower: towerBin},

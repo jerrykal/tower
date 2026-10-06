@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // LD02: deadlines at 400ms round trips: requests from B's dashboard to C
@@ -19,7 +18,7 @@ func TestLD02(t *testing.T) {
 	b := w.Host("B", []string{"bravo"})
 	c := w.Host("C", []string{"charlie"})
 	for _, n := range []string{"B", "C"} {
-		w.Knobs(n, func(k *fakenet.Knobs) { k.DelayMs = 200 })
+		w.Shape(n, func(l *Link) { l.DelayMs = 200 })
 	}
 	w.Home(a, b.Remote(), c.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)

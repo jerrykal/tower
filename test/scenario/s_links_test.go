@@ -11,7 +11,6 @@ import (
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // sessionCalls counts the fake ssh's session calls (no -O) to host.
@@ -37,12 +36,13 @@ func TestS14(t *testing.T) {
 	ctl := a.Status().Detail.Watch.CtlPid
 	end := time.Now().Add(12 * time.Second)
 	for time.Now().Before(end) {
-		w.Knobs("T", func(k *fakenet.Knobs) { k.Down = "refused"; k.Drop++ })
+		w.Down("T", "refused")
+		w.Drop("T")
 		time.Sleep(600 * time.Millisecond)
-		w.ResetKnobs("T")
+		w.Reset("T")
 		time.Sleep(600 * time.Millisecond)
 	}
-	w.ResetKnobs("T")
+	w.Reset("T")
 	calls := w.sessionCalls("T") - before
 	t.Logf("%d ssh calls in 12s of flapping", calls)
 	if calls > 30 {
@@ -61,7 +61,8 @@ func TestS15(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	downs := map[string]string{"hk": "hostkey", "pw": "password", "ak": "auth", "to": "timeout", "rs": "resolve", "ts": "tscheck", "pw2": "password", "ts2": "tscheck"}
 	for name, how := range downs {
-		w.SSH(name, a, fakenet.Knobs{Down: how})
+		w.SSH(name, a)
+		w.Down(name, how)
 	}
 	var hosts []config.Host
 	for _, n := range []string{"hk", "pw", "ak", "to", "rs", "ts"} {

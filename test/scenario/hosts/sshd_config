@@ -9,3 +9,23 @@ PrintMotd no
 PrintLastLog no
 AllowUsers tt
 ForceCommand /usr/local/bin/tt-run
+# One port per ssh name of the host (the harness gives each its own), so
+# each name gets its own control master, as with the fake ssh. IPv4
+# only: sshd listens on at most 16 sockets.
+AddressFamily inet
+Port 22
+Port 2201
+Port 2202
+Port 2203
+Port 2204
+Port 2205
+Port 2206
+Port 2207
+Port 2208
+Port 2209
+Port 2210
+Port 2211
+Port 2212
+Port 2213
+Port 2214
+Port 2215

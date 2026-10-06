@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // lc08Key is one mode and hop of LC08.
@@ -48,7 +46,7 @@ func lc08(t *testing.T, rtt int) map[lc08Key][]time.Duration {
 	b := w.Host("B", []string{"bravo"}, SSHHost())
 	c := w.Host("C", []string{"charlie"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
-		w.Knobs(n, func(k *fakenet.Knobs) { k.Mux, k.Pty, k.DelayMs = true, true, rtt/2 })
+		w.Shape(n, func(l *Link) { l.Mux, l.Pty, l.DelayMs = true, true, rtt/2 })
 	}
 	stdSetup(w, a, b, c)
 	modes := []struct {

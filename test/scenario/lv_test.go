@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // rttList reads a list of round trips (ms) from env, or def.
@@ -41,7 +40,7 @@ func newLV(t *testing.T, id string, rtt int) *lvWorld {
 	x.b = w.Host("B", []string{"b-one", "b-two"})
 	x.c = w.Host("C", []string{"c-one", "c-two"})
 	for _, n := range []string{"B", "C"} {
-		w.Knobs(n, func(k *fakenet.Knobs) { k.DelayMs = rtt / 2 })
+		w.Shape(n, func(l *Link) { l.DelayMs = rtt / 2 })
 	}
 	w.Home(x.a, x.b.Remote(), x.c.Remote())
 	w.WaitLink(x.a, "B", "up", 15*time.Second)

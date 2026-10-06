@@ -13,7 +13,6 @@ import (
 
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // S13: sleep (every connection half-open), then back: detected within
@@ -29,7 +28,7 @@ func TestS13(t *testing.T) {
 	attempts := w.Link(a, "B").Attempts
 	ctl := b.Status().Detail.Watch.CtlPid
 
-	w.Knobs("B", func(k *fakenet.Knobs) { k.Freeze = true })
+	w.Freeze("B", true)
 	el := w.WaitLink(a, "B", "down|connecting", 8*time.Second)
 	t.Logf("half-open link given up after %v", el.Round(time.Millisecond))
 	if n := len(b.LiveHomes()); n != 1 {
@@ -40,7 +39,7 @@ func TestS13(t *testing.T) {
 	}
 	w.Drop("B")
 	time.Sleep(400 * time.Millisecond)
-	w.ResetKnobs("B")
+	w.Reset("B")
 	el = w.WaitLink(a, "B", "up", 8*time.Second)
 	t.Logf("back up %v after the network came back", el.Round(time.Millisecond))
 	w.Eventually(3*time.Second, "one live stream on B", func() bool { return len(b.LiveHomes()) == 1 })
@@ -298,14 +297,15 @@ func TestS23(t *testing.T) {
 
 	// C down: refused fast, and never run later.
 	charlie := w.Ref(a, "C", "charlie")
-	w.Knobs("C", func(k *fakenet.Knobs) { k.Down = "refused"; k.Drop++ })
+	w.Down("C", "refused")
+	w.Drop("C")
 	w.WaitLink(a, "C", "down", 5*time.Second)
 	ack, el = act(proto.Request{Op: proto.OpKill, Target: charlie})
 	t.Logf("kill with C down: %q in %v", ack.Err, el)
 	if ack.OK || el > 3*time.Second {
 		t.Fatalf("kill with C down: %+v in %v", ack, el)
 	}
-	w.ResetKnobs("C")
+	w.Reset("C")
 	w.WaitLink(a, "C", "up", 6*time.Second)
 	time.Sleep(time.Second)
 	if !has("charlie") {

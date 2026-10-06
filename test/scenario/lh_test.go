@@ -14,15 +14,14 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // lhTiming is the slow-host family's timing: production keepalive, and
 // states and views padded to 30 KB so a stalled pipe fills.
 var lhTiming = map[string]string{"TOWER_SILENCE": "15000", "TOWER_TEST_PAD": "30000"}
 
-// slowKnobs is a 500ms round trip with jitter and 512 KB/s.
-func slowKnobs(k *fakenet.Knobs) { k.DelayMs, k.JitterMs, k.BwKBps = 250, 80, 512 }
+// slowLink is a 500ms round trip with jitter and 512 KB/s.
+func slowLink(l *Link) { l.DelayMs, l.JitterMs, l.BwKBps = 250, 80, 512 }
 
 // lhWorld is A, F, S and Z with the home on A, every host up, and a loop
 // on F:fox.
@@ -33,7 +32,7 @@ type lhWorld struct {
 	times      map[string][]time.Duration
 }
 
-func newLH(t *testing.T, id string, sk, zk func(*fakenet.Knobs)) *lhWorld {
+func newLH(t *testing.T, id string, sk, zk func(*Link)) *lhWorld {
 	w := NewWorld(t, id)
 	w.Timing(lhTiming)
 	x := &lhWorld{w: w, times: map[string][]time.Duration{}}
@@ -42,10 +41,10 @@ func newLH(t *testing.T, id string, sk, zk func(*fakenet.Knobs)) *lhWorld {
 	x.s = w.Host("S", []string{"sun"})
 	x.z = w.Host("Z", []string{"zed"})
 	if sk != nil {
-		w.Knobs("S", sk)
+		w.Shape("S", sk)
 	}
 	if zk != nil {
-		w.Knobs("Z", zk)
+		w.Shape("Z", zk)
 	}
 	w.Home(x.a, x.f.Remote(), x.s.Remote(), x.z.Remote())
 	for _, n := range []string{"F", "S", "Z"} {
@@ -176,13 +175,13 @@ func TestLH01(t *testing.T) {
 // LH02: S slow, Z stalled each round: a change elsewhere still reaches
 // every dashboard fast.
 func TestLH02(t *testing.T) {
-	window := func(k *fakenet.Knobs) { k.WindowKB = 32 }
-	x := newLH(t, "lh02", slowKnobs, window)
+	window := func(l *Link) { l.WindowKB = 32 }
+	x := newLH(t, "lh02", slowLink, window)
 	for n := range 3 {
-		x.w.Knobs("Z", func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env, Drop: k.Drop, WindowKB: 32} })
+		x.w.Heal("Z")
 		x.w.WaitLink(x.a, "Z", "up", 20*time.Second)
 		time.Sleep(time.Second)
-		x.w.Knobs("Z", func(k *fakenet.Knobs) { k.Stall = true })
+		x.w.Stall("Z", true)
 		for i := range 6 {
 			x.a.NewSession(fmt.Sprintf("churn%d", i))
 			time.Sleep(200 * time.Millisecond)
@@ -193,7 +192,7 @@ func TestLH02(t *testing.T) {
 		x.round(t, n)
 	}
 	x.report(t)
-	x.w.ResetKnobs("Z")
+	x.w.Reset("Z")
 }
 
 // lhTold is the dashboard's or the status line's word that Z is stalled.
@@ -216,18 +215,18 @@ func bottomLines(screen string, n int) string {
 // given up fast when it stalls as it is switched to; the terminal back
 // where it was, told why; the host usable again once it recovers.
 func TestLH03(t *testing.T) {
-	x := newLH(t, "lh03", nil, func(k *fakenet.Knobs) { k.WindowKB = 32 })
+	x := newLH(t, "lh03", nil, func(l *Link) { l.WindowKB = 32 })
 	w, a, f, z := x.w, x.a, x.f, x.z
 	zed := w.Ref(a, "Z", "zed")
 	for _, after := range []time.Duration{4 * time.Second, 4 * time.Second, 300 * time.Millisecond, 300 * time.Millisecond} {
-		w.Knobs("Z", func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env, Drop: k.Drop, WindowKB: 32} })
+		w.Heal("Z")
 		w.WaitLink(a, "Z", "up", 30*time.Second)
 		time.Sleep(1500 * time.Millisecond)
 		w.Eventually(10*time.Second, "the screen no longer telling", func() bool { return !lhTold.MatchString(x.term.Screen()) })
 		x.term.Keys("M-o")
 		x.term.Wait(Prompt, 8*time.Second)
 		x.term.Type("zed")
-		w.Knobs("Z", func(k *fakenet.Knobs) { k.Stall = true })
+		w.Stall("Z", true)
 		stalled := time.Now()
 		if after > time.Second {
 			time.Sleep(300 * time.Millisecond)
@@ -255,7 +254,7 @@ func TestLH03(t *testing.T) {
 		x.note(fmt.Sprintf("told (⏎ %v after the stall)", after), time.Since(pressed))
 		w.Eventually(10*time.Second, "back on F:fox", func() bool { return onSession(f, "fox") })
 		// Recovery.
-		w.Knobs("Z", func(k *fakenet.Knobs) { k.Stall = false })
+		w.Stall("Z", false)
 		w.Eventually(40*time.Second, "Z usable again", func() bool {
 			ack, _ := a.Act("", proto.Request{Op: proto.OpHas, Target: zed}, 0)
 			return ack.OK
@@ -291,7 +290,8 @@ func TestLH04(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
 	f := w.Host("F", []string{"fox"})
-	w.SSH("Fb", f, fakenet.Knobs{WindowKB: 32})
+	w.SSH("Fb", f)
+	w.Shape("Fb", func(l *Link) { l.WindowKB = 32 })
 	w.Home(a, f.Remote())
 	fb := f.Remote()
 	fb.Name, fb.SSH = "Fb", "Fb"
@@ -301,11 +301,11 @@ func TestLH04(t *testing.T) {
 	w.Eventually(5*time.Second, "two homes on F", func() bool { return len(f.LiveHomes()) == 2 })
 	var took []time.Duration
 	for round := range 3 {
-		w.Knobs("Fb", func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env, Drop: k.Drop, WindowKB: 32} })
+		w.Heal("Fb")
 		w.WaitLink(b, "Fb", "up", 30*time.Second)
 		w.Eventually(5*time.Second, "two homes on F", func() bool { return len(f.LiveHomes()) == 2 })
 		time.Sleep(time.Second)
-		w.Knobs("Fb", func(k *fakenet.Knobs) { k.Stall = true })
+		w.Stall("Fb", true)
 		for i := range 6 {
 			f.NewSession(fmt.Sprintf("c%d", i))
 			time.Sleep(200 * time.Millisecond)
@@ -324,7 +324,7 @@ func TestLH04(t *testing.T) {
 		}
 	}
 	t.Logf("F's change at the other home while one home's link stalled: %v", took)
-	w.ResetKnobs("Fb")
+	w.Reset("Fb")
 }
 
 // LH05: a wake with one wedged master: every other host is back fast.
@@ -337,7 +337,7 @@ func TestLH05(t *testing.T) {
 	w.Home(a, wh.Remote(), f.Remote())
 	w.WaitLink(a, "W", "up", 10*time.Second)
 	w.WaitLink(a, "F", "up", 10*time.Second)
-	w.Knobs("W", func(k *fakenet.Knobs) { k.ODelayMs = 2500 })
+	w.SlowControl("W", 2500)
 	var took []time.Duration
 	for range 3 {
 		before := w.Link(a, "F")
@@ -366,7 +366,7 @@ func TestLH06(t *testing.T) {
 	w.Timing(ProductionTimings)
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
-	w.Knobs("B", func(k *fakenet.Knobs) { k.Mux, k.DelayMs = true, 25 })
+	w.Shape("B", func(l *Link) { l.Mux, l.DelayMs = true, 25 })
 	w.Home(a, b.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)
 	// A real loop: nothing it does while B's towerd is wedged may cut its

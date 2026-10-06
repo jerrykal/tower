@@ -15,13 +15,10 @@ import (
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // The standby and relay scenarios: hosts with a pty (ssh -t gets one, as
 // from sshd) over a shared master.
-
-func ptyKnobs(k *fakenet.Knobs) { k.Mux, k.Pty = true, true }
 
 // statusBar is the host tmux's status line naming session s.
 func statusBar(s string) string { return `\[\S+:` + regexp.QuoteMeta(s) + `\]` }
@@ -62,8 +59,8 @@ func TestLS01(t *testing.T) {
 	silence := Env("TOWER_STANDBY_SILENCE", "5s")
 	b := w.Host("B", []string{"bravo"}, silence)
 	c := w.Host("C", []string{"charlie"}, silence)
-	w.Knobs("B", ptyKnobs)
-	w.Knobs("C", ptyKnobs)
+	w.Shape("B", ptyLink)
+	w.Shape("C", ptyLink)
 	stdSetup(w, a, b, c)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.WaitMark("standby: ready B", 5*time.Second)
@@ -133,7 +130,7 @@ func TestLS02(t *testing.T) {
 	w := NewWorld(t, "ls02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
-	w.Knobs("B", func(k *fakenet.Knobs) { ptyKnobs(k); k.DelayMs = 25 })
+	w.Shape("B", func(l *Link) { ptyLink(l); l.DelayMs = 25 })
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
 	term.Record()
@@ -217,7 +214,7 @@ func TestLS03(t *testing.T) {
 	w := NewWorld(t, "ls03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
-	w.Knobs("B", ptyKnobs)
+	w.Shape("B", ptyLink)
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.WaitMark("standby: ready B", 5*time.Second)
@@ -230,11 +227,11 @@ func TestLS03(t *testing.T) {
 	// (b) A network change with the master half-open.
 	time.Sleep(500 * time.Millisecond)
 	old, n = w.StandbyPids(b), w.CountMarks("standby: ready B")
-	w.Knobs("B", func(k *fakenet.Knobs) { k.HalfOpenAt = time.Now().UnixMilli() })
+	w.NetworkChange("B", time.Now())
 	time.Sleep(time.Second)
 	a.Call(proto.CallNetChange, nil, nil)
 	w.replaced(b, old, n, 15*time.Second)
-	w.Knobs("B", func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env}; ptyKnobs(k) })
+	w.Heal("B")
 
 	// (c) B's towerd killed, and a switch there right after.
 	w.WaitLink(a, "B", "up", 10*time.Second)
@@ -262,12 +259,12 @@ func TestLS03(t *testing.T) {
 	// (d) A stall.
 	time.Sleep(500 * time.Millisecond)
 	old, n = w.StandbyPids(b), w.CountMarks("standby: ready B")
-	w.Knobs("B", func(k *fakenet.Knobs) { k.Stall = true })
+	w.Stall("B", true)
 	w.Eventually(10*time.Second, "the standby to the stalled B gone", func() bool {
 		now := w.StandbyPids(b)
 		return !slices.ContainsFunc(old, func(p int) bool { return slices.Contains(now, p) })
 	})
-	w.Knobs("B", func(k *fakenet.Knobs) { k.Stall = false })
+	w.Stall("B", false)
 	w.Eventually(20*time.Second, "a new standby to B", func() bool { return w.CountMarks("standby: ready B") > n })
 }
 
@@ -279,7 +276,7 @@ func TestLS04(t *testing.T) {
 	b := w.Host("B", []string{"bravo"})
 	c := w.Host("C", []string{"charlie"})
 	for _, n := range []string{"B", "C"} {
-		w.Knobs(n, func(k *fakenet.Knobs) { k.Mux = true })
+		w.Shape(n, func(l *Link) { l.Mux = true })
 	}
 	link := filepath.Join(w.Dir, "tower-B")
 	if err := os.Symlink(towerBin, link); err != nil {
@@ -354,7 +351,7 @@ func TestLS05(t *testing.T) {
 	w := NewWorld(t, "ls05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
-	w.Knobs("B", ptyKnobs)
+	w.Shape("B", ptyLink)
 	stdSetup(w, a, b)
 	modes := []struct {
 		name string
@@ -426,10 +423,9 @@ func TestLS09(t *testing.T) {
 	w.Timing(lhTiming)
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"})
-	base := func(k *fakenet.Knobs) { k.Pty, k.WindowKB = true, 32 }
-	w.Knobs("B", base)
+	w.Shape("B", func(l *Link) { l.Pty, l.WindowKB = true, 32 })
 	stdSetup(w, a, b)
-	restore := func() { w.Knobs("B", func(k *fakenet.Knobs) { *k = fakenet.Knobs{Env: k.Env, Drop: k.Drop}; base(k) }) }
+	restore := func() { w.Heal("B") }
 	modes := []struct {
 		name string
 		env  map[string]string
@@ -482,14 +478,14 @@ func TestLS09(t *testing.T) {
 		pick()
 		onB("1", true)
 		// 2. ssh exits 255: reconnect at once.
-		w.Knobs("B", func(k *fakenet.Knobs) { e := 255; k.Exit = &e })
+		w.ExitWith("B", 255)
 		time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
 		term.Keys("C-b", "d")
 		w.WaitMark("after reconnect", 6*time.Second)
 		restore()
 		onB("2", false)
 		// 3. exit 43: the picker, saying why.
-		w.Knobs("B", func(k *fakenet.Knobs) { e := 43; k.Exit = &e })
+		w.ExitWith("B", 43)
 		time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
 		term.Keys("C-b", "d")
 		term.Wait(`B restarted since it was listed; pick again`, 6*time.Second)
@@ -498,7 +494,7 @@ func TestLS09(t *testing.T) {
 		term.Pick("bravo")
 		onB("3", true)
 		// 4. A bare exit 42: the picker, saying why.
-		w.Knobs("B", func(k *fakenet.Knobs) { e := 42; k.Exit = &e })
+		w.ExitWith("B", 42)
 		time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
 		term.Keys("C-b", "d")
 		term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
@@ -523,7 +519,7 @@ func TestLS09(t *testing.T) {
 		term.Wait(Prompt, 6*time.Second)
 		term.Type("bravo")
 		time.Sleep(250 * time.Millisecond)
-		w.Knobs("B", func(k *fakenet.Knobs) { k.Stall = true })
+		w.Stall("B", true)
 		time.Sleep(300 * time.Millisecond)
 		term.Keys("Enter")
 		term.Wait(`(?i)B[^\n]*(not responding|stalled)`, 20*time.Second)
@@ -562,8 +558,8 @@ func TestLS10(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
 	c := w.Host("C", []string{"charlie"}, SSHHost())
-	w.Knobs("B", ptyKnobs)
-	w.Knobs("C", ptyKnobs)
+	w.Shape("B", ptyLink)
+	w.Shape("C", ptyLink)
 	stdSetup(w, a, b, c)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.WaitMark("standby: ready B", 5*time.Second)

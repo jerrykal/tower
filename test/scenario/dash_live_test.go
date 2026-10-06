@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // Live dashboards and their requests: LV04, LD01, LD03.
@@ -135,7 +133,7 @@ func TestLD01(t *testing.T) {
 			b := w.Host("B", []string{"bravo"})
 			c := w.Host("C", []string{"charlie"})
 			for _, n := range []string{"B", "C"} {
-				w.Knobs(n, func(k *fakenet.Knobs) { k.DelayMs = rtt / 2 })
+				w.Shape(n, func(l *Link) { l.DelayMs = rtt / 2 })
 			}
 			w.Home(a, b.Remote(), c.Remote())
 			w.WaitLink(a, "B", "up", 15*time.Second)
@@ -316,7 +314,7 @@ func TestLD03(t *testing.T) {
 	b := w.Host("B", []string{"bravo"})
 	c := w.Host("C", []string{"charlie", "spam1", "spam2", "spam3", "spam4", "spam5"})
 	for _, n := range []string{"B", "C"} {
-		w.Knobs(n, func(k *fakenet.Knobs) { k.DelayMs = 75 })
+		w.Shape(n, func(l *Link) { l.DelayMs = 75 })
 	}
 	w.Home(a, b.Remote(), c.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)

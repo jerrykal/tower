@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // E01: a second towerd for one server is refused.
@@ -56,14 +54,14 @@ func TestE03(t *testing.T) {
 	b := w.Host("B", []string{"bravo"})
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
-	w.Knobs("B", func(k *fakenet.Knobs) { k.Freeze = true })
+	w.Freeze("B", true)
 	w.WaitLink(a, "B", "down|connecting", 8*time.Second)
 	b.MustTmux("kill-session", "-t", "bravo")
 	start := time.Now()
 	w.Eventually(5*time.Second, "B's server exits", func() bool { return !b.HasServer() })
 	t.Logf("B's server exited after %v", time.Since(start).Round(time.Millisecond))
 	b.NewSession("fresh")
-	w.ResetKnobs("B")
+	w.Reset("B")
 	w.WaitLink(a, "B", "up", 8*time.Second)
 }
 

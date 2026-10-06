@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jerrykal/tower/internal/proto"
-	"github.com/jerrykal/tower/test/scenario/fakenet"
 )
 
 // S04: a server restarts and reuses $0: prepare refuses the old listing,
@@ -100,11 +99,11 @@ func TestS06(t *testing.T) {
 	term.Pick("bravo")
 	w.WaitLoop(a, "^B:bravo", 5*time.Second)
 	time.Sleep(300 * time.Millisecond)
-	w.Knobs("B", func(k *fakenet.Knobs) { e := 42; k.Exit = &e })
+	w.ExitWith("B", 42)
 	time.Sleep(200 * time.Millisecond)
 	term.Keys("C-b", "d")
 	term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
-	w.ResetKnobs("B")
+	w.Reset("B")
 	if c := a.Clients(); len(c) != 0 {
 		t.Fatalf("A has clients %v", c)
 	}
