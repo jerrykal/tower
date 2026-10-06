@@ -98,8 +98,10 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       shared pids and routable container addresses do not cross Docker
       Desktop's VM, so on macOS the backend would need a `docker exec`
       per host command and published ports. The recommendation is go on
-      Linux, with macOS left to Phase 5's localhost sshd; the go or
-      no-go is the user's.
+      Linux, with macOS left to Phase 5's localhost sshd.
+
+      **Decided: go** on Linux; macOS through Phase 5, not Docker
+      Desktop.
 
       Shards at the end (fake ssh, as before): `^TestLC` 8/8 in 315s; the
       rest 83 passed, 4 skipped (R01–R04, without `TOWER_REAL`) in 498s, LS03 failing once under load (no loop on
