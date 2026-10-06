@@ -162,11 +162,28 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         Whether Phase 3 gives each container its own pid namespace
         (the sweeps and the stall reading pids through the container
         agent) is to be decided there.
-- [ ] **Phase 3, the container backend.** Long-lived containers reset
+- [x] **Phase 3, the container backend.** Long-lived containers reset
       between scenarios (test tmux servers killed, `TOWER_HOME` wiped),
       an ssh config and key per world with short ControlPaths, a small
       agent in each container applying faults without a `docker exec`
       per change.
+
+      Built (6e3447e, decision 115): a pool of six containers (`TT_HOSTS`)
+      a world takes from and teardown resets; each with pids of its own,
+      as you chose, and an agent (`hostagent`) on a unix socket doing
+      assignment, reset, commands, shaping and every fault. Pids read on
+      a container host are translated before the harness signals them.
+      Earlier runs' projects left by a killed run are taken down at
+      setup (checked with a stand-in `tt-4999999`). The ssh config is
+      per world already; one key per run serves every world; tower's
+      control paths need no shortening.
+
+      Measured: LC08 over real ssh 143.0s of test (3 runs) against 144.3s
+      with `docker exec` and the fake's 138.0s: about 1.25s a world over
+      the fake, down from 1.6s. The wall time stays 147s: six containers
+      take about 1s longer to bring up than two. `TestHarnessLinks` and
+      LS10 pass over the agent. Shards on the fake: `^TestLC` 8/8 in 316s,
+      the rest 85 passed, 4 skipped, 0 failed in 554s.
 - [ ] **Phase 4, port the families**, one at a time, each passing on
       the container backend before its knob code goes. Worlds that are
       not timing-sensitive run with `t.Parallel`; the timing checks

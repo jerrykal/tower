@@ -146,7 +146,7 @@ a host on this machine, real mechanisms for a container.
 | `Shape`: `Pty`, `Mux` | a pty for `ssh -t`; a shared master | always: ssh's own |
 | `w.Freeze(alias, on)` | new connections hang; sessions off a master give up after the alive window (those on a master ride it out) | `iptables` DROP of all TCP (`TT-FREEZE`): every connection gives up, the far side never hears |
 | `w.NetworkChange(alias, at)` | masters made before `at` dead from `at` | DROP, both ways and for good, of each connection established now (`TT-HALFOPEN`); `at` not in the future |
-| `w.Stall(alias, on)` | no byte moves; ssh never gives up | the processes ssh sessions run there (descendants of `sshd: tt@…`) stopped, and new ones as they come, every 50ms; sshd still answers |
+| `w.Stall(alias, on)` | no byte moves; ssh never gives up | the processes ssh sessions run there (descendants of `sshd: tt@…`) stopped by the agent, and new ones as they come, every 20ms; sshd still answers |
 | `w.Drop(alias)` | live connections closed | the container's `sshd: tt…` processes killed |
 | `w.Down(alias, how)` | ssh's message for `how` | per name in the world's ssh config: `refused` port 1, `timeout` port 2222 (SYNs dropped), `password` port 2223 (an sshd with key auth off), `resolve` an `.invalid` name, `hostkey` a known_hosts with another key, `auth` a key no host authorizes; `tscheck` none |
 | `w.ExitWith(alias, code)`, `w.SlowControl(alias, ms)` | forced exit status; a slow `ssh -O` | none (fails the scenario) |
@@ -192,37 +192,57 @@ ported so far.
 
 - `hosts/` holds the image (Ubuntu 24.04, OpenSSH, tmux built from
   source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
-  compose file with two hosts, `h1` and `h2`. `TestMain` builds the image
-  (`tt-scenario-host`, from cache after the first build; `TT_TMUX_VERSION`
-  picks tmux), brings the project up (`tt-<pid>`) and down at the end; containers, network and image carry the label `tower-test`.
+  compose file: a pool of `TT_HOSTS` hosts (6 by default),
+  `tt-<run>-host-<n>`. `TestMain` builds the image (`tt-scenario-host`,
+  from cache after the first build; `TT_TMUX_VERSION` picks tmux), takes
+  down earlier runs' projects whose process is gone (a `go test`
+  timeout skips teardown), brings the project up (`tt-<pid>`) and down
+  at the end; containers, network and image carry the label
+  `tower-test`.
 - The run's `TOWER_TEST_DIR`, `TMUX_TMPDIR` and `TMPDIR` are bind-mounted
-  at their own paths, the container user `tt` has the test user's uid,
-  and the containers share the machine's pids (`pid: host`). So a
-  container host's `TOWER_HOME`, timing marks, tmux socket and towerd
-  socket are where the harness looks, its processes are swept like any
-  other, and only ssh crosses the network. `h.Tmux` starts a container
-  host's server in the container (`docker exec`, any command with `-f`)
-  and reaches it through its socket otherwise.
+  at their own paths and the container user `tt` has the test user's
+  uid, so a container host's `TOWER_HOME`, timing marks and tmux and
+  towerd sockets are where the harness looks; only ssh crosses the
+  network. `h.Tmux` starts a container host's server in the container
+  (any command with `-f`, through the agent) and reaches it through its
+  socket otherwise.
+- Each container has pids of its own, as a machine has, with tini as
+  pid 1 to reap what daemons leave. This machine still sees its
+  processes, under other pids: a pid read on a container host (a pid
+  file, a tmux client) is translated before the harness signals it
+  (`h.HostPid`, from `NSpid` in `/proc`; `h.TowerdPid` and teardown do).
+  The sweeps by `TOWER_HOME` and by control path see container
+  processes as any other.
+- An agent in each container (`hostagent`, root) serves the harness on
+  `$TOWER_TEST_DIR/slots/<hostname>.sock`, owned by the test user, one
+  JSON call per connection: `assign` (the world's environment file,
+  then `reset`), `reset` (no stall, no shaping, no faults, every process
+  of `tt` killed), `exec` (a command as `tt` through `tt-run`, or as
+  root), `netem`, `freeze`, `halfopen`, `drop`, `stall`. It sees only its
+  container's processes, so whatever it signals is the container's; a
+  change costs a unix-socket call, not a `docker exec`.
+- A world takes a free container for each `SSHHost()` host
+  (`assign`); teardown, once its own checks are done, resets it
+  (`release`) for the next world.
 - sshd takes key auth only and runs every command through `tt-run`
   (`ForceCommand`), which sources the host's environment from
-  `$TOWER_TEST_DIR/slots/<slot>.env`, written when the world makes the
-  host; then `sh -c` the command, as sshd runs it. Everything else is
+  `$TOWER_TEST_DIR/slots/<hostname>.env`, written when the world makes
+  the host; then `sh -c` the command, as sshd runs it. Everything else is
   sshd's default, `MaxSessions` included.
-- A world gives each `SSHHost()` host a free container and, from then on,
-  every host of the world `TOWER_SSH=sshwrap`, which logs the call to
-  `fake/ssh.log` as the fake does (`w.SSHLog` reads both) and runs
-  `ssh -F $TOWER_TEST_SSH_CONFIG`: the world's names to the containers'
-  addresses, the run's keys and known hosts, neither the user's nor the
-  system's config.
+- From its first container host on, every host of the world has
+  `TOWER_SSH=sshwrap`, which logs the call to `fake/ssh.log` as the fake
+  does (`w.SSHLog` reads both) and runs `ssh -F $TOWER_TEST_SSH_CONFIG`:
+  the world's names to the containers' addresses, the run's keys and
+  known hosts, neither the user's nor the system's config. One key per
+  run serves every world (each world's names, config and control
+  masters are its own); the control paths are tower's own, short
+  enough.
 - Each ssh name of a container gets a port of its own (sshd listens on
   22 and 2201–2215, IPv4 only, its limit of 16 sockets): ssh keys a
   control master by host, port and user, so names of one host would
   otherwise share one.
-- The containers share the machine's pids, so a fault never signals a
-  process by name: only pids whose cgroup is the container's, checked
-  again where they are signalled. Drop kills as root in the container
-  (comparing with its own cgroup there); a stall stops and continues the
-  test user's processes from the harness.
+- Nothing signals a process by name: the agent signals pids from its
+  own `/proc`, the harness translated pids.
 
 ## Teardown
 
