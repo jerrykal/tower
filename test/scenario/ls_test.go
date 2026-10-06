@@ -271,9 +271,12 @@ func TestLS03(t *testing.T) {
 	w.WaitLoop(a, "^A:alpha", 8*time.Second)
 	w.WaitMark("standby: ready B", 10*time.Second)
 
-	// (d) A stall.
+	// (d) A stall. Over real ssh the old standby's far side is stopped
+	// with the rest of B: it goes once B runs again (on Linux the hang-up
+	// of its terminal continues it at once, on macOS it waits).
 	time.Sleep(500 * time.Millisecond)
 	old, n = standbys(), w.CountMarks("standby: ready B")
+	old, far := b.SplitFar(old)
 	w.Stall("B", true)
 	w.Eventually(10*time.Second, "the standby to the stalled B gone", func() bool {
 		now := w.StandbyPids(b)
@@ -281,6 +284,7 @@ func TestLS03(t *testing.T) {
 	})
 	w.Stall("B", false)
 	w.Eventually(20*time.Second, "a new standby to B", func() bool { return w.CountMarks("standby: ready B") > n })
+	w.Eventually(5*time.Second, "the far side (d) gone", func() bool { return !slices.ContainsFunc(far, Alive) })
 
 	// (b)'s stranded far side has exited for want of heartbeats.
 	w.Eventually(time.Until(changed.Add(35*time.Second)), "the far side (b) stranded gone", func() bool {
