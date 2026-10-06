@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"os"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/client"
@@ -15,7 +18,8 @@ import (
 // cmdLast is tower last, tmux's switch-client -l across hosts, run by
 // prefix L for the client that pressed it (TOWER_CLIENT). It falls back to
 // tmux's own switch-client -l when the terminal has no loop, the loop has
-// no previous session, or towerd cannot be reached.
+// no previous session, or towerd cannot be reached. A hand-off refused
+// says why on the client, as tmux's own errors do.
 func cmdLast(args []string) error {
 	cl := os.Getenv("TOWER_CLIENT")
 	id, _ := proto.ParseClient(cl)
@@ -25,6 +29,21 @@ func cmdLast(args []string) error {
 	if err == nil {
 		srv.Args = env.Tmux
 	}
+	// An error once the pressing client is gone (a hand-off before this
+	// one ended it) is moot: run-shell would only put the pane, which the
+	// terminal's next client may show, in view mode with it.
+	settle := func(err error) error {
+		if err == nil || name == "" {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		out, lerr := srv.Run(ctx, "list-clients", "-F", "#{client_pid} #{client_name}")
+		if lerr == nil && !slices.Contains(strings.Split(out, "\n"), strconv.Itoa(id.Pid)+" "+name) {
+			return nil
+		}
+		return err
+	}
 	fallback := func() error {
 		args := []string{"switch-client", "-l"}
 		if name != "" {
@@ -33,7 +52,7 @@ func cmdLast(args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, err := srv.Run(ctx, args...)
-		return err
+		return settle(err)
 	}
 	if err != nil || cl == "" {
 		return fallback()
@@ -49,11 +68,11 @@ func cmdLast(args []string) error {
 	case res.Stored && res.Ended:
 		return nil // the loop moves the terminal
 	case res.Stored:
-		// The loop was not waiting to end the client (another switch
-		// woke it first, or it confirmed too late): end it here.
+		// The loop was not waiting to end the client (none waiting, or
+		// it confirmed too late): end it here.
 		tmux.UseBin(srv.Bin)
 		dash := &ui.Conn{Tmux: srv, Client: cl}
-		return dash.EndClient(ctx)
+		return settle(dash.EndClient(ctx))
 	case res.Local:
 		tmux.UseBin(srv.Bin)
 		a := []string{"switch-client", "-c", name, "-t", res.Target.Session}
@@ -61,7 +80,13 @@ func cmdLast(args []string) error {
 			a = append(a, ";", "select-window", "-t", res.Target.Window)
 		}
 		_, err := srv.Run(ctx, a...)
-		return err
+		return settle(err)
+	case !res.Target.IsZero():
+		// Refused: an earlier attach's client (its loop moved on since
+		// the key), or a host not up.
+		tmux.UseBin(srv.Bin)
+		srv.Run(ctx, "display-message", "-c", name, "tower: "+res.Note)
+		return nil
 	}
 	return fallback()
 }

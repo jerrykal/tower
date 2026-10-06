@@ -513,6 +513,30 @@ func TestS27(t *testing.T) {
 	if ls := w.Loops(a); len(ls) != 1 || !ls[0].Seen || strings.Contains(term.Screen(), "without a valid hand-off") {
 		t.Fatalf("two at once: loops %+v, screen:\n%s", ls, term.Screen())
 	}
+
+	// A press that reaches the client the terminal has left, once it is
+	// gone: tower last exits quietly, leaving the pane, which the
+	// terminal's next client there shows, out of any mode.
+	on, session, next := b, "bravo", "^A:alpha"
+	if strings.HasPrefix(FormatRef(w.Loops(a)[0].Cur), "A:") {
+		on, session, next = a, "alpha", "^B:bravo"
+	}
+	clients := strings.Fields(on.MustTmux("list-clients", "-F", "#{client_created}:#{client_pid}:#{client_created}:#{client_name}"))
+	slices.Sort(clients)
+	old := clients[len(clients)-1]
+	old = old[strings.Index(old, ":")+1:]
+	term.Keys("M-l")
+	w.WaitLoop(a, next, 4*time.Second)
+	w.Eventually(5*time.Second, "the client left gone", func() bool {
+		out, _ := on.Tmux("list-clients", "-F", "#{client_pid}:#{client_created}:#{client_name}")
+		return !strings.Contains(out, old)
+	})
+	if out, err := on.TowerEnv(map[string]string{"TOWER_CLIENT": old}, "last"); err != nil {
+		t.Fatalf("tower last for a client gone: %v: %s", err, out)
+	}
+	if m := strings.TrimSpace(on.MustTmux("display-message", "-p", "-t", session, "#{pane_in_mode}")); m != "0" {
+		t.Fatalf("the pane is in a mode (%s)", m)
+	}
 }
 
 // D01: tower dash: a second terminal picks its own target while the
