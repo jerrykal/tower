@@ -94,8 +94,9 @@ func (x *lcWorld) attachAll() {
 // tracker records, per host, when each event was first seen since its
 // last reset: stalled, down (down or connecting, or a new attempt since
 // the last poll), notup (anything but up), attempt (a new connect), back
-// (up again after notup); and for the loops' clients noclient (not the
-// wanted session alone, or every client replaced) and clientback.
+// (up again after notup), and lastattempt (the last new connect before
+// back); and for the loops' clients noclient (not the wanted session
+// alone, or every client replaced) and clientback.
 type tracker struct {
 	x     *lcWorld
 	mu    sync.Mutex
@@ -145,6 +146,9 @@ func (x *lcWorld) track() *tracker {
 				}
 				if newAttempt {
 					mark(l.Name, "attempt")
+					if _, ok := tr.seen[l.Name+" back"]; !ok {
+						tr.seen[l.Name+" lastattempt"] = now
+					}
 				}
 				if l.Status != "up" || l.Stalled || newAttempt {
 					mark(l.Name, "notup")
@@ -236,6 +240,86 @@ func (tr *tracker) get(host, ev string) (time.Duration, bool) {
 	defer tr.mu.Unlock()
 	v, ok := tr.seen[host+" "+ev]
 	return v, ok
+}
+
+// A recovery's limit (from a fault, the network's return or a pick, to
+// the client back) was set on the fake ssh, whose new connection takes
+// about lcFakeConnect round trips; real ssh's takes about twice that, and
+// tower does not choose its handshake. So a recovery is held to three
+// checks: tower's part, all but the connection, within the time the
+// limit left it on the fake; the connection (ssh, tower started there,
+// the hello, the first state) within lcConnectCap round trips; the client
+// back within a second and 4 round trips of the link.
+const (
+	lcFakeConnect = 6.5 // round trips, measured: the fake's new master (6) and the hello
+	lcConnectCap  = 14  // round trips: real ssh's 13, measured at RTT 400
+)
+
+// recovery is one host's recovery in the tracker's clock, from its start
+// to its client back, with its link's last connection.
+type recovery struct {
+	h              *Host
+	rtt            int
+	from, client   time.Duration
+	connect, after time.Duration // the connection; the client after the link (and asked)
+	whole          bool          // the connection started within the recovery
+}
+
+// recovery reads h's recovery from from to client: the connection is its
+// link's last attempt, or from should that have started earlier, until
+// back; the client's return counts from back, or from asked (the last
+// pick) should that come later.
+func (tr *tracker) recovery(h *Host, rtt int, from, client, asked time.Duration) (recovery, bool) {
+	back, ok := tr.get(h.Name, "back")
+	if !ok || client < 0 {
+		return recovery{}, false
+	}
+	start, ok := tr.get(h.Name, "lastattempt")
+	whole := ok && start >= from
+	if !whole {
+		start = from
+	}
+	return recovery{h: h, rtt: rtt, from: from, client: client, connect: back - start, after: client - max(back, asked), whole: whole}, true
+}
+
+// checkRecoveries checks each recovery against limit, the connection in
+// round trips past R0's in the same world (its time without a network:
+// the processes started, the keys computed). Round trips are counted only
+// for a connection made whole within the recovery, R0's too: one already
+// under way as the network came back waited on the kernel's retries too.
+func checkRecoveries(t *testing.T, limit time.Duration, rs []recovery) {
+	t.Helper()
+	local := time.Duration(-1)
+	for _, r := range rs {
+		if r.rtt == 0 && r.whole {
+			local = r.connect
+		}
+	}
+	for _, r := range rs {
+		rt := time.Duration(r.rtt) * time.Millisecond
+		total := r.client - r.from
+		own, ownLimit := total-r.connect, limit-time.Duration(lcFakeConnect*float64(rt))
+		trips, counted := 0.0, r.rtt > 0 && r.whole && local >= 0
+		how := "under way as the recovery began"
+		if counted {
+			trips = float64(r.connect-local) / float64(rt)
+			how = fmt.Sprintf("%.1f round trips past R0's", trips)
+		} else if r.whole {
+			how = "whole"
+		}
+		t.Logf("%s: client back after %v: tower's part %v (limit %v), the connection %v (%s), the client %v after the link",
+			r.h.Name, total.Round(time.Millisecond), own.Round(time.Millisecond), ownLimit,
+			r.connect.Round(time.Millisecond), how, r.after.Round(time.Millisecond))
+		if own > ownLimit {
+			t.Errorf("%s: tower's part of the recovery %v, limit %v", r.h.Name, own, ownLimit)
+		}
+		if counted && r.rtt >= 150 && trips > lcConnectCap {
+			t.Errorf("%s: the connection took %.1f round trips, limit %d", r.h.Name, trips, lcConnectCap)
+		}
+		if r.after > time.Second+4*rt {
+			t.Errorf("%s: the client back %v after the link, limit %v", r.h.Name, r.after, time.Second+4*rt)
+		}
+	}
 }
 
 // LC01: a cold start lists every host with its sessions; attaches; a wake
@@ -384,7 +468,8 @@ func TestLC02(t *testing.T) {
 }
 
 // LC03: a link half-open after a network change: back in seconds, faster
-// with the interface watcher, every loop's client with it.
+// with the interface watcher, every loop's client with it: within 12s,
+// or 8s with the watcher, on the fake ssh (checkRecoveries).
 func TestLC03(t *testing.T) {
 	for _, mode := range []string{"silent", "netchange"} {
 		t.Run(mode, func(t *testing.T) {
@@ -407,22 +492,26 @@ func TestLC03(t *testing.T) {
 			if mode == "netchange" {
 				limit = 8 * time.Second
 			}
-			for _, h := range x.hosts {
+			var rs []recovery
+			for i, h := range x.hosts {
 				cb := tr.wait(h.Name, "clientback", 40*time.Second)
 				back, _ := tr.get(h.Name, "back")
 				stalled, _ := tr.get(h.Name, "stalled")
 				down, _ := tr.get(h.Name, "down")
 				t.Logf("%s (%s): stalled %v, given up %v, back %v, client back %v", h.Name, mode, stalled, down, back, cb)
-				if cb < 0 || cb > limit {
-					t.Fatalf("%s's client back after %v (limit %v)", h.Name, cb, limit)
+				r, ok := tr.recovery(h, lcRTTs[i], 0, cb, 0)
+				if !ok {
+					t.Fatalf("%s's client never came back", h.Name)
 				}
+				rs = append(rs, r)
 			}
+			checkRecoveries(t, limit, rs)
 		})
 	}
 }
 
 // LC04: a 20s blackout: every loop's client back within 10s of the
-// network's return.
+// network's return on the fake ssh (checkRecoveries).
 func TestLC04(t *testing.T) {
 	x := newLC(t, "lc04", nil)
 	x.attachAll()
@@ -441,14 +530,18 @@ func TestLC04(t *testing.T) {
 		x.w.Freeze(h.Name, false)
 	}
 	tr.reset()
-	for _, h := range x.hosts {
+	var rs []recovery
+	for i, h := range x.hosts {
 		back := tr.wait(h.Name, "back", 60*time.Second)
 		cb := tr.wait(h.Name, "clientback", 60*time.Second)
 		t.Logf("%s after the blackout: back %v, client back %v", h.Name, back, cb)
-		if cb < 0 || cb > 10*time.Second {
-			t.Fatalf("%s's client back after %v", h.Name, cb)
+		r, ok := tr.recovery(h, lcRTTs[i], 0, cb, 0)
+		if !ok {
+			t.Fatalf("%s's client never came back", h.Name)
 		}
+		rs = append(rs, r)
 	}
+	checkRecoveries(t, 10*time.Second, rs)
 }
 
 // LC05: a slow but live link (200–800ms each way at R400) for 30s,
@@ -497,8 +590,9 @@ func TestLC05(t *testing.T) {
 }
 
 // LC06: a switch to a host whose master went half-open a second ago
-// lands within seconds: the attach is given up as the host stalls, and a
-// pick after that waits for the new link.
+// lands within seconds, 12s on the fake ssh (checkRecoveries): the attach
+// is given up as the host stalls, and a pick after that waits for the new
+// link.
 func TestLC06(t *testing.T) {
 	x := newLC(t, "lc06", nil)
 	var terms []*Term
@@ -508,15 +602,18 @@ func TestLC06(t *testing.T) {
 		terms = append(terms, term)
 	}
 	time.Sleep(3 * time.Second)
+	tr := x.track()
 	at := time.Now()
 	for _, h := range x.hosts {
 		x.w.NetworkChange(h.Name, at)
 	}
+	tr.reset()
 	time.Sleep(time.Second)
 	type result struct {
-		took  time.Duration
-		picks int
-		ok    bool
+		took              time.Duration
+		picks             int
+		ok                bool
+		from, last, there time.Duration // the first and last picks and the client, in the tracker's clock
 	}
 	res := make([]result, len(lcRTTs))
 	var wg sync.WaitGroup
@@ -536,7 +633,7 @@ func TestLC06(t *testing.T) {
 						since = time.Now()
 					}
 					if time.Since(since) >= time.Second {
-						res[i] = result{since.Sub(start), picks, true}
+						res[i] = result{since.Sub(start), picks, true, start.Sub(tr.start), last.Sub(tr.start), since.Sub(tr.start)}
 						return
 					}
 				} else {
@@ -555,14 +652,19 @@ func TestLC06(t *testing.T) {
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
-			res[i] = result{time.Since(start), picks, false}
+			res[i] = result{time.Since(start), picks, false, 0, 0, 0}
 		}()
 	}
 	wg.Wait()
+	var rs []recovery
 	for i, r := range res {
-		t.Logf("%s: attached in %v, %d picks", x.hosts[i].Name, r.took.Round(time.Millisecond), r.picks)
-		if !r.ok || r.took > 12*time.Second {
-			t.Errorf("%s: attached %v after %v", x.hosts[i].Name, r.ok, r.took)
+		h := x.hosts[i]
+		t.Logf("%s: attached in %v, %d picks", h.Name, r.took.Round(time.Millisecond), r.picks)
+		rec, ok := tr.recovery(h, lcRTTs[i], r.from, r.there, r.last)
+		if !r.ok || !ok {
+			t.Fatalf("%s: attached %v after %v", h.Name, r.ok, r.took)
 		}
+		rs = append(rs, rec)
 	}
+	checkRecoveries(t, 12*time.Second, rs)
 }
