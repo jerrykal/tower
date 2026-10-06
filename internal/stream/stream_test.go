@@ -245,6 +245,30 @@ func TestClockOffsetAndDeadlines(t *testing.T) {
 	}
 }
 
+// The hello's round trip stands in until the first pong measures one.
+func TestMeasured(t *testing.T) {
+	c, _ := newFakePeer(t, 0, Options{Ping: 20 * time.Millisecond})
+	c.Start()
+	c.SetHelloRTT(5 * time.Second)
+	select {
+	case <-c.Measured():
+		t.Fatal("measured before a ping")
+	default:
+	}
+	if got := c.Margin(); got != 5*time.Second {
+		t.Fatalf("margin %v before the first pong, want the hello's 5s", got)
+	}
+	c.Live()
+	select {
+	case <-c.Measured():
+	case <-time.After(time.Second):
+		t.Fatal("no round trip measured")
+	}
+	if got := c.Margin(); got != 200*time.Millisecond {
+		t.Fatalf("margin %v after the first pong, want the floor", got)
+	}
+}
+
 func TestStallAndRecovery(t *testing.T) {
 	stalls := make(chan bool, 10)
 	c, p := newFakePeer(t, 0, Options{Ping: 50 * time.Millisecond, Silence: 10 * time.Second, OnStall: func(s bool) { stalls <- s }})

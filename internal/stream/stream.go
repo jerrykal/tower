@@ -75,6 +75,7 @@ type Conn struct {
 	nextN   uint64
 	samples []sample
 	helloRT time.Duration
+	sampled chan struct{} // closed by the first round trip measured
 	stalled bool
 	epoch   uint64 // stalls so far
 	stallC  chan struct{}
@@ -109,6 +110,7 @@ func New(r io.Reader, w io.Writer, o Options) *Conn {
 		pings:   map[uint64]pingRec{},
 		unknown: map[string]bool{},
 		stallC:  make(chan struct{}),
+		sampled: make(chan struct{}),
 		wake:    make(chan struct{}, 1),
 		done:    make(chan struct{}),
 	}
@@ -155,12 +157,17 @@ func (c *Conn) Live() {
 }
 
 // SetHelloRTT seeds the round-trip estimate with the hello's, until the
-// first pong.
+// first pong. It counts the connect (ssh's handshakes, the peer's start),
+// so it errs long.
 func (c *Conn) SetHelloRTT(d time.Duration) {
 	c.mu.Lock()
 	c.helloRT = d
 	c.mu.Unlock()
 }
+
+// Measured is closed once a pong has measured a round trip: from then on
+// SlowRTT is the link's, not the hello's.
+func (c *Conn) Measured() <-chan struct{} { return c.sampled }
 
 // Done is closed when the stream has ended.
 func (c *Conn) Done() <-chan struct{} { return c.done }
@@ -439,6 +446,9 @@ func (c *Conn) pong(p *proto.Ping) {
 	}
 	off := time.Duration(p.Clock-mid) * time.Millisecond
 	c.samples = append(c.samples, sample{rtt: rtt, offset: off})
+	if len(c.samples) == 1 {
+		close(c.sampled)
+	}
 	if len(c.samples) > window {
 		c.samples = c.samples[len(c.samples)-window:]
 	}

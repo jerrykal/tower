@@ -412,8 +412,12 @@ loop died still has the terminal.
 
 **Routing** (`route`): a request for this machine runs here; otherwise
 `exec` on the target's link (refused at once if it is not up, or
-stalled), the stream keeping back its margin. Errors: "X is not
-responding", "X did not answer in time", "X is down: reason". A `relay`
+stalled), the stream keeping back its margin. A request whose deadline
+is within the margin is refused ("too little time left to reach X"),
+but only on a measured round trip: before the link's first pong the
+margin is the hello's time, which counts the connect, so the request
+waits for that pong first (a stale client's detach at link-up). Errors:
+"X is not responding", "X did not answer in time", "X is down: reason". A `relay`
 from a remote: the switch path or `route`, then the asking host gets the
 merged view (`SendNow`), then the `ack`.
 

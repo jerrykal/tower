@@ -862,7 +862,19 @@ func (h *homeRole) route(ctx context.Context, req *proto.Request) *proto.Ack {
 		}
 		return &proto.Ack{ID: req.ID, Err: why}
 	}
-	if req.Deadline != 0 && req.Deadline-stream.Now() <= conn.Margin().Milliseconds() {
+	short := func() bool { return req.Deadline != 0 && req.Deadline-stream.Now() <= conn.Margin().Milliseconds() }
+	if short() {
+		// Before the first pong the margin is the hello's time, the
+		// connect included: a round trip measures the link's.
+		t := time.NewTimer(time.Duration(req.Deadline-stream.Now()) * time.Millisecond)
+		select {
+		case <-conn.Measured():
+		case <-ctx.Done():
+		case <-t.C:
+		}
+		t.Stop()
+	}
+	if short() {
 		// The host would get it with its time already up.
 		return &proto.Ack{ID: req.ID, Err: "too little time left to reach " + hs.name}
 	}
