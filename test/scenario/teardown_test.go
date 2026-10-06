@@ -27,7 +27,14 @@ func (w *World) teardown() {
 	for _, p := range towerds {
 		if b, err := os.ReadFile(p); err == nil {
 			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pid > 1 {
-				pids = append(pids, pid)
+				// A container's pid file holds its own pid: this
+				// machine's, or none.
+				if h := w.homeOf(p); h != nil {
+					pid = h.HostPid(pid)
+				}
+				if pid > 1 {
+					pids = append(pids, pid)
+				}
 			}
 		}
 	}
@@ -86,6 +93,14 @@ func (w *World) teardown() {
 		}
 	}
 
+	// Each container: none of its test user's processes, its link and
+	// faults reset, free for the next world.
+	for _, h := range w.hosts {
+		if h.ctr != nil && h.ctr.w == w {
+			w.release(h)
+		}
+	}
+
 	if len(wedged) > 0 {
 		t.Errorf("teardown: tmux servers outlived their sessions: %v", wedged)
 	}
@@ -101,6 +116,16 @@ func (w *World) teardown() {
 }
 
 func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
+
+// homeOf is the container host whose TOWER_HOME holds path, or nil.
+func (w *World) homeOf(path string) *Host {
+	for _, h := range w.hosts {
+		if h.ctr != nil && strings.HasPrefix(path, h.HomeDir+"/") {
+			return h
+		}
+	}
+	return nil
+}
 
 // killSessions ends every session of a test server, which ends the server
 // (exit-empty). A server is never killed outright: the user's tooling

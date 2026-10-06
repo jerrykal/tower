@@ -1,36 +1,32 @@
-# Two simulated hosts for the scenario suite (TOWER_HOSTS=container).
-# The harness brings the project up and down; every container, network
-# and image carries the label tower-test and a tt- name.
+# The simulated hosts of the scenario suite (TOWER_HOSTS=container): a
+# pool of TT_HOSTS containers the harness assigns to worlds and resets
+# between them. The harness brings the project up and down; every
+# container, network and image carries the label tower-test and a tt-
+# name (tt-<run>-host-<n>).
 name: tt-${TT_RUN}
 
-x-host: &host
-  # Built by the harness (docker build): compose would stamp each run's
-  # project into the image and leave the last one dangling.
-  image: tt-scenario-host:latest
-  pull_policy: never
-  labels: [tower-test]
-  cap_add: [NET_ADMIN]
-  # The suite finds, signals and sweeps a host's processes by pid.
-  pid: host
-  networks: [hosts]
-  volumes:
-    - ${TOWER_TEST_DIR}:${TOWER_TEST_DIR}
-    - ${TMUX_TMPDIR}:${TMUX_TMPDIR}
-    - ${TMPDIR}:${TMPDIR}
-
 services:
-  h1:
-    <<: *host
-    container_name: tt-${TT_RUN}-h1
+  host:
+    # Built by the harness (docker build): compose would stamp each run's
+    # project into the image and leave the last one dangling.
+    image: tt-scenario-host:latest
+    pull_policy: never
+    labels: [tower-test]
+    deploy:
+      replicas: ${TT_HOSTS:-6}
+    cap_add: [NET_ADMIN]
+    # Each host has pids of its own, as a machine does; tini as pid 1
+    # reaps what daemons leave.
+    init: true
+    networks: [hosts]
     environment:
       TT_PUBKEY: ${TT_PUBKEY}
-      TT_ENV: ${TOWER_TEST_DIR}/slots/h1.env
-  h2:
-    <<: *host
-    container_name: tt-${TT_RUN}-h2
-    environment:
-      TT_PUBKEY: ${TT_PUBKEY}
-      TT_ENV: ${TOWER_TEST_DIR}/slots/h2.env
+      TT_AGENT: ${TOWER_TEST_DIR}/bin/hostagent
+      TT_SLOTS: ${TOWER_TEST_DIR}/slots
+    volumes:
+      - ${TOWER_TEST_DIR}:${TOWER_TEST_DIR}
+      - ${TMUX_TMPDIR}:${TMUX_TMPDIR}
+      - ${TMPDIR}:${TMPDIR}
 
 networks:
   hosts:

@@ -183,7 +183,10 @@ func TestHarnessLinks(t *testing.T) {
 		w.ssh(a, "B", "true")
 		on := w.startSSH(a, "B", "sleep 60")
 		off := w.startSSH(a, "B", "echo $$ > "+pidFile+"; exec sleep 60", offMaster...)
-		pid := waitPidFile(w, pidFile)
+		pid := b.HostPid(waitPidFile(w, pidFile))
+		if pid <= 0 {
+			t.Fatal("the far side's pid is not running")
+		}
 		t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
 		time.Sleep(500 * time.Millisecond)
 		w.Freeze("B", true)

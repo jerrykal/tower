@@ -20,14 +20,15 @@ import (
 // Helpers for scenarios that drive towerd directly: its process, its
 // homes and registrations, and calls a dashboard or a loop would make.
 
-// TowerdPid is the pid in the host's towerd.pid, or 0.
+// TowerdPid is this machine's pid of the process in the host's
+// towerd.pid, or 0.
 func (h *Host) TowerdPid() int {
 	b, err := os.ReadFile(h.Paths().State("towerd.pid"))
 	if err != nil {
 		return 0
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
-	return n
+	return h.HostPid(n)
 }
 
 // Alive reports whether pid runs.

@@ -1,9 +1,12 @@
 package scenario
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,10 +21,11 @@ import (
 
 // The container backend (TOWER_HOSTS=container): a host made with
 // SSHHost is a container running sshd and tmux (hosts/), reached over
-// real ssh, its link shaped with tc netem. The run's directories are
-// bind-mounted at their own paths and the containers share the
-// machine's pids, so a host's files, tmux socket and processes are where
-// the harness looks for them; only ssh crosses the network.
+// real ssh. The run's directories are bind-mounted at their own paths,
+// so a host's files and its tmux and towerd sockets are where the
+// harness looks for them; only ssh crosses the network. Each container
+// has pids of its own; an agent in it (hostagent) shapes its link, sets
+// its faults, runs commands there and resets it between worlds.
 
 // ctrs is the running backend; nil: every host is reached through the
 // fake ssh.
@@ -43,15 +47,12 @@ type ctrBackend struct {
 
 // ctrSlot is one host container.
 type ctrSlot struct {
-	name string // h1, h2: the compose service
-	ctr  string // container name
+	ctr  string // container name, tt-<run>-host-<n>
 	id   string // container id, in its processes' cgroup
 	ip   string
+	sock string // its agent's socket
 	env  string // the file tt-run sources: the current world's host
 	w    *World // the world using it
-
-	stall     chan struct{} // closed to end a stall
-	stallDone chan struct{} // closed once the stall's processes continue
 }
 
 // SSHHost makes a host a remote reached over ssh: on the container
@@ -89,6 +90,7 @@ func containerSetup() error {
 		return err
 	}
 	b.compose = []string{"compose", "-f", filepath.Join("hosts", "compose.yaml")}
+	b.sweep()
 	b.env = append(os.Environ(), "TT_RUN="+b.run,
 		"TT_PUBKEY="+strings.TrimSpace(string(pub)), "TOWER_TEST_DIR="+root)
 	ctrs = b
@@ -103,14 +105,31 @@ func containerSetup() error {
 	if out, err := b.docker(append(b.compose, "up", "-d")...); err != nil {
 		return fmt.Errorf("compose up: %v: %s", err, out)
 	}
-	for _, n := range []string{"h1", "h2"} {
-		s := &ctrSlot{name: n, ctr: "tt-" + b.run + "-" + n, env: filepath.Join(root, "slots", n+".env")}
-		out, err := b.docker("inspect", "-f", "{{.Id}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", s.ctr)
-		if err != nil {
-			return fmt.Errorf("inspect %s: %v: %s", s.ctr, err, out)
+	ids, err := b.docker(append(b.compose, "ps", "-q")...)
+	if err != nil {
+		return fmt.Errorf("compose ps: %v: %s", err, ids)
+	}
+	for _, id := range strings.Fields(ids) {
+		out, err := b.docker("inspect", "-f", "{{.Id}} {{.Name}} {{.Config.Hostname}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", id)
+		f := strings.Fields(out)
+		if err != nil || len(f) != 4 {
+			return fmt.Errorf("inspect %s: %v: %s", id, err, out)
 		}
-		s.id, s.ip, _ = strings.Cut(strings.TrimSpace(out), " ")
+		s := &ctrSlot{id: f[0], ctr: strings.TrimPrefix(f[1], "/"), ip: f[3],
+			sock: filepath.Join(root, "slots", f[2]+".sock"), env: filepath.Join(root, "slots", f[2]+".env")}
 		b.slots = append(b.slots, s)
+	}
+	slices.SortFunc(b.slots, func(x, y *ctrSlot) int { return strings.Compare(x.ctr, y.ctr) })
+	for _, s := range b.slots {
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			if _, err := s.call(agentReq{Op: "reset"}); err == nil {
+				break
+			} else if time.Now().After(deadline) {
+				return fmt.Errorf("%s: no agent: %v", s.ctr, err)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 	// Each host's key, once sshd answers, under each of its ports.
 	var known []string
@@ -148,6 +167,24 @@ func containerSetup() error {
 	return os.WriteFile(b.knownBad, []byte(strings.Join(bad, "\n")+"\n"), 0o600)
 }
 
+// sweep takes down the projects of earlier runs that ended without
+// their teardown (a go test timeout): those labelled tower-test whose
+// run's process is gone.
+func (b *ctrBackend) sweep() {
+	out, _ := b.docker("ps", "-a", "--filter", "label=tower-test", "--format", `{{.Label "com.docker.compose.project"}}`)
+	seen := map[string]bool{}
+	for _, p := range strings.Fields(out) {
+		pid, err := strconv.Atoi(strings.TrimPrefix(p, "tt-"))
+		if seen[p] || err != nil || !strings.HasPrefix(p, "tt-") || alive(pid) {
+			continue
+		}
+		seen[p] = true
+		if out, err := b.docker("compose", "-p", p, "down", "--timeout", "1"); err != nil {
+			fmt.Fprintf(os.Stderr, "take down %s: %v: %s\n", p, err, out)
+		}
+	}
+}
+
 // hostPort is how known_hosts names a host at a port.
 func hostPort(ip string, port int) string {
 	if port == 22 {
@@ -174,31 +211,83 @@ func (b *ctrBackend) docker(args ...string) (string, error) {
 	return string(out), err
 }
 
-// assign gives h a free slot of the world: unshaped, no faults.
+// assign gives h a free container: reset (none of the test user's
+// processes, an unshaped link, no faults), sessions there running with
+// the environment ctrName writes. Teardown resets it again and frees it.
 func (w *World) assign(h *Host) {
 	w.T.Helper()
 	for _, s := range ctrs.slots {
 		if s.w == nil {
+			if _, err := s.call(agentReq{Op: "assign", Env: s.env}); err != nil {
+				w.T.Fatalf("assign %s: %v", s.ctr, err)
+			}
 			s.w = w
 			h.ctr = s
 			w.real = true
-			w.rootExec(s, "tc qdisc del dev eth0 root 2>/dev/null; tc qdisc del dev ifb0 root 2>/dev/null; "+
-				"iptables -F TT-FREEZE && iptables -F TT-HALFOPEN")
-			w.T.Cleanup(func() {
-				w.stallOff(s)
-				s.w = nil
-			})
 			return
 		}
 	}
 	w.T.Fatalf("no free host container for %s (%d)", h.Name, len(ctrs.slots))
 }
 
-// rootExec runs a shell script as root in the slot's container.
-func (w *World) rootExec(s *ctrSlot, script string) {
+// release resets h's container after the world and frees it.
+func (w *World) release(h *Host) {
+	if _, err := h.ctr.call(agentReq{Op: "reset"}); err != nil {
+		w.T.Errorf("reset %s: %v", h.ctr.ctr, err)
+	}
+	h.ctr.w = nil
+}
+
+// agentReq is a call to a container's agent (hostagent.Request).
+type agentReq struct {
+	Op     string `json:"op"`
+	Env    string `json:"env,omitempty"`
+	Root   bool   `json:"root,omitempty"`
+	Cmd    string `json:"cmd,omitempty"`
+	On     bool   `json:"on,omitempty"`
+	Delay  int    `json:"delay,omitempty"`
+	Jitter int    `json:"jitter,omitempty"`
+	BwKBps int    `json:"bw,omitempty"`
+}
+
+// agentReply is its reply.
+type agentReply struct {
+	Out  string `json:"out"`
+	Code int    `json:"code"`
+	Err  string `json:"err"`
+}
+
+// call makes one call to the container's agent.
+func (s *ctrSlot) call(r agentReq) (agentReply, error) {
+	var rep agentReply
+	c, err := net.DialTimeout("unix", s.sock, 5*time.Second)
+	if err != nil {
+		return rep, err
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(30 * time.Second))
+	b, _ := json.Marshal(r)
+	if _, err := c.Write(append(b, '\n')); err != nil {
+		return rep, err
+	}
+	line, err := bufio.NewReader(c).ReadBytes('\n')
+	if err != nil {
+		return rep, err
+	}
+	if err := json.Unmarshal(line, &rep); err != nil {
+		return rep, err
+	}
+	if rep.Err != "" {
+		return rep, fmt.Errorf("%s", rep.Err)
+	}
+	return rep, nil
+}
+
+// agent makes a call that must succeed.
+func (w *World) agent(s *ctrSlot, r agentReq) {
 	w.T.Helper()
-	if out, err := ctrs.docker("exec", "-u", "root", s.ctr, "sh", "-c", script); err != nil {
-		w.T.Fatalf("on %s: %s: %v: %s", s.ctr, script, err, out)
+	if _, err := s.call(r); err != nil {
+		w.T.Fatalf("%s: %s: %v", s.ctr, r.Op, err)
 	}
 }
 
@@ -290,68 +379,34 @@ func (w *World) ctrApply(alias string, prev linkState, s *linkState) {
 		w.writeSSHConfig()
 	}
 	if s.DelayMs != prev.DelayMs || s.JitterMs != prev.JitterMs || s.BwKBps != prev.BwKBps {
-		w.netem(c, s.Link)
+		w.agent(c, agentReq{Op: "netem", Delay: s.DelayMs, Jitter: s.JitterMs, BwKBps: s.BwKBps})
 	}
 	if s.halfOpenAt != prev.halfOpenAt && s.halfOpenAt != 0 {
-		w.halfOpen(c, s.halfOpenAt)
+		if d := time.Until(time.UnixMilli(s.halfOpenAt)); d > 100*time.Millisecond {
+			w.T.Fatalf("a network change %v ahead has no mechanism over real ssh", d)
+		}
+		w.agent(c, agentReq{Op: "halfopen"})
 	}
 	if s.freeze != prev.freeze {
-		script := "iptables -F TT-FREEZE"
-		if s.freeze {
-			script = "iptables -A TT-FREEZE -p tcp -j DROP"
-		}
-		w.rootExec(c, script)
+		w.agent(c, agentReq{Op: "freeze", On: s.freeze})
 	}
 	if s.drops > prev.drops {
-		w.dropConns(c)
+		w.agent(c, agentReq{Op: "drop"})
 	}
 	if s.stall != prev.stall {
-		if s.stall {
-			w.stallOn(c)
-		} else {
-			w.stallOff(c)
-		}
+		w.agent(c, agentReq{Op: "stall", On: s.stall})
 	}
 }
 
-// netem shapes the container's link: its eth0 egress and, through ifb0,
-// its ingress, so each direction gets the one-way delay.
-func (w *World) netem(c *ctrSlot, l Link) {
-	w.T.Helper()
-	script := "tc qdisc del dev eth0 root 2>/dev/null; tc qdisc del dev ifb0 root 2>/dev/null; true"
-	if l.DelayMs > 0 || l.JitterMs > 0 || l.BwKBps > 0 {
-		netem := fmt.Sprintf("netem delay %dms %dms limit 100000", l.DelayMs, l.JitterMs)
-		if l.BwKBps > 0 {
-			netem += fmt.Sprintf(" rate %dkbit", l.BwKBps*8)
-		}
-		script = "tc qdisc replace dev eth0 root " + netem + " && tc qdisc replace dev ifb0 root " + netem
-	}
-	w.rootExec(c, script)
-}
-
-// halfOpen drops, both ways and for good, every connection to the
-// container's sshd that is established now: what a network change does
-// to them. at may be a little in the past, not in the future.
-func (w *World) halfOpen(c *ctrSlot, at int64) {
-	w.T.Helper()
-	if d := time.Until(time.UnixMilli(at)); d > 100*time.Millisecond {
-		w.T.Fatalf("a network change %v ahead has no mechanism over real ssh", d)
-	}
-	script := `ss -Htn state established | while read -r _ _ local peer; do ` +
-		`lport=${local##*:}; ip=${peer%:*}; port=${peer##*:}; ` +
-		`iptables -A TT-HALFOPEN -p tcp -s "$ip" --sport "$port" --dport "$lport" -j DROP; ` +
-		`iptables -A TT-HALFOPEN -p tcp -d "$ip" --dport "$port" --sport "$lport" -j DROP; done`
-	w.rootExec(c, script)
-}
-
-// ctrProc is a process of a host container.
+// ctrProc is a process of a host container, as this machine sees it.
 type ctrProc struct {
 	pid, ppid, uid int
 	argv0          string
+	nspid          int // its pid in the container
 }
 
-// ctrProcs lists the container's processes: those in its cgroup (it
-// shares the machine's pids).
+// ctrProcs lists the container's processes: those in its cgroup, with
+// this machine's pids and the container's.
 func ctrProcs(c *ctrSlot) []ctrProc {
 	dirs, _ := filepath.Glob("/proc/[0-9]*")
 	var out []ctrProc
@@ -375,121 +430,47 @@ func ctrProcs(c *ctrSlot) []ctrProc {
 		}
 		ppid, _ := strconv.Atoi(f[1])
 		argv0, _, _ := strings.Cut(string(cmd), "\x00")
-		out = append(out, ctrProc{pid: pid, ppid: ppid, uid: int(fi.Uid), argv0: argv0})
-	}
-	return out
-}
-
-// dropConns ends every ssh connection to the container: its per-connection
-// sshd processes ("sshd: tt [priv]", "sshd: tt@…"), so the connections
-// close.
-func (w *World) dropConns(c *ctrSlot) {
-	w.T.Helper()
-	var pids []string
-	for _, p := range ctrProcs(c) {
-		if strings.HasPrefix(p.argv0, "sshd: tt") {
-			pids = append(pids, strconv.Itoa(p.pid))
-		}
-	}
-	if len(pids) > 0 {
-		// Each pid checked again where it is killed: still in the
-		// container's cgroup (there, relative to its own: the same).
-		w.rootExec(c, "self=$(cat /proc/self/cgroup); for p in "+strings.Join(pids, " ")+
-			`; do [ "$(cat /proc/$p/cgroup 2>/dev/null)" = "$self" ] && kill -9 $p; done; true`)
-	}
-}
-
-// inCtr reports whether pid is still a process of the container.
-func inCtr(c *ctrSlot, pid int) bool {
-	cg, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
-	return err == nil && bytes.Contains(cg, []byte(c.id))
-}
-
-// sessionProcs are the processes ssh sessions run in the container: the
-// descendants of its "sshd: tt@…" processes, not those (sshd answers
-// keepalives) and not what has left them (a towerd, a tmux server).
-func sessionProcs(c *ctrSlot) []int {
-	ps := ctrProcs(c)
-	parent := map[int]int{}
-	sess := map[int]bool{}
-	for _, p := range ps {
-		parent[p.pid] = p.ppid
-		if strings.HasPrefix(p.argv0, "sshd: tt@") {
-			sess[p.pid] = true
-		}
-	}
-	var out []int
-	for _, p := range ps {
-		if sess[p.pid] || p.uid != os.Getuid() {
-			continue
-		}
-		for q, n := parent[p.pid], 0; q > 1 && n < 64; q, n = parent[q], n+1 {
-			if sess[q] {
-				out = append(out, p.pid)
-				break
-			}
-		}
-	}
-	return out
-}
-
-// stallOn stops the processes the container's ssh sessions run, and keeps
-// stopping new ones, until stallOff: nothing reads or writes at the far
-// end while sshd still answers.
-func (w *World) stallOn(c *ctrSlot) {
-	if c.stall != nil {
-		return
-	}
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	stopped := map[int]bool{}
-	sweep := func() {
-		for _, pid := range sessionProcs(c) {
-			if !stopped[pid] && inCtr(c, pid) && syscall.Kill(pid, syscall.SIGSTOP) == nil {
-				stopped[pid] = true
-			}
-		}
-	}
-	sweep()
-	c.stall, c.stallDone = stop, done
-	go func() {
-		defer close(done)
-		t := time.NewTicker(50 * time.Millisecond)
-		defer t.Stop()
-		for {
-			select {
-			case <-stop:
-				for pid := range stopped {
-					if inCtr(c, pid) {
-						syscall.Kill(pid, syscall.SIGCONT)
-					}
+		p := ctrProc{pid: pid, ppid: ppid, uid: int(fi.Uid), argv0: argv0}
+		// NSpid: this machine's pid, then the container's.
+		status, _ := os.ReadFile(filepath.Join(d, "status"))
+		for _, l := range strings.Split(string(status), "\n") {
+			if rest, ok := strings.CutPrefix(l, "NSpid:"); ok {
+				if f := strings.Fields(rest); len(f) > 0 {
+					p.nspid, _ = strconv.Atoi(f[len(f)-1])
 				}
-				return
-			case <-t.C:
-				sweep()
 			}
 		}
-	}()
+		out = append(out, p)
+	}
+	return out
 }
 
-// stallOff ends a stall: every process it stopped continues.
-func (w *World) stallOff(c *ctrSlot) {
-	if c.stall == nil {
-		return
+// HostPid is this machine's pid of the host's process pid (a pid read on
+// the host: a pid file, a tmux client), or 0 when none runs; on a host of
+// this machine, pid itself.
+func (h *Host) HostPid(pid int) int {
+	if h.ctr == nil || pid <= 0 {
+		return pid
 	}
-	close(c.stall)
-	<-c.stallDone
-	c.stall, c.stallDone = nil, nil
+	for _, p := range ctrProcs(h.ctr) {
+		if p.nspid == pid {
+			return p.pid
+		}
+	}
+	return 0
 }
 
 // ctrExec runs a shell command on h's container as tt, with its
 // environment (through tt-run).
 func (h *Host) ctrExec(cmd string) (string, error) {
-	out, err := ctrs.docker("exec", "-u", "tt", "-e", "SSH_ORIGINAL_COMMAND="+cmd, h.ctr.ctr, "/usr/local/bin/tt-run")
-	if err != nil {
-		return out, fmt.Errorf("on %s: %s: %v: %s", h.ctr.ctr, cmd, err, out)
+	rep, err := h.ctr.call(agentReq{Op: "exec", Cmd: cmd})
+	if err == nil && rep.Code != 0 {
+		err = fmt.Errorf("exit %d", rep.Code)
 	}
-	return out, nil
+	if err != nil {
+		return rep.Out, fmt.Errorf("on %s: %s: %v: %s", h.ctr.ctr, cmd, err, rep.Out)
+	}
+	return rep.Out, nil
 }
 
 // ctrEnv is the base of a container host's environment: the variables

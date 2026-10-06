@@ -36,6 +36,7 @@ var (
 	towerDev string
 	fakeSSH  string
 	sshWrap  string // ssh for hosts reached over real ssh
+	agentBin string // the agent in each host container
 )
 
 func TestMain(m *testing.M) {
@@ -79,6 +80,7 @@ func setup() error {
 	towerDev = filepath.Join(bin, "tower-dev")
 	fakeSSH = filepath.Join(bin, "ssh")
 	sshWrap = filepath.Join(bin, "sshwrap")
+	agentBin = filepath.Join(bin, "hostagent")
 	builds := []struct{ out, pkg, version string }{
 		{towerBin, "../../cmd/tower", Version},
 		{tower2, "../../cmd/tower", Version2},
@@ -86,6 +88,7 @@ func setup() error {
 		{towerDev, "../../cmd/tower", VersionDev},
 		{fakeSSH, "./fakessh", ""},
 		{sshWrap, "./sshwrap", ""},
+		{agentBin, "./hostagent", ""},
 	}
 	for _, b := range builds {
 		args := []string{"build", "-o", b.out}
