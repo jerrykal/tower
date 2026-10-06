@@ -34,6 +34,12 @@ server. Read [docs/overview.md](docs/overview.md) for the product,
   (the user's demo lives there). Teardown stops the home before cleaning
   the remote, or the home reconnects and restarts towerd there; afterwards,
   check the host is clean.
+- **Docker.** Every container, network, volume and image a test or
+  experiment makes carries the label `tower-test` and a `tt-` name
+  prefix. Teardown and cleanup select by that label only: never
+  `docker system prune`, an unfiltered `docker rm`, or anything that
+  touches the machine's other containers. Afterwards, check none of
+  yours is left.
 
 ## The scenario suite
 
