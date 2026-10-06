@@ -172,12 +172,19 @@ func helperBuildLog() int {
 	return 0
 }
 
-// helperReader reads the terminal on fd 3 until $COUNT bytes, then exits.
+// helperReader reads the terminal on fd 3 until $COUNT bytes, then exits;
+// or fails once nothing has come for 10s: bytes lost on the way (as a
+// burst's last ones can be over real ssh on macOS) never come.
 func helperReader() int {
 	want := int64(envInt("COUNT"))
 	buf := make([]byte, 64<<10)
 	var got int64
 	for got < want {
+		fds := []unix.PollFd{{Fd: 3, Events: unix.POLLIN}}
+		if n, err := unix.Poll(fds, 10000); n == 0 && err == nil {
+			fmt.Fprintf(os.Stderr, "reader: %d of %d: nothing for 10s\n", got, want)
+			return 1
+		}
 		n, err := unix.Read(3, buf)
 		if err == unix.EINTR {
 			continue
