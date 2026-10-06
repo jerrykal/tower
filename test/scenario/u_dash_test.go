@@ -63,6 +63,10 @@ func TestU01(t *testing.T) {
 	b := w.Host("B", []string{"bravo", "banana"})
 	b.MustTmux("new-window", "-d", "-t", "bravo:", "-n", "second")
 	stdSetup(w, a, b)
+	// tmux dates attaches in whole seconds: alpha's attach comes in a
+	// later second than B's sessions were made, so it is the most recent
+	// and the finder's top row.
+	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second)))
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	term.OpenDash()
 	// The finder's preview: the window's layout and its pane.
