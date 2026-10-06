@@ -96,6 +96,16 @@ func TestV03(t *testing.T) {
 	})
 	t.Logf("B upgraded in %v", time.Since(start).Round(time.Millisecond))
 	regs := b.Regs()
+	if w.real {
+		// The wake made B's master exit, and with it the attach riding
+		// it: the loop attaches again, registering anew. The fake's
+		// sessions share no master: there the client stays, and the new
+		// towerd restores it from disk.
+		w.Eventually(5*time.Second, "the loop's client registered on B again", func() bool {
+			regs = b.Regs()
+			return len(regs) == 1 && regs[0].Name != ""
+		})
+	}
 	if len(regs) != 1 || regs[0].Name == "" {
 		t.Fatalf("B's registrations after the upgrade: %+v", regs)
 	}
