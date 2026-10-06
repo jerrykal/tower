@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"context"
 	"errors"
 	"io"
 	"slices"
@@ -102,5 +103,36 @@ func TestTowerless(t *testing.T) {
 	got := towerless([]string{"TOWER_TMUX=-L x", "PATH=/bin", "HOME=/h", "TOWER_TEST_TIMING=/t"})
 	if !slices.Equal(got, []string{"HOME=/h", "PATH=/bin"}) {
 		t.Fatalf("%q", got)
+	}
+}
+
+// TestWatchHostLink: an attach prepared on a link is given up for that
+// link, or a later one, going; a view still showing the earlier link
+// (sent before the link came up and the prepare answered) is no reason.
+func TestWatchHostLink(t *testing.T) {
+	l := &attachLoop{id: "L"}
+	l.views = newViewer(l)
+	view := func(status string, link int) *proto.Dash {
+		return &proto.Dash{View: proto.View{Hosts: []proto.Host{{ID: "h", Name: "R", Status: status, Link: link}}}}
+	}
+	l.views.set(view(proto.StatusConnecting, 1))
+	lost := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go l.watchHost(ctx, &proto.Prepared{Gen: 2, Target: proto.Ref{Host: "h"}, Link: 2}, lost)
+	select {
+	case why := <-lost:
+		t.Fatalf("given up on a view of the earlier link: %s", why)
+	case <-time.After(50 * time.Millisecond):
+	}
+	l.views.set(view(proto.StatusUp, 2))
+	l.views.set(view(proto.StatusStalled, 2))
+	select {
+	case why := <-lost:
+		if why != "R is not responding" {
+			t.Fatalf("given up: %q", why)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("not given up when the link it was prepared on stalled")
 	}
 }

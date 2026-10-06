@@ -139,7 +139,8 @@ wait:
 }
 
 // watchHost says why, should the attach's host stop answering (stalled,
-// down) before the home has seen the attach's client.
+// down) on the link the attach was prepared on, or a later one, before
+// the home has seen the attach's client.
 func (l *attachLoop) watchHost(ctx context.Context, p *proto.Prepared, lost chan<- string) {
 	for {
 		d, changed := l.views.get()
@@ -147,7 +148,9 @@ func (l *attachLoop) watchHost(ctx context.Context, p *proto.Prepared, lost chan
 			if lp := d.View.LoopByID(l.id); lp != nil && lp.Gen == p.Gen && lp.Seen {
 				return
 			}
-			if h := d.View.HostByID(p.Target.Host); h != nil && !h.Reachable() {
+			// A view of an earlier link (sent before this one came up
+			// and the prepare answered) says nothing about this one.
+			if h := d.View.HostByID(p.Target.Host); h != nil && h.Link >= p.Link && !h.Reachable() {
 				why := h.Name + " is " + h.Status
 				switch {
 				case h.Status == proto.StatusStalled:

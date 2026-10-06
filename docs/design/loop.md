@@ -101,7 +101,10 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
 - **Give-up**: a remote attach whose host the view shows stalled or down
   before the home has seen its client is killed: a hand-off goes back
   where the terminal was, saying why; otherwise the loop pauses and tries
-  that target again, as after a lost connection.
+  that target again, as after a lost connection. Only a view of the link
+  the attach was prepared on (`Prepared.Link`), or a later one, counts:
+  the loop's view can still show the earlier link connecting when a
+  prepare that waited for the link answers.
 - **The old client gone**, the frame is held again at once, then a remote
   client hung up or lost (255) gets the terminal restore its own never
   wrote (`relay.ClientRestore`).
