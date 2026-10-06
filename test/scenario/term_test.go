@@ -94,7 +94,7 @@ func (t *Term) Type(s string) {
 
 // Screen is what the terminal shows.
 func (t *Term) Screen() string {
-	out, _ := t.tmux("capture-pane", "-p", "-t", "term:")
+	out, _ := t.tmux("capture-pane", "-p", "-J", "-t", "term:")
 	return out
 }
 
