@@ -21,7 +21,7 @@ import (
 func TestS13(t *testing.T) {
 	w := NewWorld(t, "s13")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
 	w.LoopTo("t", a, nil, "bravo", "^B:bravo")
@@ -69,8 +69,8 @@ func TestS20(t *testing.T) {
 	w := NewWorld(t, "s20")
 	pad := Env("TOWER_TEST_PAD", "2000000")
 	a := w.Host("A", []string{"alpha"}, pad)
-	b := w.Host("B", []string{"bravo"}, pad)
-	c := w.Host("C", []string{"charlie"}, pad)
+	b := w.Host("B", []string{"bravo"}, pad, SSHHost())
+	c := w.Host("C", []string{"charlie"}, pad, SSHHost())
 	var script strings.Builder
 	for i := range 60 {
 		fmt.Fprintf(&script, "new-session -d -s s%03d 'exec sleep 600'\n", i)
@@ -108,7 +108,7 @@ func TestS20(t *testing.T) {
 func TestS21(t *testing.T) {
 	w := NewWorld(t, "s21")
 	a := w.Host("A", []string{"aold"})
-	b := w.Host("B", []string{"bnew", "victim"}, Env("TOWER_TEST_SKEW", "3600000"))
+	b := w.Host("B", []string{"bnew", "victim"}, Env("TOWER_TEST_SKEW", "3600000"), SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
 	l := w.FakeLoop(a)
@@ -157,7 +157,7 @@ func TestS21(t *testing.T) {
 func TestS22(t *testing.T) {
 	w := NewWorld(t, "s22")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "backup"})
+	b := w.Host("B", []string{"bravo", "backup"}, SSHHost())
 	before := b.MustTmux("display-message", "-p", "-t", "bravo", "#{session_last_attached}")
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
@@ -254,8 +254,8 @@ func TestS22(t *testing.T) {
 func TestS23(t *testing.T) {
 	w := NewWorld(t, "s23")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie", "victim", "ren"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie", "victim", "ren"}, SSHHost())
 	w.Home(a, b.Remote(), c.Remote())
 	w.WaitUp(a, "B", "C")
 	l := w.FakeLoop(a)

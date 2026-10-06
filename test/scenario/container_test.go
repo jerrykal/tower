@@ -24,8 +24,10 @@ import (
 // real ssh. The run's directories are bind-mounted at their own paths,
 // so a host's files and its tmux and towerd sockets are where the
 // harness looks for them; only ssh crosses the network. Each container
-// has pids of its own; an agent in it (hostagent) shapes its link, sets
-// its faults, runs commands there and resets it between worlds.
+// is one machine: hosts on it (Machine) share it, each reached through
+// ssh names of its own. It has pids of its own; an agent in it
+// (hostagent) shapes its link, sets its faults, runs the host's commands
+// there and resets it between worlds.
 
 // ctrs is the running backend; nil: every host is reached through the
 // fake ssh.
@@ -48,10 +50,10 @@ type ctrBackend struct {
 // ctrSlot is one host container.
 type ctrSlot struct {
 	ctr  string // container name, tt-<run>-host-<n>
+	name string // its host name
 	id   string // container id, in its processes' cgroup
 	ip   string
 	sock string // its agent's socket
-	env  string // the file tt-run sources: the current world's host
 	w    *World // the world using it
 }
 
@@ -115,8 +117,8 @@ func containerSetup() error {
 		if err != nil || len(f) != 4 {
 			return fmt.Errorf("inspect %s: %v: %s", id, err, out)
 		}
-		s := &ctrSlot{id: f[0], ctr: strings.TrimPrefix(f[1], "/"), ip: f[3],
-			sock: filepath.Join(root, "slots", f[2]+".sock"), env: filepath.Join(root, "slots", f[2]+".env")}
+		s := &ctrSlot{id: f[0], ctr: strings.TrimPrefix(f[1], "/"), name: f[2], ip: f[3],
+			sock: filepath.Join(root, "slots", f[2]+".sock")}
 		b.slots = append(b.slots, s)
 	}
 	slices.SortFunc(b.slots, func(x, y *ctrSlot) int { return strings.Compare(x.ctr, y.ctr) })
@@ -211,14 +213,28 @@ func (b *ctrBackend) docker(args ...string) (string, error) {
 	return string(out), err
 }
 
-// assign gives h a free container: reset (none of the test user's
-// processes, an unshaped link, no faults), sessions there running with
-// the environment ctrName writes. Teardown resets it again and frees it.
+// assign gives h its machine's container: the one of a host on the same
+// machine, or a free one, reset (none of the test user's processes, an
+// unshaped link, no faults), its ssh sessions running with the
+// environments ctrName writes. Teardown resets it again and frees it.
 func (w *World) assign(h *Host) {
 	w.T.Helper()
+	for _, o := range w.hosts {
+		if o.Machine != h.Machine {
+			continue
+		}
+		if o.ctr == nil {
+			w.T.Fatalf("%s is a container on machine %s, %s is not", h.Name, h.Machine, o.Name)
+		}
+		h.ctr = o.ctr
+		return
+	}
 	for _, s := range ctrs.slots {
 		if s.w == nil {
-			if _, err := s.call(agentReq{Op: "assign", Env: s.env}); err != nil {
+			if err := os.MkdirAll(s.envDir(w), 0o755); err != nil {
+				w.T.Fatal(err)
+			}
+			if _, err := s.call(agentReq{Op: "assign", Dir: s.envDir(w)}); err != nil {
 				w.T.Fatalf("assign %s: %v", s.ctr, err)
 			}
 			s.w = w
@@ -230,6 +246,10 @@ func (w *World) assign(h *Host) {
 	w.T.Fatalf("no free host container for %s (%d)", h.Name, len(ctrs.slots))
 }
 
+// envDir holds the environment of each of the container's sshd ports in
+// w: the host its ssh name stands for.
+func (s *ctrSlot) envDir(w *World) string { return filepath.Join(w.Dir, "ctr-"+s.name) }
+
 // release resets h's container after the world and frees it.
 func (w *World) release(h *Host) {
 	if _, err := h.ctr.call(agentReq{Op: "reset"}); err != nil {
@@ -240,14 +260,16 @@ func (w *World) release(h *Host) {
 
 // agentReq is a call to a container's agent (hostagent.Request).
 type agentReq struct {
-	Op     string `json:"op"`
-	Env    string `json:"env,omitempty"`
-	Root   bool   `json:"root,omitempty"`
-	Cmd    string `json:"cmd,omitempty"`
-	On     bool   `json:"on,omitempty"`
-	Delay  int    `json:"delay,omitempty"`
-	Jitter int    `json:"jitter,omitempty"`
-	BwKBps int    `json:"bw,omitempty"`
+	Op     string            `json:"op"`
+	Dir    string            `json:"dir,omitempty"`
+	Root   bool              `json:"root,omitempty"`
+	Cmd    string            `json:"cmd,omitempty"`
+	Vars   map[string]string `json:"vars,omitempty"`
+	Ms     int               `json:"ms,omitempty"`
+	On     bool              `json:"on,omitempty"`
+	Delay  int               `json:"delay,omitempty"`
+	Jitter int               `json:"jitter,omitempty"`
+	BwKBps int               `json:"bw,omitempty"`
 }
 
 // agentReply is its reply.
@@ -265,7 +287,7 @@ func (s *ctrSlot) call(r agentReq) (agentReply, error) {
 		return rep, err
 	}
 	defer c.Close()
-	c.SetDeadline(time.Now().Add(30 * time.Second))
+	c.SetDeadline(time.Now().Add(30*time.Second + time.Duration(r.Ms)*time.Millisecond))
 	b, _ := json.Marshal(r)
 	if _, err := c.Write(append(b, '\n')); err != nil {
 		return rep, err
@@ -297,7 +319,8 @@ func (w *World) agent(s *ctrSlot, r agentReq) {
 var ctrPorts = []int{22, 2201, 2202, 2203, 2204, 2205, 2206, 2207, 2208, 2209, 2210, 2211, 2212, 2213, 2214, 2215}
 
 // ctrName gives alias a port of target's container, and writes target's
-// environment for tt-run: what every ssh session there starts with.
+// environment for tt-run: what every ssh session through the port starts
+// with.
 func (w *World) ctrName(alias string, target *Host) {
 	w.T.Helper()
 	used := 0
@@ -315,7 +338,8 @@ func (w *World) ctrName(alias string, target *Host) {
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		b.WriteString("export " + k + "=" + transport.ShellQuote(env[k]) + "\n")
 	}
-	if err := os.WriteFile(target.ctr.env, []byte(b.String()), 0o644); err != nil {
+	p := filepath.Join(target.ctr.envDir(w), strconv.Itoa(ctrPorts[used])+".env")
+	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
 		w.T.Fatal(err)
 	}
 	w.writeSSHConfig()
@@ -460,17 +484,33 @@ func (h *Host) HostPid(pid int) int {
 	return 0
 }
 
-// ctrExec runs a shell command on h's container as tt, with its
-// environment (through tt-run).
-func (h *Host) ctrExec(cmd string) (string, error) {
-	rep, err := h.ctr.call(agentReq{Op: "exec", Cmd: cmd})
+// ctrRun runs argv in h's container as tt with environment env, killed
+// after d, and returns its combined output. An exit status is an error,
+// as exec's.
+func (h *Host) ctrRun(env map[string]string, d time.Duration, argv ...string) (string, error) {
+	q := make([]string, len(argv))
+	for i, a := range argv {
+		q[i] = transport.ShellQuote(a)
+	}
+	rep, err := h.ctr.call(agentReq{Op: "exec", Cmd: strings.Join(q, " "), Vars: env, Ms: int(d.Milliseconds())})
 	if err == nil && rep.Code != 0 {
-		err = fmt.Errorf("exit %d", rep.Code)
+		err = fmt.Errorf("exit status %d", rep.Code)
 	}
-	if err != nil {
-		return rep.Out, fmt.Errorf("on %s: %s: %v: %s", h.ctr.ctr, cmd, err, rep.Out)
+	return rep.Out, err
+}
+
+// ctrStart starts argv in h's container as tt with environment env, in a
+// session of its own, and returns.
+func (h *Host) ctrStart(env map[string]string, argv ...string) error {
+	q := []string{"setsid"}
+	for _, a := range argv {
+		q = append(q, transport.ShellQuote(a))
 	}
-	return rep.Out, nil
+	rep, err := h.ctr.call(agentReq{Op: "exec", Cmd: strings.Join(q, " ") + " </dev/null >/dev/null 2>&1 &", Vars: env})
+	if err == nil && rep.Code != 0 {
+		err = fmt.Errorf("exit status %d: %s", rep.Code, rep.Out)
+	}
+	return err
 }
 
 // ctrEnv is the base of a container host's environment: the variables

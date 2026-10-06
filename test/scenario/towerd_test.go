@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -150,13 +149,7 @@ func (h *Host) Act(client string, req proto.Request, ms int) (*proto.Ack, time.D
 
 // TowerBin runs another tower binary (an upgrade) on the host.
 func (h *Host) TowerBin(bin string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = h.Env()
-	cmd.WaitDelay = time.Second
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	return h.Run(nil, 20*time.Second, append([]string{bin}, args...)...)
 }
 
 // ClientName is the tmux client name in a TOWER_CLIENT value.

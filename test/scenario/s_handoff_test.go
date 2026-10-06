@@ -17,7 +17,7 @@ import (
 func TestS04(t *testing.T) {
 	w := NewWorld(t, "s04")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"old"})
+	b := w.Host("B", []string{"old"}, SSHHost())
 	stdSetup(w, a, b)
 	old := w.Ref(a, "B", "old")
 	var p proto.Prepared
@@ -50,7 +50,7 @@ func TestS04(t *testing.T) {
 func TestS06(t *testing.T) {
 	w := NewWorld(t, "s06")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 
@@ -95,7 +95,11 @@ func TestS06(t *testing.T) {
 		t.Fatalf("pending %+v", st.Detail.Pending)
 	}
 
-	// (c) ssh itself exits 42.
+	// (c) ssh itself exits 42: the fake's only (real ssh exits 255 or
+	// with its command; towerd's tests read a bare 42).
+	if w.real {
+		return
+	}
 	term.Pick("bravo")
 	w.WaitLoop(a, "^B:bravo", 5*time.Second)
 	time.Sleep(300 * time.Millisecond)
@@ -115,7 +119,7 @@ func TestS06(t *testing.T) {
 func TestS07(t *testing.T) {
 	w := NewWorld(t, "s07")
 	a := w.Host("A", []string{"alpha"}, Env("TOWER_HANDOFF_TTL", "1500"))
-	b := w.Host("B", []string{"bravo"}, Env("TOWER_TEST_CRASH", "after-switch"))
+	b := w.Host("B", []string{"bravo"}, Env("TOWER_TEST_CRASH", "after-switch"), SSHHost())
 	stdSetup(w, a, b)
 
 	// (a) The eager loop ends the client itself.
@@ -184,7 +188,7 @@ func TestS08(t *testing.T) {
 	w := NewWorld(t, "s08")
 	a := w.Host("A", []string{"alpha"})
 	a2 := w.Host("A2", []string{"other"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	stdSetup(w, a, b)
 	stdSetup(w, a2, b)
 	w.LoopTo("1", a, nil, "bravo", "^B:bravo")
@@ -219,7 +223,7 @@ func TestS08(t *testing.T) {
 func TestS10(t *testing.T) {
 	w := NewWorld(t, "s10")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	id := w.WaitLoop(a, "^B:bravo", time.Second).ID
@@ -244,7 +248,7 @@ func TestS10(t *testing.T) {
 func TestS12(t *testing.T) {
 	w := NewWorld(t, "s12")
 	a := w.Host("A", []string{"azero"}, BaseIndex(0))
-	b := w.Host("B", []string{"bone"})
+	b := w.Host("B", []string{"bone"}, SSHHost())
 	for _, h := range []*Host{a, b} {
 		s := "azero"
 		if h == b {
@@ -276,7 +280,7 @@ func TestS12(t *testing.T) {
 func TestS24(t *testing.T) {
 	w := NewWorld(t, "s24")
 	a := w.Host("A", []string{"alpha", "apple"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	stdSetup(w, a, b)
 	t1 := w.LoopTo("1", a, nil, "alpha", "^A:alpha")
 	t1.DashTo("bravo")
@@ -341,8 +345,8 @@ func TestS24(t *testing.T) {
 func TestS25(t *testing.T) {
 	w := NewWorld(t, "s25")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "spare"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo", "spare"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	stdSetup(w, a, b, c)
 
 	// (a) The last pane of a session closes, another session on the server.
@@ -409,7 +413,7 @@ func syncHosts(hs ...*Host) {
 func TestS26(t *testing.T) {
 	w := NewWorld(t, "s26")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"}, Env("TOWER_TEST_NOTTY", "1"))
+	b := w.Host("B", []string{"bravo"}, Env("TOWER_TEST_NOTTY", "1"), SSHHost())
 	syncHosts(a, b)
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
@@ -449,7 +453,7 @@ func TestS26(t *testing.T) {
 func TestS27(t *testing.T) {
 	w := NewWorld(t, "s27")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	syncHosts(a, b)
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
@@ -489,7 +493,7 @@ func TestS27(t *testing.T) {
 func TestD01(t *testing.T) {
 	w := NewWorld(t, "d01")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	// With no last target, esc exits.
 	stdSetup(w, a, b)
 	t0 := w.Term("0", a, nil, towerBin, "dash")

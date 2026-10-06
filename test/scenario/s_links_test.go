@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func (w *World) sessionCalls(host string) int {
 func TestS14(t *testing.T) {
 	w := NewWorld(t, "s14")
 	a := w.Host("A", []string{"alpha"})
-	tn := w.Host("T", []string{"tun"})
+	tn := w.Host("T", []string{"tun"}, SSHHost())
 	w.Home(a, tn.Remote())
 	w.WaitUp(a, "T")
 	before := w.sessionCalls("T")
@@ -55,25 +56,33 @@ func TestS14(t *testing.T) {
 }
 
 // S15: ssh would prompt or hang: each host down with its reason and fix,
-// fast; every call in batch mode; tower host add says the same.
+// fast; every call in batch mode; tower host add says the same. Real
+// ssh has no Tailscale check to meet (transport's tests read it).
 func TestS15(t *testing.T) {
 	w := NewWorld(t, "s15")
 	a := w.Host("A", []string{"alpha"})
-	downs := map[string]string{"hk": "hostkey", "pw": "password", "ak": "auth", "to": "timeout", "rs": "resolve", "ts": "tscheck", "pw2": "password", "ts2": "tscheck"}
+	x := w.Host("X", nil, SSHHost())
+	downs := map[string]string{"hk": "hostkey", "pw": "password", "ak": "auth", "to": "timeout", "rs": "resolve", "pw2": "password"}
+	want := map[string]string{
+		"hk": "host key", "pw": "authentication failed", "ak": "authentication failed",
+		"to": "timed out", "rs": "resolve",
+	}
+	adds := map[string]string{"pw2": "ssh-add"}
+	if !w.real {
+		downs["ts"], downs["ts2"] = "tscheck", "tscheck"
+		want["ts"] = "Tailscale SSH wants a check: run `ssh ts` once"
+		adds["ts2"] = "Tailscale SSH wants a check"
+	}
 	for name, how := range downs {
-		w.SSH(name, a)
+		w.SSH(name, x)
 		w.Down(name, how)
 	}
 	var hosts []config.Host
-	for _, n := range []string{"hk", "pw", "ak", "to", "rs", "ts"} {
+	for _, n := range slices.Sorted(maps.Keys(want)) {
 		hosts = append(hosts, config.Host{Name: n, SSH: n, Tower: towerBin})
 	}
 	start := time.Now()
 	w.Home(a, hosts...)
-	want := map[string]string{
-		"hk": "host key", "pw": "authentication failed", "ak": "authentication failed",
-		"to": "timed out", "rs": "resolve", "ts": "Tailscale SSH wants a check: run `ssh ts` once",
-	}
 	took := map[string]time.Duration{}
 	w.Eventually(10*time.Second, "every host down", func() bool {
 		for n := range want {
@@ -101,7 +110,7 @@ func TestS15(t *testing.T) {
 			t.Fatalf("an ssh call without BatchMode: %v", c)
 		}
 	}
-	for host, want := range map[string]string{"pw2": "ssh-add", "ts2": "Tailscale SSH wants a check"} {
+	for host, want := range adds {
 		start := time.Now()
 		out, _ := a.Tower("host", "add", host, "--tower", towerBin)
 		el := time.Since(start)
@@ -117,7 +126,7 @@ func TestS15(t *testing.T) {
 func TestS16(t *testing.T) {
 	w := NewWorld(t, "s16")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
 	p := a.Paths()
@@ -177,8 +186,8 @@ func TestS16(t *testing.T) {
 func TestS17(t *testing.T) {
 	w := NewWorld(t, "s17")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	n := w.Host("N", nil)
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	n := w.Host("N", nil, SSHHost())
 	w.sockets = append(w.sockets, n.Sock)
 	w.Home(a, n.Remote(), b.Remote())
 	w.WaitLink(a, "N", "nosrv", 6*time.Second)
@@ -231,10 +240,10 @@ func TestS17(t *testing.T) {
 func TestS18(t *testing.T) {
 	w := NewWorld(t, "s18")
 	a := w.Host("A", []string{"alpha"})
-	m := w.Host("M", []string{"mike"})
-	o := w.Host("O", []string{"oscar"}, Env("TOWER_TEST_PROTO", "0-0"))
-	nv := w.Host("N", []string{"november"}, Env("TOWER_TEST_PROTO", "1-2"))
-	f := w.Host("F", []string{"foxtrot"}, Env("TOWER_TEST_PROTO", "1-2"), Env("TOWER_TEST_FUTURE", "1"))
+	m := w.Host("M", []string{"mike"}, SSHHost())
+	o := w.Host("O", []string{"oscar"}, Env("TOWER_TEST_PROTO", "0-0"), SSHHost())
+	nv := w.Host("N", []string{"november"}, Env("TOWER_TEST_PROTO", "1-2"), SSHHost())
+	f := w.Host("F", []string{"foxtrot"}, Env("TOWER_TEST_PROTO", "1-2"), Env("TOWER_TEST_FUTURE", "1"), SSHHost())
 	mr := m.Remote()
 	mr.Tower = "/nonexistent/tower"
 	w.Home(a, mr, o.Remote(), nv.Remote(), f.Remote())

@@ -1,8 +1,9 @@
 #!/bin/sh
-# Every ssh session's command (sshd's ForceCommand), and the agent's
-# commands as tt: the simulated host's environment from the file the
-# harness writes for the current world, then the command as sshd runs it.
-f=$(cat /etc/tt-env-path 2>/dev/null)
+# Every ssh session's command (sshd's ForceCommand): the environment of
+# the simulated host its ssh name stands for, from the file the harness
+# writes for the port it came in on, then the command as sshd runs it.
+d=$(cat /etc/tt-env-dir 2>/dev/null)
+f=$d/${SSH_CONNECTION##* }.env
 [ -r "$f" ] && . "$f"
 if [ -n "$SSH_ORIGINAL_COMMAND" ]; then
 	exec /bin/sh -c "$SSH_ORIGINAL_COMMAND"

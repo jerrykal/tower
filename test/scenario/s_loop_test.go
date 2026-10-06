@@ -41,7 +41,7 @@ func (w *World) clientsAre(h *Host, d time.Duration, want ...string) {
 func TestS00(t *testing.T) {
 	w := NewWorld(t, "s00")
 	a := w.Host("A", []string{"alpha", "apple"})
-	b := w.Host("B", []string{"bravo", "banana"})
+	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
 	term.Wait(Prompt, 5*time.Second)

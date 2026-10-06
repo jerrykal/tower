@@ -9,6 +9,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -27,14 +28,16 @@ import (
 
 // Request is one call.
 type Request struct {
-	Op     string `json:"op"`               // assign, reset, exec, netem, freeze, halfopen, drop, stall
-	Env    string `json:"env,omitempty"`    // assign: the world's environment file for tt-run
-	Root   bool   `json:"root,omitempty"`   // exec: as root, not tt
-	Cmd    string `json:"cmd,omitempty"`    // exec: a shell command
-	On     bool   `json:"on,omitempty"`     // freeze, stall
-	Delay  int    `json:"delay,omitempty"`  // netem: one-way ms
-	Jitter int    `json:"jitter,omitempty"` // netem: ± ms
-	BwKBps int    `json:"bw,omitempty"`     // netem: KB/s
+	Op     string            `json:"op"`               // assign, reset, exec, netem, freeze, halfopen, drop, stall
+	Dir    string            `json:"dir,omitempty"`    // assign: the world's environments for tt-run, one per sshd port
+	Root   bool              `json:"root,omitempty"`   // exec: as root, not tt
+	Cmd    string            `json:"cmd,omitempty"`    // exec: a shell command
+	Vars   map[string]string `json:"vars,omitempty"`   // exec as tt: its whole environment
+	Ms     int               `json:"ms,omitempty"`     // exec: killed after this long; 0 never
+	On     bool              `json:"on,omitempty"`     // freeze, stall
+	Delay  int               `json:"delay,omitempty"`  // netem: one-way ms
+	Jitter int               `json:"jitter,omitempty"` // netem: ± ms
+	BwKBps int               `json:"bw,omitempty"`     // netem: KB/s
 }
 
 // Reply is a call's result.
@@ -105,14 +108,14 @@ func handle(r Request) Reply {
 	}
 	switch r.Op {
 	case "assign":
-		if err := os.WriteFile("/etc/tt-env-path", []byte(r.Env+"\n"), 0o644); err != nil {
+		if err := os.WriteFile("/etc/tt-env-dir", []byte(r.Dir+"\n"), 0o644); err != nil {
 			return Reply{Err: err.Error()}
 		}
 		return reset()
 	case "reset":
 		return reset()
 	case "exec":
-		return run(r.Cmd, r.Root)
+		return run(r.Cmd, r.Root, r.Vars, r.Ms)
 	case "netem":
 		return netem(r.Delay, r.Jitter, r.BwKBps)
 	case "freeze":
@@ -186,18 +189,22 @@ func netem(delay, jitter, bw int) Reply {
 	return sh("tc qdisc replace dev eth0 root " + q + " && tc qdisc replace dev ifb0 root " + q)
 }
 
-// run runs a shell command: as tt through tt-run (the world's
-// environment), or as root.
-func run(cmdline string, root bool) Reply {
-	var cmd *exec.Cmd
-	if root {
-		cmd = exec.Command("/bin/sh", "-c", cmdline)
-	} else {
-		cmd = exec.Command("/usr/local/bin/tt-run")
+// run runs a shell command: as tt with the environment vars (a host's),
+// or as root; killed after ms if not 0.
+func run(cmdline string, root bool, vars map[string]string, ms int) Reply {
+	ctx, cancel := context.Background(), context.CancelFunc(func() {})
+	if ms > 0 {
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(ms)*time.Millisecond)
+	}
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdline)
+	if !root {
 		gid, _ := strconv.Atoi(tt.Gid)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(ttUID), Gid: uint32(gid)}}
-		cmd.Env = []string{"HOME=" + tt.HomeDir, "USER=tt", "LOGNAME=tt", "PATH=/usr/local/bin:/usr/bin:/bin",
-			"SSH_ORIGINAL_COMMAND=" + cmdline}
+		cmd.Env = []string{"USER=tt", "LOGNAME=tt"}
+		for k, v := range vars {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
 		cmd.Dir = tt.HomeDir
 	}
 	cmd.WaitDelay = time.Second
@@ -214,7 +221,7 @@ func run(cmdline string, root bool) Reply {
 
 // sh runs a root script whose failure is an error.
 func sh(script string) Reply {
-	rep := run(script, true)
+	rep := run(script, true, nil, 0)
 	if rep.Code != 0 && rep.Err == "" {
 		rep.Err = fmt.Sprintf("%s: exit %d: %s", script, rep.Code, rep.Out)
 	}

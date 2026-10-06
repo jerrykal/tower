@@ -18,7 +18,7 @@ func TestS02(t *testing.T) {
 	w := NewWorld(t, "s02")
 	a1 := w.Host("A1", []string{"one"})
 	a2 := w.Host("A2", []string{"two"})
-	b := w.Host("B", []string{"bravo"}, Env("TOWER_IDLE", "1500"))
+	b := w.Host("B", []string{"bravo"}, Env("TOWER_IDLE", "1500"), SSHHost())
 	w.Home(a1, b.Remote())
 	w.WaitUp(a1, "B")
 	w.Home(a2, b.Remote())
@@ -81,8 +81,8 @@ func TestS02(t *testing.T) {
 func TestS03(t *testing.T) {
 	w := NewWorld(t, "s03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	broot := w.Host("Broot", []string{"rootwork"}, Machine("B"), HomeName("Broot"))
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	broot := w.Host("Broot", []string{"rootwork"}, Machine("B"), HomeName("Broot"), SSHHost())
 	w.SSH("b", b)
 	w.SSH("b-lan", b)
 	w.SSH("b-root", broot)
@@ -140,22 +140,23 @@ func TestS03(t *testing.T) {
 func TestS05(t *testing.T) {
 	w := NewWorld(t, "s05")
 	a := w.Host("A", []string{"alpha"})
-	wk := w.Host("W", []string{"work1"}, Machine("A"))
-	p := w.Host("P", []string{"play1"}, Machine("A"), BaseIndex(0))
-	w.Home(a, wk.Remote(), p.Remote())
-	w.WaitUp(a, "A", "W", "P")
-	ids := map[string]bool{w.Link(a, "A").ID: true, w.Link(a, "W").ID: true, w.Link(a, "P").ID: true}
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	wk := w.Host("W", []string{"work1"}, Machine("B"), SSHHost())
+	p := w.Host("P", []string{"play1"}, Machine("B"), BaseIndex(0), SSHHost())
+	w.Home(a, b.Remote(), wk.Remote(), p.Remote())
+	w.WaitUp(a, "B", "W", "P")
+	ids := map[string]bool{w.Link(a, "B").ID: true, w.Link(a, "W").ID: true, w.Link(a, "P").ID: true}
 	if len(ids) != 3 {
 		t.Fatalf("ids: %v", ids)
 	}
-	if wk.Paths().RunDir != p.Paths().RunDir || wk.Paths().RunDir != a.Paths().RunDir {
-		t.Fatalf("run dirs differ: %s %s", wk.Paths().RunDir, p.Paths().RunDir)
+	if wk.Paths().RunDir != p.Paths().RunDir || wk.Paths().RunDir != b.Paths().RunDir {
+		t.Fatalf("run dirs differ: %s %s %s", b.Paths().RunDir, wk.Paths().RunDir, p.Paths().RunDir)
 	}
-	if wk.Paths().Socket() == p.Paths().Socket() {
+	if wk.Paths().Socket() == p.Paths().Socket() || wk.Paths().Socket() == b.Paths().Socket() {
 		t.Fatal("one socket for two servers")
 	}
 	v := a.View("")
-	if len(v.View.Hosts) != 3 {
+	if len(v.View.Hosts) != 4 {
 		t.Fatalf("%d hosts in the view", len(v.View.Hosts))
 	}
 	for _, h := range v.View.Hosts {

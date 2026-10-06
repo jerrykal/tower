@@ -19,7 +19,6 @@ import (
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
-	"github.com/jerrykal/tower/internal/transport"
 )
 
 // Timings every simulated host runs with: shortened so the suite runs in
@@ -270,22 +269,18 @@ func (h *Host) TmuxArgs() []string { return []string{"-L", h.Sock} }
 // server starts in its container (-f); other commands reach it through
 // its socket, which the container shares.
 func (h *Host) Tmux(args ...string) (string, error) {
+	argv := append(h.TmuxArgs(), args...)
+	var out string
+	var err error
 	if h.ctr != nil && slices.Contains(args, "-f") {
-		q := []string{"tmux"}
-		for _, a := range append(h.TmuxArgs(), args...) {
-			q = append(q, transport.ShellQuote(a))
-		}
-		return h.ctrExec(strings.Join(q, " "))
+		out, err = h.ctrRun(h.EnvMap(), 10*time.Second, append([]string{"tmux"}, argv...)...)
+	} else {
+		out, err = runLocal(h.EnvMap(), 10*time.Second, append([]string{tmux.Bin()}, argv...)...)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, tmux.Bin(), append(h.TmuxArgs(), args...)...)
-	cmd.Env = h.Env()
-	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("tmux %s: %v: %s", strings.Join(args, " "), err, out)
+		return out, fmt.Errorf("tmux %s: %v: %s", strings.Join(args, " "), err, out)
 	}
-	return string(out), nil
+	return out, nil
 }
 
 // MustTmux is Tmux failing the test on error.
@@ -438,11 +433,27 @@ func (h *Host) Tower(args ...string) (string, error) {
 
 // TowerEnv runs the tower CLI on the host with extra variables.
 func (h *Host) TowerEnv(extra map[string]string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, towerBin, args...)
+	return h.Run(extra, 20*time.Second, append([]string{towerBin}, args...)...)
+}
+
+// Run runs argv on the host with its environment and extra, killed after
+// d, and returns its combined output: on this machine, or in the host's
+// container.
+func (h *Host) Run(extra map[string]string, d time.Duration, argv ...string) (string, error) {
 	env := h.EnvMap()
 	maps.Copy(env, extra)
+	if h.ctr != nil {
+		return h.ctrRun(env, d, argv...)
+	}
+	return runLocal(env, d, argv...)
+}
+
+// runLocal runs argv on this machine with environment env, killed after
+// d, and returns its combined output.
+func runLocal(env map[string]string, d time.Duration, argv ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -550,14 +561,20 @@ func (w *World) Home(h *Host, remotes ...config.Host) {
 // StartTowerd spawns `tower towerd` on h and waits until it answers.
 func (w *World) StartTowerd(h *Host) {
 	w.T.Helper()
-	cmd := exec.Command(towerBin, "towerd")
-	cmd.Env = h.Env()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		w.T.Fatal(err)
+	if h.ctr != nil {
+		if err := h.ctrStart(h.EnvMap(), towerBin, "towerd"); err != nil {
+			w.T.Fatalf("start towerd on %s: %v", h.Name, err)
+		}
+	} else {
+		cmd := exec.Command(towerBin, "towerd")
+		cmd.Env = h.Env()
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := cmd.Start(); err != nil {
+			w.T.Fatal(err)
+		}
+		w.spawned = append(w.spawned, cmd)
+		go cmd.Wait()
 	}
-	w.spawned = append(w.spawned, cmd)
-	go cmd.Wait()
 	for range 100 {
 		if h.Status() != nil {
 			return
