@@ -47,7 +47,7 @@ func (w *World) Term(name string, h *Host, extra map[string]string, argv ...stri
 	b.WriteString(" TERM=xterm-256color")
 	for i, a := range argv {
 		if i == 0 && h.ctr != nil && a == tmux.Bin() {
-			a = "tmux" // the container's own
+			a = ctrTmux
 		}
 		b.WriteString(" " + transport.ShellQuote(a))
 	}

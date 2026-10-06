@@ -24,17 +24,24 @@ import (
 // binary.
 func TestLC07(t *testing.T) {
 	w := NewWorld(t, "lc07")
-	shims := filepath.Join(w.Dir, "mise", "shims")
-	os.MkdirAll(shims, 0o700)
 	shimLog := filepath.Join(w.Dir, "shim.log")
-	script := fmt.Sprintf("#!/bin/sh\necho \"$*\" >> %s\nexec %s \"$@\"\n", shellQuote(shimLog), shellQuote(tmux.Bin()))
-	if err := os.WriteFile(filepath.Join(shims, "tmux"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
+	// path is a PATH with a shim for tmux first, before path's own.
+	shimmed := func(host, tmuxBin, path string) HostOpt {
+		shims := filepath.Join(w.Dir, "on-"+host, "mise", "shims")
+		os.MkdirAll(shims, 0o700)
+		script := fmt.Sprintf("#!/bin/sh\necho \"$*\" >> %s\nexec %s \"$@\"\n", shellQuote(shimLog), shellQuote(tmuxBin))
+		if err := os.WriteFile(filepath.Join(shims, "tmux"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return Env("PATH", shims+":"+path)
 	}
-	path := shims + ":" + os.Getenv("PATH")
-	opts := []HostOpt{Env("TOWER_MACHINE_ID", ""), Env("PATH", path)}
-	a := w.Host("A", []string{"alpha"}, opts...)
-	b := w.Host("B", []string{"bravo"}, opts...)
+	// B's tmux and PATH: a container's own, or this machine's.
+	btmux, bpath := tmux.Bin(), os.Getenv("PATH")
+	if ctrs != nil {
+		btmux, bpath = ctrTmux, ctrPath
+	}
+	a := w.Host("A", []string{"alpha"}, Env("TOWER_MACHINE_ID", ""), shimmed("A", tmux.Bin(), os.Getenv("PATH")))
+	b := w.Host("B", []string{"bravo"}, Env("TOWER_MACHINE_ID", ""), shimmed("B", btmux, bpath), SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)
 	st := a.Status()

@@ -47,7 +47,7 @@ func makeLC(t *testing.T, id string, knobs func(rtt int, l *Link)) *lcWorld {
 	x := &lcWorld{w: w, knobs: knobs}
 	x.a = w.Host("A", []string{"alpha"})
 	for _, rtt := range lcRTTs {
-		h := w.Host(lcName(rtt), []string{lcSession(rtt)})
+		h := w.Host(lcName(rtt), []string{lcSession(rtt)}, SSHHost())
 		x.hosts = append(x.hosts, h)
 		w.Shape(h.Name, func(l *Link) { x.shape(rtt, l) })
 	}

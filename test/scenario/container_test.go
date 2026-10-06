@@ -34,8 +34,11 @@ import (
 // fake ssh.
 var ctrs *ctrBackend
 
-// ctrPath is a container's PATH.
-const ctrPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+// ctrPath is a container's PATH; ctrTmux its tmux.
+const (
+	ctrPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	ctrTmux = "/usr/local/bin/tmux"
+)
 
 type ctrBackend struct {
 	run      string   // compose project suffix: this process's pid
@@ -55,6 +58,7 @@ type ctrSlot struct {
 	id   string // container id, in its processes' cgroup
 	ip   string
 	sock string // its agent's socket
+	mid  string // its machine id
 	w    *World // the world using it
 }
 
@@ -132,6 +136,10 @@ func containerSetup() error {
 				return fmt.Errorf("%s: no agent: %v", s.ctr, err)
 			}
 			time.Sleep(100 * time.Millisecond)
+		}
+		rep, err := s.call(agentReq{Op: "exec", Root: true, Cmd: "cat /etc/machine-id"})
+		if s.mid = strings.TrimSpace(rep.Out); err != nil || s.mid == "" {
+			return fmt.Errorf("%s: no machine id: %v", s.ctr, err)
 		}
 	}
 	// Each host's key, once sshd answers, under each of its ports.

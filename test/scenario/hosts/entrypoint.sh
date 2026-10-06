@@ -1,5 +1,6 @@
 #!/bin/sh
-# The container's start, as root: the authorized key; an ifb device so
+# The container's start, as root: a machine id of its own, as a
+# machine has (the image's is empty); the authorized key; an ifb device so
 # the harness can delay the inbound direction too; the chains it puts
 # faults in (TT-FREEZE-IN and -OUT: an sshd port's connections half-open
 # now, TT-HALFOPEN: the connections a network change left behind); SYNs
@@ -7,6 +8,7 @@
 # auth off (a host that wants a password); the agent the harness talks
 # to; then sshd.
 set -e
+od -An -N16 -tx1 /dev/urandom | tr -d ' \n' > /etc/machine-id
 install -d -m 700 -o tt -g tt /home/tt/.ssh
 printf '%s\n' "$TT_PUBKEY" > /home/tt/.ssh/authorized_keys
 chown tt:tt /home/tt/.ssh/authorized_keys

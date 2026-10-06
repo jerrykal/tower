@@ -261,7 +261,16 @@ func (h *Host) Env() []string {
 	return out
 }
 
-func (h *Host) getenv(k string) string { return h.EnvMap()[k] }
+// getenv is a variable as tower on the host reads it, for computing its
+// paths here: a container host without TOWER_MACHINE_ID has its
+// container's machine id.
+func (h *Host) getenv(k string) string {
+	v := h.EnvMap()[k]
+	if k == "TOWER_MACHINE_ID" && v == "" && h.ctr != nil {
+		return h.ctr.mid
+	}
+	return v
+}
 
 // TmuxArgs select the host's server.
 func (h *Host) TmuxArgs() []string { return []string{"-L", h.Sock} }
@@ -274,7 +283,7 @@ func (h *Host) Tmux(args ...string) (string, error) {
 	var out string
 	var err error
 	if h.ctr != nil && slices.Contains(args, "-f") {
-		out, err = h.ctrRun(h.EnvMap(), 10*time.Second, append([]string{"tmux"}, argv...)...)
+		out, err = h.ctrRun(h.EnvMap(), 10*time.Second, append([]string{ctrTmux}, argv...)...)
 	} else {
 		out, err = runLocal(h.EnvMap(), 10*time.Second, append([]string{tmux.Bin()}, argv...)...)
 	}
