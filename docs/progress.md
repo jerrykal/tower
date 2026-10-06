@@ -189,6 +189,91 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       not timing-sensitive run with `t.Parallel`; the timing checks
       become a serial latency tier. Sleeps give way to event waits
       (`WaitMark`, the tracker) where a scenario waits on tower.
+
+      Done but for one decision, LC03 at RTT 400 (below); 526713c to
+      98cf94e, decisions 116 to 119, the harness in
+      [design/harness.md](design/harness.md). Every scenario's remote
+      hosts are containers on that backend, and every scenario passes
+      there but LC03.
+
+      What porting took:
+      - Hosts on one machine share a container. Each ssh name has an
+        environment and a port of its own, so a freeze, a stall, a drop
+        and `Down` belong to the name, as the fake's knobs did; the
+        shape and a network change belong to the machine.
+      - A host's commands, its towerd and its terminals run in its
+        container (`h.Run`, `docker exec -it`); each container has a
+        machine id of its own; a world is on real ssh from its start.
+      - Phase 2's decisions per scenario, carried out: exit 255 is a
+        `Drop`; 42 and 43 from ssh itself (S06 (c), LS09 3–4) and the
+        Tailscale check (S15) are fake-only steps; LH05's wedged master
+        is the home's real one stopped; `WindowKB` gave way to `Stall`
+        alone (LH, LS09). No scenario relied on `Pty` or `Mux` off.
+        S05's three servers moved to a remote machine.
+      - Real ssh as it is, now checked: a network change strands a
+        standby's far side, which exits after its 30s silence window
+        (LS03 checks it); ssh -t prints "Connection to … closed." (LS08
+        passes `-q`) and, from 9.5 on, sends keys on a 20ms timer unless
+        told not to, as tower's attach tells it (LS08 at 40 MB/s: keys
+        reached the host in 2.2ms at the median with the timer, 57µs
+        without).
+      - Harness bugs on the way: the agent's drop failed on a process
+        that exited meanwhile (S14); teardown's `pkill` for `i04` also
+        matched `i04-dev`, harmless only while worlds ran one at a time;
+        LS05 read a container's pid untranslated.
+
+      Tower bugs the fake hid, fixed:
+      - 012ecfb: a client starting towerd for the default tmux server
+        passed `--tmux ''`, and that towerd served the server
+        `TOWER_TMUX` named (U07).
+      - af0f10d (decision 116): a request routed in a link's first round
+        trip was refused for want of time, the margin then being the
+        hello's time, connect included; over real ssh at RTT 400 a stale
+        client stayed 5s after the link was back. LC03 R400 with the
+        link silent 17.4s → 12.9s, after a network change 13.0s → 8.1s;
+        LC04 R400 11.9s → 6.3s; the fake unchanged.
+      - 98cf94e (decision 119): the loop gave an attach up on a view of
+        the earlier link (the prepare answered as the link came up,
+        before the view saying so arrived) and tried again 4s later.
+        LC06 R400 took 15.7s in one run of four, else 11.7s; after the
+        fix 11.67–11.68s in 8 of 8.
+
+      Tiers (decision 118): 65 scenarios that bound no time call
+      `parallel(t)` and run after the serial timing tier (LC and 24
+      others), four worlds at a time. The `-skip '^TestLC'` shard went
+      from 554s to 359s on the fake and from 586s to 405s on containers,
+      where the serial tier is 328s of it and the 65 others take about
+      70s of wall time (264s of test time).
+
+      Sleeps: seven that waited for tower to make a client, a size or a
+      log line are `Eventually` on that thing (a69e9be). The rest stay,
+      each for a reason: a window in which nothing must happen (no
+      upload, no server, no other session, no late kill: most of them),
+      tower's own clocks (a request's age, a repo's freshness, the
+      stable period), a fault ordered after a connection (a master
+      older than a network change), or a window measured (traffic,
+      frames).
+
+      Knob code: scenarios stopped writing knobs in Phase 2; what is
+      left is the fake's backend, which goes with the fake (Phase 7).
+
+      Shards at the end, unit tests passing:
+
+      | | fake ssh | containers |
+      | --- | --- | --- |
+      | `^TestLC` | 8/8 in 314s | 7/8 in 367s (LC03) |
+      | the rest | 85 passed, 4 skipped (R01–R04), 0 failed in 359s | 85 passed, 4 skipped, 0 failed in 405s |
+
+      **Open, the user's decision: LC03 at RTT 400 over real ssh.** In
+      every run the client is back after 12.7–12.9s with the link
+      silent (limit 12s; the fake 10.0–10.8s) and 8.04–8.06s after a
+      network change (limit 8s; the fake 5.0–6.4s). The difference is
+      the connect: given up at 6.8s on both, the link is back 5.35s
+      later over real ssh against 2.6s on the fake, a new connection at
+      RTT 400 taking about 13 round trips. Not loosened. Either LC03's
+      limits over real ssh are set from this measurement, or tower
+      reconnects sooner (say, a new connection opened while the stalled
+      one is still being given up).
 - [ ] **Phase 5, the macOS backend.** Localhost sshd, each simulated
       host its own `TOWER_HOME` through `hosts.toml`'s `home`
       (decision 65), faults with `dnctl`/`pf` on `lo0`. Locally it needs
