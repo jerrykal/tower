@@ -511,6 +511,26 @@ func (h *Host) HostPid(pid int) int {
 	return 0
 }
 
+// SplitFar splits pids into those of the machine the test runs on and
+// those in h's container (none for a local host).
+func (h *Host) SplitFar(pids []int) (near, far []int) {
+	if h.ctr == nil {
+		return pids, nil
+	}
+	in := map[int]bool{}
+	for _, p := range ctrProcs(h.ctr) {
+		in[p.pid] = true
+	}
+	for _, p := range pids {
+		if in[p] {
+			far = append(far, p)
+		} else {
+			near = append(near, p)
+		}
+	}
+	return near, far
+}
+
 // ctrRun runs argv in h's container as tt with environment env, killed
 // after d, and returns its combined output. An exit status is an error,
 // as exec's.

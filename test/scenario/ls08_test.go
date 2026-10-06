@@ -18,12 +18,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/relay"
+	"github.com/jerrykal/tower/internal/transport"
 	"golang.org/x/sys/unix"
 )
 
-// LS08: the relay under load, through the fake ssh to a host with a pty,
-// against the fake ssh given the terminal itself. The terminal is a pty
+// LS08: the relay under load, through the home's ssh to a host with a
+// pty, against that ssh given the terminal itself. The terminal is a pty
 // in raw mode whose other side the scenario reads, as a terminal emulator
 // would; the scenario's process does the relaying, so its CPU time is the
 // relay's.
@@ -61,8 +63,8 @@ func newLS08Term(t *testing.T) *ls08Term {
 	return &ls08Term{pty: p, term: term, mfd: int(p.Master.Fd()), cook: cook}
 }
 
-// ls08Attach is a remote command run through the fake ssh -t, plain (the
-// fake ssh given the terminal: its stdio, session leader with it as the
+// ls08Attach is a remote command run through the home's ssh -t, plain
+// (ssh given the terminal: its stdio, session leader with it as the
 // controlling terminal) or relayed (on a session of the loop's own,
 // relayed as the loop relays it).
 type ls08Attach struct {
@@ -73,7 +75,14 @@ type ls08Attach struct {
 
 func ls08Run(t *testing.T, w *World, home *Host, tt *ls08Term, remote string, relayed bool) *ls08Attach {
 	t.Helper()
-	argv := []string{fakeSSH, "-t", "-o", "BatchMode=yes", "B", "--", remote}
+	// -q: real ssh's "Connection to … closed." is not the command's. Keys
+	// go as tower's attach sends them: not on ssh 9.5+'s 20ms timer.
+	bin := home.EnvMap()["TOWER_SSH"]
+	argv := []string{bin, "-q", "-t", "-o", "BatchMode=yes"}
+	if o := (&transport.SSH{Bin: bin}).Options(config.Host{Name: "B"}); slices.Contains(o, "ObscureKeystrokeTiming=no") {
+		argv = append(argv, "-o", "ObscureKeystrokeTiming=no")
+	}
+	argv = append(argv, "B", "--", remote)
 	a := &ls08Attach{res: make(chan error, 1)}
 	if !relayed {
 		cmd := exec.Command(argv[0], argv[1:]...)
@@ -106,7 +115,7 @@ type errExit int
 
 func (e errExit) Error() string { return "exit " + strconv.Itoa(int(e)) }
 
-// end ends the attach (SIGTERM to the fake ssh) and waits for it.
+// end ends the attach (SIGTERM to ssh) and waits for it.
 func (a *ls08Attach) end(t *testing.T) {
 	t.Helper()
 	if a.plain != nil {
@@ -149,7 +158,7 @@ func ls08Rusage(who int) time.Duration {
 type ls08Rate struct {
 	elapsed       time.Duration
 	relayCPU      time.Duration // this process: the relay
-	othersCPU     time.Duration // the fake ssh, the host's command and the reader
+	othersCPU     time.Duration // ssh, the host's command and the reader
 	bytes         int64
 	mode, command string
 }
@@ -195,7 +204,7 @@ func ls08Compare(t *testing.T, w *World, home *Host, name, remote string, count 
 	t.Helper()
 	p := ls08Pump(t, w, home, remote, count, false)
 	r := ls08Pump(t, w, home, remote, count, true)
-	t.Logf("%s, %d bytes: plain %.0f MB/s (fake ssh, host and reader %v CPU); relayed %.0f MB/s (relay %v CPU, %.0f%% of a core; fake ssh, host and reader %v)",
+	t.Logf("%s, %d bytes: plain %.0f MB/s (ssh, host and reader %v CPU); relayed %.0f MB/s (relay %v CPU, %.0f%% of a core; ssh, host and reader %v)",
 		name, count, p.mbps(), p.othersCPU.Round(time.Millisecond), r.mbps(), r.relayCPU.Round(time.Millisecond),
 		100*r.relayCPU.Seconds()/r.elapsed.Seconds(), r.othersCPU.Round(time.Millisecond))
 	if r.mbps() < 100 && r.mbps() < 0.9*p.mbps() {
@@ -306,7 +315,7 @@ func ls08Keys(t *testing.T, w *World, home *Host, rate int, relayed bool) (toHos
 func TestLS08(t *testing.T) {
 	w := NewWorld(t, "ls08")
 	home := w.Host("A", nil)
-	w.Host("B", nil)
+	w.Host("B", nil, SSHHost())
 	w.Shape("B", func(l *Link) { l.Pty = true })
 
 	t.Run("cat", func(t *testing.T) {

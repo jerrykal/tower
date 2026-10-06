@@ -57,8 +57,8 @@ func TestLS01(t *testing.T) {
 	// and the fake keeps their sessions (decision 112): they hear no
 	// hang-up and go once their heartbeats stop.
 	silence := Env("TOWER_STANDBY_SILENCE", "5s")
-	b := w.Host("B", []string{"bravo"}, silence)
-	c := w.Host("C", []string{"charlie"}, silence)
+	b := w.Host("B", []string{"bravo"}, silence, SSHHost())
+	c := w.Host("C", []string{"charlie"}, silence, SSHHost())
 	w.Shape("B", ptyLink)
 	w.Shape("C", ptyLink)
 	stdSetup(w, a, b, c)
@@ -129,7 +129,7 @@ func TestLS01(t *testing.T) {
 func TestLS02(t *testing.T) {
 	w := NewWorld(t, "ls02")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Shape("B", func(l *Link) { ptyLink(l); l.DelayMs = 25 })
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
@@ -213,7 +213,7 @@ func (w *World) replaced(h *Host, old []int, n int, d time.Duration) {
 func TestLS03(t *testing.T) {
 	w := NewWorld(t, "ls03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Shape("B", ptyLink)
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
@@ -227,16 +227,24 @@ func TestLS03(t *testing.T) {
 	// (b) A network change with the master half-open.
 	time.Sleep(500 * time.Millisecond)
 	old, n = w.StandbyPids(b), w.CountMarks("standby: ready B")
-	w.NetworkChange("B", time.Now())
+	changed := time.Now()
+	w.NetworkChange("B", changed)
 	time.Sleep(time.Second)
 	a.Call(proto.CallNetChange, nil, nil)
+	// Over real ssh the old standby's far side never hears its
+	// connection close: it lives on until its loop's heartbeats have
+	// been silent for 30s (checked at the end).
+	old, stranded := b.SplitFar(old)
 	w.replaced(b, old, n, 15*time.Second)
 	w.Heal("B")
+	standbys := func() []int {
+		return slices.DeleteFunc(w.StandbyPids(b), func(p int) bool { return slices.Contains(stranded, p) })
+	}
 
 	// (c) B's towerd killed, and a switch there right after.
 	w.WaitLink(a, "B", "up", 10*time.Second)
 	time.Sleep(time.Second)
-	old, attempts := w.StandbyPids(b), w.Link(a, "B").Attempts
+	old, attempts := standbys(), w.Link(a, "B").Attempts
 	w.ClearMarks()
 	Kill9(b.TowerdPid())
 	term.DashTo("bravo")
@@ -258,7 +266,7 @@ func TestLS03(t *testing.T) {
 
 	// (d) A stall.
 	time.Sleep(500 * time.Millisecond)
-	old, n = w.StandbyPids(b), w.CountMarks("standby: ready B")
+	old, n = standbys(), w.CountMarks("standby: ready B")
 	w.Stall("B", true)
 	w.Eventually(10*time.Second, "the standby to the stalled B gone", func() bool {
 		now := w.StandbyPids(b)
@@ -266,6 +274,11 @@ func TestLS03(t *testing.T) {
 	})
 	w.Stall("B", false)
 	w.Eventually(20*time.Second, "a new standby to B", func() bool { return w.CountMarks("standby: ready B") > n })
+
+	// (b)'s stranded far side has exited for want of heartbeats.
+	w.Eventually(time.Until(changed.Add(35*time.Second)), "the far side (b) stranded gone", func() bool {
+		return !slices.ContainsFunc(stranded, Alive)
+	})
 }
 
 // LS04: TOWER_STANDBY=0, standby = false on a host, a remote upgraded
@@ -273,8 +286,8 @@ func TestLS03(t *testing.T) {
 func TestLS04(t *testing.T) {
 	w := NewWorld(t, "ls04")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
 		w.Shape(n, func(l *Link) { l.Mux = true })
 	}
@@ -350,7 +363,7 @@ func TestLS04(t *testing.T) {
 func TestLS05(t *testing.T) {
 	w := NewWorld(t, "ls05")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Shape("B", ptyLink)
 	stdSetup(w, a, b)
 	modes := []struct {
@@ -388,6 +401,7 @@ func TestLS05(t *testing.T) {
 				fmt.Sscan(rest, &pid)
 			}
 		}
+		pid = b.HostPid(pid)
 		term.Keys("C-b", "C-z")
 		time.Sleep(time.Second)
 		st, _ := exec.Command("ps", "-o", "state=", "-p", fmt.Sprint(pid)).Output()
@@ -422,8 +436,8 @@ func TestLS09(t *testing.T) {
 	w := NewWorld(t, "ls09")
 	w.Timing(lhTiming)
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	w.Shape("B", func(l *Link) { l.Pty, l.WindowKB = true, 32 })
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	w.Shape("B", func(l *Link) { l.Pty = true; lhWindow(l) })
 	stdSetup(w, a, b)
 	restore := func() { w.Heal("B") }
 	modes := []struct {
@@ -477,31 +491,24 @@ func TestLS09(t *testing.T) {
 		readyNow()
 		pick()
 		onB("1", true)
-		// 2. ssh exits 255: reconnect at once.
-		w.ExitWith("B", 255)
-		time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
-		term.Keys("C-b", "d")
+		// 2. ssh exits 255: reconnect at once. Over real ssh the
+		// connection drops, as it does when ssh exits 255.
+		if w.real {
+			w.Drop("B")
+		} else {
+			w.ExitWith("B", 255)
+			time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
+			term.Keys("C-b", "d")
+		}
 		w.WaitMark("after reconnect", 6*time.Second)
 		restore()
 		onB("2", false)
-		// 3. exit 43: the picker, saying why.
-		w.ExitWith("B", 43)
-		time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
-		term.Keys("C-b", "d")
-		term.Wait(`B restarted since it was listed; pick again`, 6*time.Second)
-		restore()
-		readyNow()
-		term.Pick("bravo")
-		onB("3", true)
-		// 4. A bare exit 42: the picker, saying why.
-		w.ExitWith("B", 42)
-		time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
-		term.Keys("C-b", "d")
-		term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
-		restore()
-		readyNow()
-		term.Pick("bravo")
-		onB("4", true)
+		// 3 and 4 are tower's own exits from ssh itself, the fake's only:
+		// real ssh exits 255 or with its command (towerd's tests read 42
+		// and 43 alone).
+		if !w.real {
+			ls09Exits(w, term, restore, readyNow, onB)
+		}
 		// 5. A hand-off away.
 		term.DashTo("alpha")
 		w.WaitLoop(a, "^A:alpha", 8*time.Second)
@@ -546,6 +553,30 @@ func TestLS09(t *testing.T) {
 	if results[0] != results[1] || results[1] != results[2] {
 		t.Fatalf("the modes differ:\n%s", strings.Join(results, "\n"))
 	}
+}
+
+// ls09Exits are LS09's steps 3 and 4: ssh itself exits 43, then a bare
+// 42, each back at the picker saying why.
+func ls09Exits(w *World, term *Term, restore, readyNow func(), onB func(string, bool)) {
+	w.T.Helper()
+	// 3. exit 43: the picker, saying why.
+	w.ExitWith("B", 43)
+	time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
+	term.Keys("C-b", "d")
+	term.Wait(`B restarted since it was listed; pick again`, 6*time.Second)
+	restore()
+	readyNow()
+	term.Pick("bravo")
+	onB("3", true)
+	// 4. A bare exit 42: the picker, saying why.
+	w.ExitWith("B", 42)
+	time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
+	term.Keys("C-b", "d")
+	term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
+	restore()
+	readyNow()
+	term.Pick("bravo")
+	onB("4", true)
 }
 
 // LS10: a remote attach over a shared master leaves no client behind,
