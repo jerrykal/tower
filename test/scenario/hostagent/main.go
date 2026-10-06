@@ -35,6 +35,7 @@ type Request struct {
 	Vars   map[string]string `json:"vars,omitempty"`   // exec as tt: its whole environment
 	Ms     int               `json:"ms,omitempty"`     // exec: killed after this long; 0 never
 	On     bool              `json:"on,omitempty"`     // freeze, stall
+	Port   int               `json:"port,omitempty"`   // freeze, drop, stall: the sshd port of one ssh name
 	Delay  int               `json:"delay,omitempty"`  // netem: one-way ms
 	Jitter int               `json:"jitter,omitempty"` // netem: ± ms
 	BwKBps int               `json:"bw,omitempty"`     // netem: KB/s
@@ -48,11 +49,13 @@ type Reply struct {
 }
 
 var (
-	tt      *user.User
-	ttUID   int
-	mu      sync.Mutex // one change at a time
+	tt    *user.User
+	ttUID int
+	mu    sync.Mutex // one change at a time
+
 	stallMu sync.Mutex
-	stallCh chan struct{}
+	stalled = map[int]map[int]bool{} // by sshd port, the pids stopped
+	stallCh chan struct{}            // ends the sweeper
 	stallWg sync.WaitGroup
 )
 
@@ -119,10 +122,13 @@ func handle(r Request) Reply {
 	case "netem":
 		return netem(r.Delay, r.Jitter, r.BwKBps)
 	case "freeze":
+		// Both ways, nothing moves on the port's connections; ssh's own
+		// connections out of the container are on other ports.
+		a := "-D"
 		if r.On {
-			return sh("iptables -A TT-FREEZE -p tcp -j DROP")
+			a = "-A"
 		}
-		return sh("iptables -F TT-FREEZE")
+		return sh(fmt.Sprintf("iptables %s TT-FREEZE-IN -p tcp --dport %d -j DROP && iptables %s TT-FREEZE-OUT -p tcp --sport %d -j DROP", a, r.Port, a, r.Port))
 	case "halfopen":
 		// Every connection established now, both ways and for good: what
 		// a network change does to them.
@@ -131,18 +137,13 @@ func handle(r Request) Reply {
 			`iptables -A TT-HALFOPEN -p tcp -s "$ip" --sport "$port" --dport "$lport" -j DROP; ` +
 			`iptables -A TT-HALFOPEN -p tcp -d "$ip" --dport "$port" --sport "$lport" -j DROP; done`)
 	case "drop":
-		// The per-connection sshd processes: their connections close.
-		for _, p := range procs() {
-			if strings.HasPrefix(p.argv0, "sshd: tt") {
-				syscall.Kill(p.pid, syscall.SIGKILL)
-			}
-		}
-		return Reply{}
+		// The sshd processes holding the port's connections: they close.
+		return sh(fmt.Sprintf(`ss -Htnp state established '( sport = :%d )' | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u | xargs -r kill -9`, r.Port))
 	case "stall":
 		if r.On {
-			stallOn()
+			stallOn(r.Port)
 		} else {
-			stallOff()
+			stallOff(r.Port)
 		}
 		return Reply{}
 	}
@@ -153,11 +154,11 @@ func handle(r Request) Reply {
 // faults, none of the test user's processes (tmux servers, towerds,
 // sessions).
 func reset() Reply {
-	stallOff()
+	stallOff(0)
 	if rep := netem(0, 0, 0); rep.Err != "" {
 		return rep
 	}
-	if rep := sh("iptables -F TT-FREEZE && iptables -F TT-HALFOPEN"); rep.Err != "" {
+	if rep := sh("iptables -F TT-FREEZE-IN && iptables -F TT-FREEZE-OUT && iptables -F TT-HALFOPEN"); rep.Err != "" {
 		return rep
 	}
 	for range 50 {
@@ -258,10 +259,11 @@ func procs() []proc {
 	return out
 }
 
-// sessionProcs are what ssh sessions run: the test user's descendants of
-// the "sshd: tt@…" processes, not those (sshd answers keepalives) and not
-// what has left them (a towerd, a tmux server).
-func sessionProcs() []int {
+// sessionProcs are what ssh sessions run, by the sshd port they came in
+// on: the test user's descendants of the "sshd: tt@…" processes, not
+// those (sshd answers keepalives) and not what has left them (a towerd,
+// a tmux server).
+func sessionProcs() map[int][]int {
 	ps := procs()
 	parent := map[int]int{}
 	sess := map[int]bool{}
@@ -271,14 +273,16 @@ func sessionProcs() []int {
 			sess[p.pid] = true
 		}
 	}
-	var out []int
+	out := map[int][]int{}
 	for _, p := range ps {
 		if sess[p.pid] || p.uid != ttUID {
 			continue
 		}
 		for q, n := parent[p.pid], 0; q > 1 && n < 64; q, n = parent[q], n+1 {
 			if sess[q] {
-				out = append(out, p.pid)
+				if port := sshPort(p.pid); port != 0 {
+					out[port] = append(out[port], p.pid)
+				}
 				break
 			}
 		}
@@ -286,25 +290,39 @@ func sessionProcs() []int {
 	return out
 }
 
-// stallOn stops the session processes, and new ones as they come, until
-// stallOff continues them.
-func stallOn() {
+// sshPort is the sshd port in pid's SSH_CONNECTION, or 0.
+func sshPort(pid int) int {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return 0
+	}
+	for _, kv := range strings.Split(string(b), "\x00") {
+		if v, ok := strings.CutPrefix(kv, "SSH_CONNECTION="); ok {
+			f := strings.Fields(v)
+			if len(f) == 4 {
+				n, _ := strconv.Atoi(f[3])
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// stallOn stops the session processes of the port's connections, and
+// new ones as they come, until stallOff continues them.
+func stallOn(port int) {
 	stallMu.Lock()
 	defer stallMu.Unlock()
+	if stalled[port] != nil {
+		return
+	}
+	stalled[port] = map[int]bool{}
+	sweepLocked()
 	if stallCh != nil {
 		return
 	}
 	stop := make(chan struct{})
 	stallCh = stop
-	stopped := map[int]bool{}
-	sweep := func() {
-		for _, pid := range sessionProcs() {
-			if !stopped[pid] && syscall.Kill(pid, syscall.SIGSTOP) == nil {
-				stopped[pid] = true
-			}
-		}
-	}
-	sweep()
 	stallWg.Add(1)
 	go func() {
 		defer stallWg.Done()
@@ -313,24 +331,49 @@ func stallOn() {
 		for {
 			select {
 			case <-stop:
-				for pid := range stopped {
-					syscall.Kill(pid, syscall.SIGCONT)
-				}
 				return
 			case <-t.C:
-				sweep()
+				stallMu.Lock()
+				sweepLocked()
+				stallMu.Unlock()
 			}
 		}
 	}()
 }
 
-func stallOff() {
-	stallMu.Lock()
-	defer stallMu.Unlock()
-	if stallCh == nil {
-		return
+func sweepLocked() {
+	for port, pids := range sessionProcs() {
+		stopped := stalled[port]
+		if stopped == nil {
+			continue
+		}
+		for _, pid := range pids {
+			if !stopped[pid] && syscall.Kill(pid, syscall.SIGSTOP) == nil {
+				stopped[pid] = true
+			}
+		}
 	}
-	close(stallCh)
-	stallWg.Wait()
-	stallCh = nil
+}
+
+// stallOff continues the port's stopped processes (every port's for 0).
+func stallOff(port int) {
+	stallMu.Lock()
+	for p, stopped := range stalled {
+		if port != 0 && p != port {
+			continue
+		}
+		for pid := range stopped {
+			syscall.Kill(pid, syscall.SIGCONT)
+		}
+		delete(stalled, p)
+	}
+	var stop chan struct{}
+	if len(stalled) == 0 && stallCh != nil {
+		stop, stallCh = stallCh, nil
+	}
+	stallMu.Unlock()
+	if stop != nil {
+		close(stop)
+		stallWg.Wait()
+	}
 }

@@ -266,6 +266,7 @@ type agentReq struct {
 	Vars   map[string]string `json:"vars,omitempty"`
 	Ms     int               `json:"ms,omitempty"`
 	On     bool              `json:"on,omitempty"`
+	Port   int               `json:"port,omitempty"`
 	Delay  int               `json:"delay,omitempty"`
 	Jitter int               `json:"jitter,omitempty"`
 	BwKBps int               `json:"bw,omitempty"`
@@ -385,8 +386,10 @@ func (w *World) writeSSHConfig() {
 }
 
 // ctrApply puts alias's state in place with real mechanisms, prev being
-// what is in place. The link and every fault but Down are the
-// container's, whichever of its names they are set through.
+// what is in place. The link's shape and a network change are the
+// container's (its machine's network), whichever of its names they are
+// set through; Down, Freeze, Drop and Stall are the name's: its sshd
+// port's connections.
 func (w *World) ctrApply(alias string, prev linkState, s *linkState) {
 	w.T.Helper()
 	c := s.target.ctr
@@ -411,13 +414,13 @@ func (w *World) ctrApply(alias string, prev linkState, s *linkState) {
 		w.agent(c, agentReq{Op: "halfopen"})
 	}
 	if s.freeze != prev.freeze {
-		w.agent(c, agentReq{Op: "freeze", On: s.freeze})
+		w.agent(c, agentReq{Op: "freeze", On: s.freeze, Port: s.port})
 	}
 	if s.drops > prev.drops {
-		w.agent(c, agentReq{Op: "drop"})
+		w.agent(c, agentReq{Op: "drop", Port: s.port})
 	}
 	if s.stall != prev.stall {
-		w.agent(c, agentReq{Op: "stall", On: s.stall})
+		w.agent(c, agentReq{Op: "stall", On: s.stall, Port: s.port})
 	}
 }
 

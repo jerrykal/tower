@@ -14,7 +14,10 @@ services:
     labels: [tower-test]
     deploy:
       replicas: ${TT_HOSTS:-6}
-    cap_add: [NET_ADMIN]
+    # NET_ADMIN: the agent's shaping and faults. SYS_PTRACE: it reads
+    # which sshd port a session's processes came in on (their
+    # environment, ss -p), across users; within the container's own pids.
+    cap_add: [NET_ADMIN, SYS_PTRACE]
     # Each host has pids of its own, as a machine does; tini as pid 1
     # reaps what daemons leave.
     init: true

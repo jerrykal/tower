@@ -90,7 +90,8 @@ func (c *sshCall) reason(alias string) string {
 // limits a transfer, each Down fails as tower expects, Drop ends a
 // session, Freeze leaves it to give up after its alive window with the
 // far side still running, a network change leaves the old master dead
-// and a new one working, a stall stops the far side with ssh still up.
+// and a new one working, a stall stops the far side with ssh still up
+// (that name's sessions only).
 func TestHarnessLinks(t *testing.T) {
 	w := NewWorld(t, "links")
 	a := w.Host("A", []string{"alpha"})
@@ -227,22 +228,29 @@ func TestHarnessLinks(t *testing.T) {
 	})
 
 	t.Run("stall", func(t *testing.T) {
-		c := w.startSSH(a, "B", "while :; do echo x; sleep 0.1; done")
-		lines := func() int { return strings.Count(c.stdout.String(), "\n") }
-		w.Eventually(3*time.Second, "output", func() bool { return lines() > 3 })
+		// Another name for B, its sessions not stalled.
+		w.SSH("B2", b)
+		w.Shape("B2", ptyLink)
+		loop := "while :; do echo x; sleep 0.1; done"
+		c, c2 := w.startSSH(a, "B", loop), w.startSSH(a, "B2", loop)
+		lines := func(c *sshCall) int { return strings.Count(c.stdout.String(), "\n") }
+		w.Eventually(3*time.Second, "output", func() bool { return lines(c) > 3 && lines(c2) > 3 })
 		w.Stall("B", true)
 		defer w.Stall("B", false)
 		time.Sleep(500 * time.Millisecond)
-		n := lines()
+		n, n2 := lines(c), lines(c2)
 		alive := 17 * time.Second // ServerAliveInterval × ServerAliveCountMax, and 2s
 		if c.wait(alive) {
 			t.Fatalf("a stalled session ended: exit %d, %q", c.code, c.stderr.String())
 		}
-		if m := lines(); m != n {
+		if m := lines(c); m != n {
 			t.Fatalf("%d lines came through a stall", m-n)
 		}
+		if m := lines(c2); m-n2 < 100 {
+			t.Fatalf("%d lines in %v through another name for the stalled host", m-n2, alive)
+		}
 		w.Stall("B", false)
-		w.Eventually(3*time.Second, "output after the stall", func() bool { return lines() > n })
+		w.Eventually(3*time.Second, "output after the stall", func() bool { return lines(c) > n })
 	})
 }
 
