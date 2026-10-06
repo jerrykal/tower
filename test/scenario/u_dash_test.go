@@ -134,7 +134,7 @@ func TestU02(t *testing.T) {
 	// Typed into the popup, ⏎ goes where the cursor is.
 	term.OpenDash()
 	term.Pick("s50")
-	w.WaitLoop(a, "^B:s50$", 6*time.Second)
+	w.WaitLoop(a, "^B:s50(:|$)", 6*time.Second)
 	term.OpenDash()
 	term.Pick("B:train-llm:2")
 	w.WaitLoop(a, "^B:train-llm", 6*time.Second)
