@@ -37,7 +37,7 @@ func (w *World) Term(name string, h *Host, extra map[string]string, argv ...stri
 	var b strings.Builder
 	b.WriteString("env -u TMUX -u TMUX_PANE")
 	for _, k := range keys {
-		if strings.HasPrefix(k, "TOWER_") || k == "PATH" || k == "HOME" || k == "XDG_CONFIG_HOME" || k == "TMPDIR" || k == "TMUX_TMPDIR" {
+		if strings.HasPrefix(k, "TOWER_") || k == "PATH" || k == "HOME" || strings.HasPrefix(k, "XDG_") && strings.HasSuffix(k, "_HOME") || k == "TMPDIR" || k == "TMUX_TMPDIR" {
 			b.WriteString(" " + transport.ShellQuote(k+"="+env[k]))
 		}
 	}

@@ -195,7 +195,12 @@ func (h *Host) EnvMap() map[string]string {
 		m[k] = v
 	}
 	m["HOME"] = h.w.UserHome
+	// Every XDG base dir under the world's home: zoxide's database is in
+	// XDG_DATA_HOME, which some machines export.
 	m["XDG_CONFIG_HOME"] = filepath.Join(h.w.UserHome, ".config")
+	m["XDG_DATA_HOME"] = filepath.Join(h.w.UserHome, ".local", "share")
+	m["XDG_STATE_HOME"] = filepath.Join(h.w.UserHome, ".local", "state")
+	m["XDG_CACHE_HOME"] = filepath.Join(h.w.UserHome, ".cache")
 	m["TOWER_HOME"] = h.HomeDir
 	m["TOWER_MACHINE_ID"] = h.Machine
 	m["TOWER_TMUX"] = "-L " + h.Sock
