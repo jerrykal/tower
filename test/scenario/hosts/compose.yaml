@@ -4,13 +4,10 @@
 name: tt-${TT_RUN}
 
 x-host: &host
+  # Built by the harness (docker build): compose would stamp each run's
+  # project into the image and leave the last one dangling.
   image: tt-scenario-host:latest
-  build:
-    context: .
-    args:
-      UID: ${TT_UID}
-      TMUX_VERSION: ${TT_TMUX_VERSION:-3.7c}
-    labels: [tower-test]
+  pull_policy: never
   labels: [tower-test]
   cap_add: [NET_ADMIN]
   # The suite finds, signals and sweeps a host's processes by pid.

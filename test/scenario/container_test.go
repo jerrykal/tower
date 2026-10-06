@@ -78,10 +78,18 @@ func containerSetup() error {
 		return err
 	}
 	b.compose = []string{"compose", "-f", filepath.Join("hosts", "compose.yaml")}
-	b.env = append(os.Environ(), "TT_RUN="+b.run, "TT_UID="+strconv.Itoa(os.Getuid()),
+	b.env = append(os.Environ(), "TT_RUN="+b.run,
 		"TT_PUBKEY="+strings.TrimSpace(string(pub)), "TOWER_TEST_DIR="+root)
 	ctrs = b
-	if out, err := b.docker(append(b.compose, "up", "-d", "--build", "--quiet-pull")...); err != nil {
+	tmuxVersion := os.Getenv("TT_TMUX_VERSION")
+	if tmuxVersion == "" {
+		tmuxVersion = "3.7c"
+	}
+	if out, err := b.docker("build", "-q", "--label", "tower-test", "-t", "tt-scenario-host:latest",
+		"--build-arg", "UID="+strconv.Itoa(os.Getuid()), "--build-arg", "TMUX_VERSION="+tmuxVersion, "hosts"); err != nil {
+		return fmt.Errorf("build the host image: %v: %s", err, out)
+	}
+	if out, err := b.docker(append(b.compose, "up", "-d")...); err != nil {
 		return fmt.Errorf("compose up: %v: %s", err, out)
 	}
 	for _, n := range []string{"h1", "h2"} {
