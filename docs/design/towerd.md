@@ -351,8 +351,9 @@ type loopRec struct {
     id        string
     gen       int
     cur, prev proto.Ref
-    sw        *pendingSwitch // target, nonce, gen, at, held, waiting, ended, aborted
+    sw        *pendingSwitch // target, nonce, gen, at, wait, aborted
     waiters   []chan struct{} // wait-switch calls of the current attach
+    woke      *switchWait     // the attach's one wake: held, waiting, ended
     seen      bool            // the home has seen this attach's client
     beat      time.Time
 }
@@ -375,8 +376,10 @@ type loopRec struct {
   M)"), or an unreachable target, before anything detaches; store
   (committed); if a `wait-switch` is waiting and `TOWER_EAGER` is on, wake
   it and wait up to 100ms for `held`: the answer says `Ended` when the loop
-  ends the client.
-- `held`: `End` only while the switch still waits and only once.
+  ends the client. A switch stored while the attach's wake still waits,
+  or once the loop ends the client, joins that wake (`woke`, dropped at
+  the next prepare) rather than being left to its asker.
+- `held`: `End` only while the wake still waits and only once.
 - `after`: the table in protocol.md. 42 or `Ended`: a stored switch for
   this attach under `TOWER_HANDOFF_TTL` (30s) hands off; otherwise the
   picker with "exit 42 without a valid hand-off (no request | request

@@ -435,6 +435,19 @@ func TestLoopDecisions(t *testing.T) {
 	if !<-woke {
 		t.Fatal("wait-switch did not wake")
 	}
+	// A second switch before the loop confirms its hold joins the wake.
+	a.d.mu.Lock()
+	first := h.loops["L"].sw
+	a.d.mu.Unlock()
+	ack2C := make(chan *proto.Ack, 1)
+	go func() {
+		ack2C <- a.d.act(ctx, &proto.Request{Op: proto.OpSwitch, Client: "4343:1:/dev/fake2", Target: alpha})
+	}()
+	w.eventually(2*time.Second, "the second switch stored", func() bool {
+		a.d.mu.Lock()
+		defer a.d.mu.Unlock()
+		return h.loops["L"].sw != first
+	})
 	if !h.held(proto.GenArgs{Loop: "L", Gen: p.Gen}).End {
 		t.Fatal("held while the switch waits: end it")
 	}
@@ -443,6 +456,14 @@ func TestLoopDecisions(t *testing.T) {
 	}
 	if ack := <-ackC; !ack.OK || !ack.Ended {
 		t.Fatalf("eager switch: %+v", ack)
+	}
+	if ack := <-ack2C; !ack.OK || !ack.Ended {
+		t.Fatalf("a switch that joined the wake: %+v", ack)
+	}
+	// One stored once the loop ends the client hears so at once.
+	start := time.Now()
+	if ack := a.d.act(ctx, &proto.Request{Op: proto.OpSwitch, Client: "4343:1:/dev/fake2", Target: alpha}); !ack.OK || !ack.Ended || time.Since(start) >= heldWait {
+		t.Fatalf("a switch once the client is ending: %+v in %v", ack, time.Since(start))
 	}
 	if n := h.after(ctx, proto.AfterArgs{Loop: "L", Gen: p.Gen, Code: 0, Ended: true}); n.Do != proto.NextHandoff || n.Target.Session != alpha.Session {
 		t.Fatalf("after an eager hand-off: %+v", n)

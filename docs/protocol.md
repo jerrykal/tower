@@ -331,15 +331,17 @@ The dashboard's `⏎` on a target on another server:
    The dashboard, told `ended`, only waits for its client to go, so its
    popup never closes first (tmux would redraw the pane under it, a synced
    frame that ends the hold early).
+   A switch stored once the loop is woken for the same attach (prefix L
+   twice at once; keys typed while an attach starts arrive together)
+   joins that wake: the loop takes the latest, and every asker hears
+   `ended`, at once if the loop already holds.
 6. Otherwise (no loop waiting, `TOWER_EAGER=0`, or no `held` within 100ms)
    the ack has no `ended` and the dashboard, or `tower last`, holds the
-   frame and runs `detach-client -t <client> -E 'exit 42'` itself. So does
-   a switch stored while the loop, woken for an earlier one of the same
-   attach, has yet to confirm: prefix L pressed twice, or keys typed while
-   an attach starts arriving at once. A `held` that comes
-   later gets no `end`, so only one side ever ends the client; a dashboard
-   whose detach finds its client already gone neither fails nor ends the
-   hold.
+   frame and runs `detach-client -t <client> -E 'exit 42'` itself, if tmux
+   still lists the client with its pid: a client is named by its tty, which
+   the next client can take. A `held` that comes later gets no `end`, so
+   only one side ever ends the client; a dashboard whose detach finds its
+   client already gone neither fails nor ends the hold.
 
 Same-server targets are a plain `switch-client -c <client> -t $id`, and the
 attach goes on (S11). The towerd there sees the client move and reports it

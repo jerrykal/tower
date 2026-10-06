@@ -508,6 +508,7 @@ func TestHandoff(t *testing.T) {
 	os.WriteFile(tty, nil, 0o600)
 	m, f, x := newTestModel(t, testDash(), false)
 	x.out["display-message"] = tty + "\t$0\t@0\n"
+	x.out["list-clients"] = "4242 /dev/ttys042\n"
 	press(t, m, "b", "a", "n", "enter")
 	sw := f.actsOf(proto.OpSwitch)
 	if len(sw) != 1 || sw[0].Target.Session != "$4" || sw[0].Target.Inst != "2:2" || sw[0].Deadline == 0 || sw[0].ID == "" {
@@ -530,6 +531,7 @@ func TestHandoff(t *testing.T) {
 	x2.out["display-message"] = tty + "\t$0\t@0\n"
 	x2.err["detach-client"] = errTest
 	m2.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
+	x2.out["list-clients"] = itoa(os.Getpid()) + " /dev/ttys042\n"
 	press(t, m2, "b", "a", "n", "enter")
 	if b, _ := os.ReadFile(tty); string(b) != relay.SyncBegin+relay.SyncEnd || m2.quitted || m2.note.kind != noteErr {
 		t.Fatalf("failed detach: tty %q quit %v note %q", b, m2.quitted, m2.note.text)
@@ -540,9 +542,18 @@ func TestHandoff(t *testing.T) {
 	t.Setenv("TOWER_TEST_NOTTY", "1")
 	m3, _, x3 := newTestModel(t, testDash(), false)
 	x3.out["display-message"] = tty + "\t$0\t@0\n"
+	x3.out["list-clients"] = "4242 /dev/ttys042\n"
 	press(t, m3, "b", "a", "n", "enter")
 	if b, _ := os.ReadFile(tty); len(b) != 0 || len(x3.called("detach-client")) != 1 {
 		t.Fatalf("notty: tty %q calls %v", b, x3.calls)
+	}
+
+	// The client is gone and its tty another client's: nothing is ended.
+	m4, _, x4 := newTestModel(t, testDash(), false)
+	x4.out["list-clients"] = "4343 /dev/ttys042\n"
+	press(t, m4, "b", "a", "n", "enter")
+	if len(x4.called("detach-client")) != 0 || !m4.quitted {
+		t.Fatalf("a tty taken by another client: quit %v calls %v", m4.quitted, x4.calls)
 	}
 }
 

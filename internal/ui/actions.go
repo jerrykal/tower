@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -174,6 +175,13 @@ func (c *Conn) EndClient(ctx context.Context) error {
 	cl, err := proto.ParseClient(c.Client)
 	if err != nil {
 		return err
+	}
+	// A client is named by its tty, which a new client can take as soon
+	// as this one is gone: only the pressing client itself is ended, and
+	// one tmux no longer lists is gone (exiting, perhaps still alive).
+	if out, err := c.Tmux.Run(ctx, "list-clients", "-F", "#{client_pid} #{client_name}"); err == nil &&
+		!slices.Contains(strings.Split(out, "\n"), strconv.Itoa(cl.Pid)+" "+cl.Name) {
+		return nil
 	}
 	tty := c.hold(ctx)
 	_, err = c.Tmux.Run(ctx, "detach-client", "-t", cl.Name, "-E", "exit 42")

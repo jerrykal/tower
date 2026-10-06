@@ -62,6 +62,7 @@ type loopRec struct {
 	cur, prev proto.Ref
 	sw        *pendingSwitch
 	waiters   []chan struct{} // wait-switch calls of the current attach
+	woke      *switchWait     // the current attach's wake, once a switch woke the loop
 	seen      bool            // the home has seen this attach's client
 	picking   bool            // at the picker: attached nowhere
 	beat      time.Time
@@ -74,10 +75,16 @@ type pendingSwitch struct {
 	nonce   string
 	gen     int
 	at      time.Time
+	wait    *switchWait // the wake it waits on; nil: the asker ends the client
+	aborted string      // why it can no longer go ahead (its host stalled)
+}
+
+// switchWait is the one wake of an attach's loop: the switch that woke
+// it, and any stored after it for the same attach, wait on it together.
+type switchWait struct {
 	held    chan struct{} // closed when the loop holds the frame and will end the client
-	waiting bool          // the switch still waits for held
+	waiting bool          // the switches still wait for held
 	ended   bool          // the loop ends the old client
-	aborted string        // why it can no longer go ahead (its host stalled)
 }
 
 // cachedHost is what hosts.json keeps of a host across restarts.
@@ -525,7 +532,7 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	if !l.cur.IsZero() && !l.cur.SameSession(t) {
 		l.prev = l.cur
 	}
-	l.cur, l.sw, l.seen, l.picking = t, nil, false, false
+	l.cur, l.sw, l.woke, l.seen, l.picking = t, nil, nil, false, false
 	for _, w := range l.waiters {
 		close(w)
 	}
@@ -603,16 +610,24 @@ func (h *homeRole) storeSwitch(ctx context.Context, req *proto.Request) *proto.A
 	}
 	t := req.Target
 	t.Name = hs.name
-	sw := &pendingSwitch{target: t, nonce: req.Nonce, gen: l.gen, at: time.Now(), held: make(chan struct{})}
+	sw := &pendingSwitch{target: t, nonce: req.Nonce, gen: l.gen, at: time.Now()}
 	l.sw = sw
-	eager := config.Flag("TOWER_EAGER", true) && len(l.waiters) > 0
-	if eager {
-		sw.waiting = true
+	switch {
+	case l.woke != nil && (l.woke.waiting || l.woke.ended):
+		// The loop is already woken for this attach (the switch before
+		// this one, a moment ago): this one joins that wake and is the
+		// one the loop takes, so the loop still ends the client, and only
+		// it does. Keys typed while an attach starts arrive together.
+		sw.wait = l.woke
+	case config.Flag("TOWER_EAGER", true) && len(l.waiters) > 0:
+		sw.wait = &switchWait{held: make(chan struct{}), waiting: true}
+		l.woke = sw.wait
 		for _, w := range l.waiters {
 			close(w)
 		}
 		l.waiters = nil
 	}
+	eager := sw.wait != nil
 	h.d.bump()
 	h.d.mu.Unlock()
 	config.Mark("switch stored")
@@ -626,12 +641,12 @@ func (h *homeRole) storeSwitch(ctx context.Context, req *proto.Request) *proto.A
 	t1 := time.NewTimer(heldWait)
 	defer t1.Stop()
 	select {
-	case <-sw.held:
+	case <-sw.wait.held:
 	case <-t1.C:
 	}
 	h.d.mu.Lock()
-	sw.waiting = false
-	ack.Ended = sw.ended
+	sw.wait.waiting = false
+	ack.Ended = sw.wait.ended
 	h.d.mu.Unlock()
 	return ack
 }
@@ -644,7 +659,7 @@ func (h *homeRole) plant(r *proto.Request) (any, error) {
 	if l == nil {
 		return nil, fmt.Errorf("no loop %s", r.Loop)
 	}
-	l.sw = &pendingSwitch{target: r.Target, nonce: r.Nonce, gen: r.Gen, at: time.Now(), held: make(chan struct{})}
+	l.sw = &pendingSwitch{target: r.Target, nonce: r.Nonce, gen: r.Gen, at: time.Now()}
 	h.d.bump()
 	return struct{}{}, nil
 }
@@ -687,11 +702,11 @@ func (h *homeRole) held(a proto.GenArgs) *proto.HeldReply {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
 	l := h.loops[a.Loop]
-	if l == nil || l.sw == nil || l.sw.gen != a.Gen || !l.sw.waiting || l.sw.ended {
+	if l == nil || l.sw == nil || l.sw.gen != a.Gen || l.sw.wait == nil || !l.sw.wait.waiting || l.sw.wait.ended {
 		return &proto.HeldReply{}
 	}
-	l.sw.ended = true
-	close(l.sw.held)
+	l.sw.wait.ended = true
+	close(l.sw.wait.held)
 	return &proto.HeldReply{End: true}
 }
 
