@@ -9,7 +9,8 @@ import (
 // Links and faults: what the network and the far side do to an ssh
 // name. Scenarios set them through the World; each host's backend puts
 // them in place: the fake ssh's knobs for a host on this machine, real
-// mechanisms for a container (container_test.go).
+// mechanisms for a container (container_test.go) or a host behind sshds
+// of its own (sshd_test.go).
 
 // Link is the shape of the link to an ssh name.
 type Link struct {
@@ -39,7 +40,12 @@ type linkState struct {
 	exit       *int              // the fake's: ssh's exit status when the remote command ends
 	oDelayMs   int               // the fake's: every ssh -O takes this long
 	port       int               // a container's sshd port for this name
+	sshd       *sshd             // the name's sshd (the sshd backend)
 }
+
+// overRealSSH reports whether SSHHost hosts are reached over real ssh: the
+// container or the sshd backend.
+func overRealSSH() bool { return ctrs != nil || sshds != nil }
 
 // SSH registers ssh name alias for target, with an unshaped link.
 func (w *World) SSH(alias string, target *Host) {
@@ -52,8 +58,11 @@ func (w *World) SSH(alias string, target *Host) {
 		s.env = target.EnvMap()
 	}
 	w.links[alias] = s
-	if target.ctr != nil {
+	switch {
+	case target.ctr != nil:
 		w.ctrName(alias, target)
+	case target.overSSH:
+		w.sshdName(alias, target)
 	}
 	w.apply(alias, linkState{target: target})
 }
@@ -149,6 +158,10 @@ func (w *World) apply(alias string, prev linkState) {
 	s := w.links[alias]
 	if s.target.ctr != nil {
 		w.ctrApply(alias, prev, s)
+		return
+	}
+	if s.sshd != nil {
+		w.sshdApply(alias, prev, s)
 		return
 	}
 	k := fakenet.Knobs{

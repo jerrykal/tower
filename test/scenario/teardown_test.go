@@ -21,6 +21,9 @@ func (w *World) teardown() {
 		killSessions(term.Sock)
 	}
 	time.Sleep(300 * time.Millisecond)
+	// The sshds first: their connections' processes are found under them,
+	// and a home reconnecting finds no host.
+	w.sshdRelease()
 
 	var pids []int
 	towerds, _ := filepath.Glob(filepath.Join(w.Dir, "home-*", "state", "towerd", "*", "towerd.pid"))

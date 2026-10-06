@@ -72,11 +72,15 @@ type ctrSlot struct {
 }
 
 // SSHHost makes a host a remote reached over ssh: on the container
-// backend, a container.
+// backend, a container; on the sshd backend, a host of this machine
+// behind sshds of its own.
 func SSHHost() HostOpt {
 	return func(h *Host) {
-		if ctrs != nil {
+		switch {
+		case ctrs != nil:
 			h.ctr = &ctrSlot{} // the world assigns one
+		case sshds != nil:
+			h.overSSH = true
 		}
 	}
 }
@@ -410,41 +414,59 @@ func (w *World) ctrName(alias string, target *Host) {
 	w.writeSSHConfig()
 }
 
-// sshConfig is the world's ssh config: each ssh name to its container,
-// as its Down says.
+// sshConfig is the world's ssh config: each ssh name to its container
+// or sshd, as its Down says.
 func (w *World) sshConfig() string { return filepath.Join(w.Dir, "ssh_config") }
 
 func (w *World) writeSSHConfig() {
 	w.T.Helper()
 	var b strings.Builder
+	key, other, known, knownBad, user, alias := "", "", "", "", "", ""
+	if ctrs != nil {
+		key, other, known, knownBad, user = ctrs.key, ctrs.other, ctrs.known, ctrs.knownBad, "tt"
+	} else {
+		key, other, known, knownBad, user, alias = sshds.key, sshds.other, sshds.known, sshds.knownBad, sshds.user, sshdAlias
+	}
 	for _, a := range slices.Sorted(maps.Keys(w.links)) {
 		s := w.links[a]
-		if s.target.ctr == nil {
+		// Each name's address, the port nothing answers a SYN on, and the
+		// one with key auth off.
+		var host string
+		var port, dead, pw int
+		switch {
+		case s.target.ctr != nil:
+			host, port, dead, pw = s.target.ctr.ip, s.port, 2222, 2223
+		case s.sshd != nil:
+			host, port, dead, pw = "127.0.0.1", s.sshd.port, s.sshd.dead, s.sshd.pw
+		default:
 			continue
 		}
 		fmt.Fprintf(&b, "Host %s\n", a)
-		key := ctrs.key // IdentityFile adds up, so each name has its own
+		k := key // IdentityFile adds up, so each name has its own
 		switch s.down {
 		case "":
 		case "refused": // nothing listens there
-			b.WriteString("  Port 1\n")
-		case "timeout": // the container drops SYNs there
-			b.WriteString("  Port 2222\n")
-		case "password": // an sshd with key auth off
-			b.WriteString("  Port 2223\n")
+			port = 1
+		case "timeout":
+			port = dead
+		case "password":
+			port = pw
 		case "resolve":
-			b.WriteString("  HostName tt-unknown.invalid\n")
+			host = "tt-unknown.invalid"
 		case "hostkey":
-			fmt.Fprintf(&b, "  UserKnownHostsFile %s\n", ctrs.knownBad)
+			fmt.Fprintf(&b, "  UserKnownHostsFile %s\n", knownBad)
 		case "auth":
-			key = ctrs.other
+			k = other
 		default:
 			w.T.Fatalf("%s: down %q has no mechanism over real ssh (see docs/progress.md, Phase 2)", a, s.down)
 		}
-		fmt.Fprintf(&b, "  HostName %s\n  Port %d\n  IdentityFile %s\n", s.target.ctr.ip, s.port, key)
+		fmt.Fprintf(&b, "  HostName %s\n  Port %d\n  IdentityFile %s\n", host, port, k)
 	}
-	fmt.Fprintf(&b, "Host *\n  User tt\n  IdentitiesOnly yes\n  IdentityAgent none\n"+
-		"  UserKnownHostsFile %s\n  StrictHostKeyChecking yes\n", ctrs.known)
+	fmt.Fprintf(&b, "Host *\n  User %s\n  IdentitiesOnly yes\n  IdentityAgent none\n"+
+		"  UserKnownHostsFile %s\n  StrictHostKeyChecking yes\n", user, known)
+	if alias != "" {
+		fmt.Fprintf(&b, "  HostKeyAlias %s\n", alias)
+	}
 	if err := os.WriteFile(w.sshConfig(), []byte(b.String()), 0o644); err != nil {
 		w.T.Fatal(err)
 	}
@@ -568,14 +590,20 @@ func (h *Host) HostPid(pid int) int {
 }
 
 // SplitFar splits pids into those of the machine the test runs on and
-// those in h's container (none for a local host).
+// those on h: in its container, or under its sshds (none for a host of
+// the fake ssh).
 func (h *Host) SplitFar(pids []int) (near, far []int) {
-	if h.ctr == nil {
+	var in map[int]bool
+	switch {
+	case h.ctr != nil:
+		in = map[int]bool{}
+		for _, p := range ctrProcs(h.ctr) {
+			in[p.pid] = true
+		}
+	case h.overSSH:
+		in = h.sshdFar()
+	default:
 		return pids, nil
-	}
-	in := map[int]bool{}
-	for _, p := range ctrProcs(h.ctr) {
-		in[p.pid] = true
 	}
 	for _, p := range pids {
 		if in[p] {

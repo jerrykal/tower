@@ -103,6 +103,7 @@ func TestHarnessLinks(t *testing.T) {
 	}
 
 	t.Run("delay", func(t *testing.T) {
+		needLo0(t)
 		w.Shape("B", func(l *Link) { l.DelayMs = 50 })
 		defer w.Shape("B", func(l *Link) { l.DelayMs = 0 })
 		w.ssh(a, "B", "true") // a master at this delay
@@ -120,6 +121,7 @@ func TestHarnessLinks(t *testing.T) {
 	})
 
 	t.Run("bandwidth", func(t *testing.T) {
+		needLo0(t)
 		w.Shape("B", func(l *Link) { l.BwKBps = 256 })
 		defer w.Shape("B", func(l *Link) { l.BwKBps = 0 })
 		w.ssh(a, "B", "true")
@@ -136,6 +138,10 @@ func TestHarnessLinks(t *testing.T) {
 			"password": "authentication failed", "resolve": "cannot resolve", "timeout": "timed out",
 		}
 		for how, reason := range want {
+			if how == "timeout" && !lo0() {
+				t.Log("timeout: needs pf on lo0 (macOS) on the sshd backend")
+				continue
+			}
 			alias := "B-" + how
 			w.SSH(alias, b)
 			w.Down(alias, how)
@@ -175,6 +181,7 @@ func TestHarnessLinks(t *testing.T) {
 	})
 
 	t.Run("freeze", func(t *testing.T) {
+		needLo0(t)
 		// The fake's sessions on a master ride out a freeze (a network
 		// change is what ends them); over real ssh every connection does.
 		w.Shape("B", func(l *Link) { l.Mux = false })
@@ -213,6 +220,7 @@ func TestHarnessLinks(t *testing.T) {
 	})
 
 	t.Run("network change", func(t *testing.T) {
+		needLo0(t)
 		w.ssh(a, "B", "true")
 		c := w.startSSH(a, "B", "sleep 60")
 		time.Sleep(time.Second)

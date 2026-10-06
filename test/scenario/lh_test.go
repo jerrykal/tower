@@ -29,7 +29,7 @@ func slowLink(l *Link) { l.DelayMs, l.JitterMs, l.BwKBps = 250, 80, 512 }
 // there the stall alone holds the link, the stream's writer never blocks
 // its caller either way (internal/stream's tests block it).
 func lhWindow(l *Link) {
-	if ctrs == nil {
+	if !overRealSSH() {
 		l.WindowKB = 32
 	}
 }

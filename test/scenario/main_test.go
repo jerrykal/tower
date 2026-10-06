@@ -1,7 +1,8 @@
 // Package scenario is tower's acceptance suite. Each simulated host is a
 // tmux server of its own with its own TOWER_HOME and machine id, reached
-// through the fake ssh or, with TOWER_HOSTS=container, a host container
-// reached over real ssh; each terminal is a pane of yet another tmux
+// through the fake ssh or over real ssh: with TOWER_HOSTS=container a
+// host container, with TOWER_HOSTS=sshd a server of this machine behind
+// sshds of its own; each terminal is a pane of yet another tmux
 // server, running the attach loop, driven with send-keys and read with
 // capture-pane. Nothing touches the user's tmux servers.
 package scenario
@@ -55,10 +56,12 @@ func TestMain(m *testing.M) {
 	if err := setup(); err != nil {
 		fmt.Fprintln(os.Stderr, "scenario:", err)
 		containerTeardown()
+		sshdTeardown()
 		os.Exit(1)
 	}
 	code := m.Run()
 	containerTeardown()
+	sshdTeardown()
 	os.Exit(code)
 }
 
@@ -110,8 +113,11 @@ func setup() error {
 			return fmt.Errorf("build %s: %v\n%s", b.pkg, err, out)
 		}
 	}
-	if os.Getenv("TOWER_HOSTS") == "container" {
+	switch os.Getenv("TOWER_HOSTS") {
+	case "container":
 		return containerSetup()
+	case "sshd":
+		return sshdSetup()
 	}
 	return nil
 }

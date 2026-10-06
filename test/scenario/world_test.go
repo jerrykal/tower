@@ -63,17 +63,20 @@ type World struct {
 
 	links map[string]*linkState // by ssh name
 
-	// real: on the container backend, every host's ssh is real ssh with
-	// the world's config, from the first host on (a tmux server keeps the
-	// environment it started with).
+	// real: on the container or sshd backend, every host's ssh is real
+	// ssh with the world's config, from the first host on (a tmux server
+	// keeps the environment it started with).
 	real bool
+
+	sshdShapes map[string]Link // the sshd backend's shaped machines
+	halfOpen   string          // its connections a network change left half-open (pf rules)
 }
 
 // NewWorld makes scenario id's world. id is short ("s00", "lc08-150"): it
 // goes into tmux socket names.
 func NewWorld(t *testing.T, id string) *World {
 	t.Helper()
-	w := &World{T: t, ID: strings.ToLower(id), hosts: map[string]*Host{}, timings: maps.Clone(testTimings), real: ctrs != nil}
+	w := &World{T: t, ID: strings.ToLower(id), hosts: map[string]*Host{}, timings: maps.Clone(testTimings), real: overRealSSH()}
 	w.Dir = filepath.Join(root, w.ID)
 	os.RemoveAll(w.Dir)
 	w.Fake = filepath.Join(w.Dir, "fake")
@@ -107,6 +110,7 @@ type Host struct {
 	zoxide    []string // what a fake zoxide on the host lists; nil: the PATH's zoxide
 	mounts    string   // the host's mount table (TOWER_TEST_MOUNTS); empty: the real one
 	ctr       *ctrSlot // the host's container; nil: a tmux server on this machine
+	overSSH   bool     // on the sshd backend, reached through sshds of its own
 }
 
 // Zoxide puts a zoxide first on the host's PATH that lists dirs (~ for
