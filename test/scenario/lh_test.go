@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,6 +24,16 @@ var lhTiming = map[string]string{"TOWER_SILENCE": "15000", "TOWER_TEST_PAD": "30
 // slowLink is a 500ms round trip with jitter and 512 KB/s.
 func slowLink(l *Link) { l.DelayMs, l.JitterMs, l.BwKBps = 250, 80, 512 }
 
+// lhWindow is a link that stalls: on the fake a 32 KB window, so a stall
+// fills the pipe at once. Real ssh's channel window is its own (2 MB):
+// there the stall alone holds the link, the stream's writer never blocks
+// its caller either way (internal/stream's tests block it).
+func lhWindow(l *Link) {
+	if ctrs == nil {
+		l.WindowKB = 32
+	}
+}
+
 // lhWorld is A, F, S and Z with the home on A, every host up, and a loop
 // on F:fox.
 type lhWorld struct {
@@ -37,9 +48,9 @@ func newLH(t *testing.T, id string, sk, zk func(*Link)) *lhWorld {
 	w.Timing(lhTiming)
 	x := &lhWorld{w: w, times: map[string][]time.Duration{}}
 	x.a = w.Host("A", []string{"alpha", "apple"})
-	x.f = w.Host("F", []string{"fox", "fig"})
-	x.s = w.Host("S", []string{"sun"})
-	x.z = w.Host("Z", []string{"zed"})
+	x.f = w.Host("F", []string{"fox", "fig"}, SSHHost())
+	x.s = w.Host("S", []string{"sun"}, SSHHost())
+	x.z = w.Host("Z", []string{"zed"}, SSHHost())
 	if sk != nil {
 		w.Shape("S", sk)
 	}
@@ -175,8 +186,7 @@ func TestLH01(t *testing.T) {
 // LH02: S slow, Z stalled each round: a change elsewhere still reaches
 // every dashboard fast.
 func TestLH02(t *testing.T) {
-	window := func(l *Link) { l.WindowKB = 32 }
-	x := newLH(t, "lh02", slowLink, window)
+	x := newLH(t, "lh02", slowLink, lhWindow)
 	for n := range 3 {
 		x.w.Heal("Z")
 		x.w.WaitLink(x.a, "Z", "up", 20*time.Second)
@@ -215,7 +225,7 @@ func bottomLines(screen string, n int) string {
 // given up fast when it stalls as it is switched to; the terminal back
 // where it was, told why; the host usable again once it recovers.
 func TestLH03(t *testing.T) {
-	x := newLH(t, "lh03", nil, func(l *Link) { l.WindowKB = 32 })
+	x := newLH(t, "lh03", nil, lhWindow)
 	w, a, f, z := x.w, x.a, x.f, x.z
 	zed := w.Ref(a, "Z", "zed")
 	for _, after := range []time.Duration{4 * time.Second, 4 * time.Second, 300 * time.Millisecond, 300 * time.Millisecond} {
@@ -288,10 +298,10 @@ func TestLH04(t *testing.T) {
 	w := NewWorld(t, "lh04")
 	w.Timing(lhTiming)
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	f := w.Host("F", []string{"fox"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	f := w.Host("F", []string{"fox"}, SSHHost())
 	w.SSH("Fb", f)
-	w.Shape("Fb", func(l *Link) { l.WindowKB = 32 })
+	w.Shape("Fb", lhWindow)
 	w.Home(a, f.Remote())
 	fb := f.Remote()
 	fb.Name, fb.SSH = "Fb", "Fb"
@@ -332,15 +342,28 @@ func TestLH05(t *testing.T) {
 	w := NewWorld(t, "lh05")
 	w.Timing(lhTiming)
 	a := w.Host("A", []string{"alpha"})
-	f := w.Host("F", []string{"fox"})
-	wh := w.Host("W", []string{"wolf"})
+	f := w.Host("F", []string{"fox"}, SSHHost())
+	wh := w.Host("W", []string{"wolf"}, SSHHost())
 	w.Home(a, wh.Remote(), f.Remote())
 	w.WaitLink(a, "W", "up", 10*time.Second)
 	w.WaitLink(a, "F", "up", 10*time.Second)
-	w.SlowControl("W", 2500)
+	// Every ssh -O to W takes 2.5s: the fake's knob, or the home's real
+	// master to W stopped for 2.5s from each wake.
+	if !w.real {
+		w.SlowControl("W", 2500)
+	}
 	var took []time.Duration
 	for range 3 {
 		before := w.Link(a, "F")
+		if w.real {
+			pid := w.masterPid(a, "W")
+			if pid == 0 {
+				t.Fatal("no master to W")
+			}
+			syscall.Kill(pid, syscall.SIGSTOP)
+			t.Cleanup(func() { syscall.Kill(pid, syscall.SIGCONT) })
+			time.AfterFunc(2500*time.Millisecond, func() { syscall.Kill(pid, syscall.SIGCONT) })
+		}
 		start := time.Now()
 		go a.Call(proto.CallWake, nil, nil)
 		w.Eventually(20*time.Second, "F reconnected", func() bool {
@@ -365,7 +388,7 @@ func TestLH06(t *testing.T) {
 	w := NewWorld(t, "lh06")
 	w.Timing(ProductionTimings)
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Shape("B", func(l *Link) { l.Mux, l.DelayMs = true, 25 })
 	w.Home(a, b.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)
@@ -376,8 +399,15 @@ func TestLH06(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	old := b.TowerdPid()
 	t.Cleanup(func() { syscall.Kill(old, syscall.SIGCONT); Kill9(old) })
-	masterFile := filepath.Join(w.Fake, "masters", "B")
-	master, _ := os.ReadFile(masterFile)
+	// The master: the fake's record of it, or the real one's pid.
+	masterOf := func() string {
+		if w.real {
+			return strconv.Itoa(w.masterPid(a, "B"))
+		}
+		m, _ := os.ReadFile(filepath.Join(w.Fake, "masters", "B"))
+		return string(m)
+	}
+	master := masterOf()
 	exits := func() int {
 		n := 0
 		for _, c := range w.SSHLog() {
@@ -441,7 +471,7 @@ func TestLH06(t *testing.T) {
 	if exits() != exits0 {
 		t.Fatal("the master was made to exit")
 	}
-	if m, _ := os.ReadFile(masterFile); string(m) != string(master) {
+	if m := masterOf(); m != master || m == "0" {
 		t.Fatalf("the master changed: %q → %q", master, m)
 	}
 	if pid := b.TowerdPid(); pid == 0 || pid == old || Alive(old) {

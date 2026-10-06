@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -422,6 +423,22 @@ func (w *World) ctrApply(alias string, prev linkState, s *linkState) {
 	if s.stall != prev.stall {
 		w.agent(c, agentReq{Op: "stall", On: s.stall, Port: s.port})
 	}
+}
+
+// masterPid is this machine's pid of home's ssh master to alias (real
+// ssh), or 0 when none answers within 3s.
+func (w *World) masterPid(home *Host, alias string) int {
+	var out []byte
+	for start := time.Now(); time.Since(start) < 3*time.Second; time.Sleep(100 * time.Millisecond) {
+		cmd := exec.Command("/usr/bin/ssh", "-F", w.sshConfig(), "-o", "ControlPath="+filepath.Join(home.Paths().CMDir(), "%C"), "-O", "check", alias)
+		out, _ = cmd.CombinedOutput()
+		if m := regexp.MustCompile(`\(pid=(\d+)\)`).FindSubmatch(out); m != nil {
+			pid, _ := strconv.Atoi(string(m[1]))
+			return home.HostPid(pid)
+		}
+	}
+	w.T.Logf("no master to %s: %s", alias, out)
+	return 0
 }
 
 // ctrProc is a process of a host container, as this machine sees it.
