@@ -29,6 +29,23 @@ to scan).
       (`feat/tower-prototype`, `~/.dotfiles.feat-tower-prototype`) and
       `session-picker.sh`.
 
+## The scenario suite on Linux
+
+Development moves to a Linux machine; the fake ssh is to be replaced by
+hosts reached over real ssh (containers on Linux, localhost sshd on
+macOS). On Linux the suite passes but for two quirks of the current
+harness, left for that replacement:
+
+- [ ] LS01 and LS10 wait for `LOOP-EXIT=137` after a `kill -9`, which the
+      terminal prints after its launch command; whether it wraps at the
+      110-column edge depends on the length of the run's temp path
+      (`/tmp/tsc-<pid>`), and `Term.Screen` does not join wrapped lines.
+      They pass on macOS and fail on Linux with 6-digit pids.
+- [ ] tmux holds a lone ESC for 500ms while a client waits on a terminal
+      query; the scenario terminals now answer colour queries
+      (`window-style`), so U01 passes, but any other query a tmux pane
+      cannot answer would delay ESC the same way.
+
 ## What was built
 
 Fresh code, from the design notes in [design/](design/README.md); the
