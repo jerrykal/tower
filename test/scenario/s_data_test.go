@@ -19,6 +19,7 @@ import (
 // seconds, back fast; B replaces the stale stream (never two); B's control
 // client unaffected.
 func TestS13(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s13")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -106,6 +107,7 @@ func TestS20(t *testing.T) {
 // S21: a remote's clock an hour ahead: the offset measured, ages right,
 // and a request with a 1.5s deadline runs there.
 func TestS21(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s21")
 	a := w.Host("A", []string{"aold"})
 	b := w.Host("B", []string{"bnew", "victim"}, Env("TOWER_TEST_SKEW", "3600000"), SSHHost())
@@ -155,6 +157,7 @@ func TestS21(t *testing.T) {
 // megabytes, 400 concurrent commands matched, _tower bounced and ended
 // with the last session.
 func TestS22(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s22")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "backup"}, SSHHost())

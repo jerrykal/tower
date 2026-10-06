@@ -9,6 +9,7 @@ import (
 
 // E01: a second towerd for one server is refused.
 func TestE01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "e01")
 	a := w.Host("A", []string{"alpha"})
 	w.Home(a)
@@ -25,6 +26,7 @@ func TestE01(t *testing.T) {
 // E02: a home with no loops idles out, then its remote; nothing is left
 // in tmux.
 func TestE02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "e02")
 	w.Timing(map[string]string{"TOWER_IDLE": "1500"})
 	a := w.Host("A", []string{"alpha"})
@@ -49,6 +51,7 @@ func TestE02(t *testing.T) {
 // E03: the last session ends while the home's stream is half-open: the
 // server exits at once, and tmux there works as before.
 func TestE03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "e03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -68,6 +71,7 @@ func TestE03(t *testing.T) {
 // E04: tower host add / off / on / rm: the checks in order (ssh, tmux,
 // OS, tower); the stream closed on off and rm.
 func TestE04(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "e04")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -111,6 +115,7 @@ func TestE04(t *testing.T) {
 // V01: 8 concurrent first calls start one towerd; a SIGKILL leaves a
 // stale socket the next call replaces; stop leaves nothing.
 func TestV01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v01")
 	a := w.Host("A", []string{"alpha"})
 	start := time.Now()

@@ -39,6 +39,7 @@ func (w *World) clientsAre(h *Host, d time.Duration, want ...string) {
 // S00: the happy path: a loop picks a remote session, the popup there
 // hands off to the laptop, and a local switch keeps the previous one.
 func TestS00(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s00")
 	a := w.Host("A", []string{"alpha", "apple"})
 	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())

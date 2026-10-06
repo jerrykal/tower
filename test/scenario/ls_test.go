@@ -51,6 +51,7 @@ func (h *Host) clientSize() string {
 // terminal's size reaches the client; standbys are neither clients nor
 // registrations; prefix d and a killed loop leave none behind.
 func TestLS01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls01")
 	a := w.Host("A", []string{"alpha"})
 	// A killed loop's standbys ride the master, which outlives the loop,
@@ -127,6 +128,7 @@ func TestLS01(t *testing.T) {
 // LS02: a standby that does not answer is given up after its wait and a
 // new session lands, the frame held throughout.
 func TestLS02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -211,6 +213,7 @@ func (w *World) replaced(h *Host, old []int, n int, d time.Duration) {
 // LS03: a wake, a network change, a towerd killed and a stall each
 // replace the standby; one made for an earlier link is never used.
 func TestLS03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -284,6 +287,7 @@ func TestLS03(t *testing.T) {
 // LS04: TOWER_STANDBY=0, standby = false on a host, a remote upgraded
 // under a standby, and a reload that turns one on and removes another.
 func TestLS04(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls04")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -361,6 +365,7 @@ func TestLS04(t *testing.T) {
 // LS05: job control is that of ssh -t: through a standby, a new relayed
 // session and ssh given the terminal alike.
 func TestLS05(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -433,6 +438,7 @@ func TestLS05(t *testing.T) {
 // terminal: exits 255, 43 and 42, hand-offs, a host stalling as it is
 // switched to, prefix d and the terminal's modes after it.
 func TestLS09(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls09")
 	w.Timing(lhTiming)
 	a := w.Host("A", []string{"alpha"})
@@ -585,6 +591,7 @@ func ls09Exits(w *World, term *Term, restore, readyNow func(), onB func(string, 
 // leave each host only the client the terminal is on, and a killed
 // loop's client goes once the home calls the loop gone.
 func TestLS10(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ls10")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())

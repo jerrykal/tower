@@ -28,6 +28,7 @@ func (w *World) sessionCalls(host string) int {
 // S14: a tunnel flapping 0.6s down, 0.6s up for 12s: few ssh calls
 // (backoff), up once steady, the local server's watch untouched.
 func TestS14(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s14")
 	a := w.Host("A", []string{"alpha"})
 	tn := w.Host("T", []string{"tun"}, SSHHost())
@@ -124,6 +125,7 @@ func TestS15(t *testing.T) {
 // S16: socket paths fit 104 bytes; one control path value on every call;
 // a stale control socket is removed, a busy one kept; no ssh -O check.
 func TestS16(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s16")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -184,6 +186,7 @@ func TestS16(t *testing.T) {
 // starts one, waiting for a slow config; _tower never keeps a server
 // alive; towerd outlives its server.
 func TestS17(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s17")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -238,6 +241,7 @@ func TestS17(t *testing.T) {
 // peers (1–2) and one sending unknown messages: each its outcome, and a
 // hand-off to the newer peer works.
 func TestS18(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s18")
 	a := w.Host("A", []string{"alpha"})
 	m := w.Host("M", []string{"mike"}, SSHHost())

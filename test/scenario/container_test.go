@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,6 +34,14 @@ import (
 // ctrs is the running backend; nil: every host is reached through the
 // fake ssh.
 var ctrs *ctrBackend
+
+// ctrPerWorld is the most host containers a world takes (S18's four).
+// The pool holds that many for each world that runs at once, so a world
+// waiting for one never waits on another that waits too.
+const ctrPerWorld = 4
+
+// ctrMu guards which world each container is with.
+var ctrMu sync.Mutex
 
 // ctrPath is a container's PATH; ctrTmux its tmux.
 const (
@@ -100,6 +109,9 @@ func containerSetup() error {
 	b.sweep()
 	b.env = append(os.Environ(), "TT_RUN="+b.run,
 		"TT_PUBKEY="+strings.TrimSpace(string(pub)), "TOWER_TEST_DIR="+root)
+	if os.Getenv("TT_HOSTS") == "" {
+		b.env = append(b.env, "TT_HOSTS="+strconv.Itoa(ctrPerWorld*parallelWorlds))
+	}
 	ctrs = b
 	tmuxVersion := os.Getenv("TT_TMUX_VERSION")
 	if tmuxVersion == "" {
@@ -223,9 +235,10 @@ func (b *ctrBackend) docker(args ...string) (string, error) {
 }
 
 // assign gives h its machine's container: the one of a host on the same
-// machine, or a free one, reset (none of the test user's processes, an
-// unshaped link, no faults), its ssh sessions running with the
-// environments ctrName writes. Teardown resets it again and frees it.
+// machine, or a free one (waiting for one while the pool is taken),
+// reset (none of the test user's processes, an unshaped link, no
+// faults), its ssh sessions running with the environments ctrName
+// writes. Teardown resets it again and frees it.
 func (w *World) assign(h *Host) {
 	w.T.Helper()
 	for _, o := range w.hosts {
@@ -238,20 +251,56 @@ func (w *World) assign(h *Host) {
 		h.ctr = o.ctr
 		return
 	}
-	for _, s := range ctrs.slots {
-		if s.w == nil {
-			if err := os.MkdirAll(s.envDir(w), 0o755); err != nil {
-				w.T.Fatal(err)
+	if n := len(w.ctrSlots()); n >= ctrPerWorld {
+		w.T.Fatalf("%s would be this world's container %d; at most %d (ctrPerWorld)", h.Name, n+1, ctrPerWorld)
+	}
+	s := w.freeSlot(5 * time.Minute)
+	if s == nil {
+		w.T.Fatalf("no free host container for %s in 5m (%d)", h.Name, len(ctrs.slots))
+	}
+	err := os.MkdirAll(s.envDir(w), 0o755)
+	if err == nil {
+		_, err = s.call(agentReq{Op: "assign", Dir: s.envDir(w)})
+	}
+	if err != nil {
+		// h is not the world's yet: teardown would not free it.
+		ctrMu.Lock()
+		s.w = nil
+		ctrMu.Unlock()
+		w.T.Fatalf("assign %s: %v", s.ctr, err)
+	}
+	h.ctr = s
+}
+
+// freeSlot takes a free container for w, waiting up to d for one.
+func (w *World) freeSlot(d time.Duration) *ctrSlot {
+	deadline := time.Now().Add(d)
+	for {
+		ctrMu.Lock()
+		for _, s := range ctrs.slots {
+			if s.w == nil {
+				s.w = w
+				ctrMu.Unlock()
+				return s
 			}
-			if _, err := s.call(agentReq{Op: "assign", Dir: s.envDir(w)}); err != nil {
-				w.T.Fatalf("assign %s: %v", s.ctr, err)
-			}
-			s.w = w
-			h.ctr = s
-			return
+		}
+		ctrMu.Unlock()
+		if time.Now().After(deadline) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// ctrSlots are the containers w has taken.
+func (w *World) ctrSlots() []*ctrSlot {
+	var out []*ctrSlot
+	for _, h := range w.hosts {
+		if h.ctr != nil && h.ctr.w == w && !slices.Contains(out, h.ctr) {
+			out = append(out, h.ctr)
 		}
 	}
-	w.T.Fatalf("no free host container for %s (%d)", h.Name, len(ctrs.slots))
+	return out
 }
 
 // envDir holds the environment of each of the container's sshd ports in
@@ -263,7 +312,9 @@ func (w *World) release(h *Host) {
 	if _, err := h.ctr.call(agentReq{Op: "reset"}); err != nil {
 		w.T.Errorf("reset %s: %v", h.ctr.ctr, err)
 	}
+	ctrMu.Lock()
 	h.ctr.w = nil
+	ctrMu.Unlock()
 }
 
 // agentReq is a call to a container's agent (hostagent.Request).

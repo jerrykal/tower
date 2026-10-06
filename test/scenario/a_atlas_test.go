@@ -135,6 +135,7 @@ func TestA01(t *testing.T) {
 // listed unchecked; a new session in a dir takes it off the list in the
 // rows read right after the answer.
 func TestA02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "a02")
 	proj := w.repo("src/proj")
 	w.repo("src/lib")
@@ -196,6 +197,7 @@ func TestA02(t *testing.T) {
 // A03: the panes of a session on one remote, and a capture with its
 // window's layout, for a dashboard on another remote.
 func TestA03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "a03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -255,6 +257,7 @@ func TestA03(t *testing.T) {
 // directory, a window renamed and killed; each in the rows read right
 // after its answer.
 func TestA04(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "a04")
 	proj := w.repo("src/proj")
 	a := w.Host("A", []string{"alpha"})
@@ -317,6 +320,7 @@ func TestA04(t *testing.T) {
 // (one in five a repo): the size of its state, and the CPU a periodic
 // refresh and a dashboard's look take there, git's runs included.
 func TestA05(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "a05")
 	var list []string
 	for i := range 500 {

@@ -18,6 +18,7 @@ func (w *World) downHost(name string) {
 // host that is down, a SIGINT), and while reconnecting with the terminal
 // raw (the ctrl-c byte). Esc then exits cleanly, the pid file gone.
 func TestLoopCtrlC(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "ctlc")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -57,6 +58,7 @@ func TestLoopCtrlC(t *testing.T) {
 // TestLoopRevivesTowerd: a home towerd that goes away while the loop sits
 // at the picker is started again, and learns the loop.
 func TestLoopRevivesTowerd(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "revive")
 	a := w.Host("A", []string{"alpha"})
 	stdSetup(w, a)

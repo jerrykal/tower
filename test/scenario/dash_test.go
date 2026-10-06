@@ -53,6 +53,7 @@ func (h *Host) hasSession(name string) bool { return slices.Contains(h.Sessions(
 // both roles; each client on B is tagged with its home and sees that
 // home's view; a hand-off relayed through B leaves B's own loop alone.
 func TestS01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s01")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
@@ -112,6 +113,7 @@ func TestS01(t *testing.T) {
 // gone"; an attach by id fails visibly; a renamed session is still
 // reached.
 func TestS09(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s09")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "doomed"}, SSHHost())
@@ -151,6 +153,7 @@ func TestS09(t *testing.T) {
 // every host and switch locally but cannot hand off; a local target from
 // a loop's client is a switch-client in the same attach.
 func TestS11(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s11")
 	a := w.Host("A", []string{"alpha", "apple"})
 	b := w.Host("B", []string{"bravo", "berry"}, SSHHost())
@@ -220,6 +223,7 @@ func TestS11(t *testing.T) {
 // S19: hostile names: made, relayed B → home → C, renamed, picked and
 // handed off to, all exact; no name on any ssh command line.
 func TestS19(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s19")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())

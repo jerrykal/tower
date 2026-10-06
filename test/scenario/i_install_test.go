@@ -67,6 +67,7 @@ func installed(t *testing.T, h *Host, version, want string) {
 // TOWER_INSTALL_DIR, swaps current, and the host is up; the next connect
 // does not install again.
 func TestI01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "i01")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -124,6 +125,7 @@ func TestI01(t *testing.T) {
 // current swapped, the older towerd replaced by the new bridge, and a
 // loop's client there kept.
 func TestI02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "i02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -158,6 +160,7 @@ func TestI02(t *testing.T) {
 // I03: a pinned host is never installed to; a missing pinned binary is
 // failed: tower is not installed.
 func TestI03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "i03")
 	a := w.Host("A", []string{"alpha"})
 	p := w.Host("P", []string{"papa"}, SSHHost())
@@ -230,6 +233,7 @@ func archiveName(version, platform string) string {
 // checksum is refused; a development build with no cache fails with the
 // mise run dist fix.
 func TestI04(t *testing.T) {
+	parallel(t)
 	plats := otherPlatforms()
 	data := releaseArchive(t)
 	cached, released, tampered := plats[0], plats[1], plats[2]
@@ -310,6 +314,7 @@ func TestI04(t *testing.T) {
 // I05: two homes installing on one host at once leave one whole binary
 // and a valid current.
 func TestI05(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "i05")
 	a1 := w.Host("A1", []string{"one"})
 	a2 := w.Host("A2", []string{"two"})

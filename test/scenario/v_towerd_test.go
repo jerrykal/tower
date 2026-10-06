@@ -25,6 +25,7 @@ func switchFrom(t *testing.T, h *Host, cl string, target proto.Ref) *proto.Ack {
 // re-registers by heartbeat; an older binary never downgrades it; a
 // switch from an old dashboard binary works.
 func TestV02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -68,6 +69,7 @@ func TestV02(t *testing.T) {
 // V03: upgrading a remote with a loop's client attached there: the next
 // bridge replaces its towerd, which restores the client from disk.
 func TestV03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -112,6 +114,7 @@ func TestV03(t *testing.T) {
 // V04: two machines sharing one home directory: two towerds, separate
 // run and state dirs; a hand-off between them.
 func TestV04(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v04")
 	a := w.Host("A", []string{"alpha"})
 	x := w.Host("X", []string{"xray"}, HomeName("shared"), SSHHost())
@@ -136,6 +139,7 @@ func TestV04(t *testing.T) {
 // V05: a remote whose own hosts.toml lists another host stays remote-only
 // while only a bridge started it; a loop there makes it a home.
 func TestV05(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -174,6 +178,7 @@ func TestV05(t *testing.T) {
 // V06: a dashboard on a remote: its rows fast; a session on C shows on B
 // fast; a preview of C's pane from B fast.
 func TestV06(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v06")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -227,6 +232,7 @@ func TestV06(t *testing.T) {
 // anything detaches; a local switch works; the restarted home relearns
 // the loop, and the move made meanwhile.
 func TestV07(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v07")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "berry"}, SSHHost())
@@ -271,6 +277,7 @@ func TestV07(t *testing.T) {
 // it asks the home for the previous target across hosts; stopping towerd
 // puts the keys back.
 func TestV08(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v08")
 	a := w.Host("A", []string{"alpha"})
 	k := w.Host("K", []string{"k1", "k2"}, SSHHost())
@@ -347,6 +354,7 @@ func TestV08(t *testing.T) {
 // replaces the running towerd, as a newer one does; an older release
 // still never replaces a newer towerd.
 func TestV09(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "v09")
 	a := w.Host("A", []string{"alpha"})
 	w.Home(a)

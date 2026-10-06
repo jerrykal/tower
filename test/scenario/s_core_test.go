@@ -15,6 +15,7 @@ import (
 // home; the crashed home is dropped at once, its _tower goes and its
 // server exits with its last session; B's towerd then idles out.
 func TestS02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s02")
 	a1 := w.Host("A1", []string{"one"})
 	a2 := w.Host("A2", []string{"two"})
@@ -79,6 +80,7 @@ func TestS02(t *testing.T) {
 // machine: one alias linked, the other a duplicate; one control client
 // and one stream on B.
 func TestS03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -138,6 +140,7 @@ func TestS03(t *testing.T) {
 // S05: three servers on one machine: one towerd each, three ids, three
 // sockets in one run dir.
 func TestS05(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())

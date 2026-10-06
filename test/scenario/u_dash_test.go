@@ -58,6 +58,7 @@ func (t *Term) OpenDash() {
 // remembering its row through live changes; ⏎ on a window of another
 // host hands off to that window.
 func TestU01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u01")
 	a := w.Host("A", []string{"alpha", "apple"})
 	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
@@ -103,6 +104,7 @@ func TestU01(t *testing.T) {
 // name before a longer one containing it, words in any order, a window
 // by name or by number.
 func TestU02(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"s150", "s50", "train-llm"}, SSHHost())
@@ -149,6 +151,7 @@ func TestU02(t *testing.T) {
 // the other clients it detaches, a last window taking its session;
 // any key but y keeps it; y hides the row at once and kills it.
 func TestU03(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "victim", "solo"}, SSHHost())
@@ -196,6 +199,7 @@ func TestU03(t *testing.T) {
 // U04: rename asks with the name prefilled; a taken name keeps the
 // prompt open saying so; '.' and ':' become '_'.
 func TestU04(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u04")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "banana"}, SSHHost())
@@ -221,6 +225,7 @@ func TestU04(t *testing.T) {
 // U05: D duplicates a session as a grouped one, "<name> 2", and attaches
 // it; D on the same session again attaches the one already made.
 func TestU05(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -252,6 +257,7 @@ func TestU05(t *testing.T) {
 // "<name>_<n>" ("<name> <n>" is a grouped duplicate's); `tower _ui open`
 // does the same by path.
 func TestU06(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u06")
 	w.repo("src/proj")
 	w.repo("work/proj")
@@ -309,6 +315,7 @@ func TestU06(t *testing.T) {
 // its row; a host that fails a check stays, marked, with the reason; x
 // removes it after y.
 func TestU07(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "u07")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())

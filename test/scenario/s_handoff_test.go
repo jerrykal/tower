@@ -15,6 +15,7 @@ import (
 // S04: a server restarts and reuses $0: prepare refuses the old listing,
 // and an attach in flight to the old instance exits 43 without a client.
 func TestS04(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s04")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"old"}, SSHHost())
@@ -48,6 +49,7 @@ func TestS04(t *testing.T) {
 // S06: exit 42 is never trusted alone: from a program in the pane, from a
 // dashboard of an earlier attach, from ssh itself.
 func TestS06(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s06")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -117,6 +119,7 @@ func TestS06(t *testing.T) {
 // completes it; with the dashboard doing the detach it stays pending and
 // prefix d discards it; a late exit 42 is refused.
 func TestS07(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s07")
 	a := w.Host("A", []string{"alpha"}, Env("TOWER_HANDOFF_TTL", "1500"))
 	b := w.Host("B", []string{"bravo"}, Env("TOWER_TEST_CRASH", "after-switch"), SSHHost())
@@ -185,6 +188,7 @@ func restartHome(w *World, a *Host, remotes ...*Host) {
 // S08: three terminals on one session, two of them from one home and one
 // from another; one of them hands off and only it moves.
 func TestS08(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s08")
 	a := w.Host("A", []string{"alpha"})
 	a2 := w.Host("A2", []string{"other"})
@@ -221,6 +225,7 @@ func TestS08(t *testing.T) {
 // S10: prefix d ends tower and leaves the session; the next tower
 // reattaches to it.
 func TestS10(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s10")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -246,6 +251,7 @@ func TestS10(t *testing.T) {
 
 // S12: windows by id: base-index 0 and 1 make no difference.
 func TestS12(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s12")
 	a := w.Host("A", []string{"azero"}, BaseIndex(0))
 	b := w.Host("B", []string{"bone"}, SSHHost())
@@ -278,6 +284,7 @@ func TestS12(t *testing.T) {
 // S24: previous and current across hosts, kept by the home and relearned
 // from the loop's beat after the home restarts.
 func TestS24(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s24")
 	a := w.Host("A", []string{"alpha", "apple"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -343,6 +350,7 @@ func TestS24(t *testing.T) {
 // S25: everyday habits: the last pane closing, tower last, nothing left on
 // a host, nothing left anywhere, prefix d.
 func TestS25(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s25")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo", "spare"}, SSHHost())
@@ -411,6 +419,7 @@ func syncHosts(hs ...*Host) {
 // client leaves the alternate screen until the new one has entered it,
 // then released; nothing of tower's is drawn in between.
 func TestS26(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s26")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, Env("TOWER_TEST_NOTTY", "1"), SSHHost())
@@ -451,6 +460,7 @@ func TestS26(t *testing.T) {
 
 // S27: rapid prefix L: every screen change of six quick hand-offs is held.
 func TestS27(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "s27")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
@@ -491,6 +501,7 @@ func TestS27(t *testing.T) {
 // first stays; esc in tower dash attaches to the last target, or exits
 // when there is none.
 func TestD01(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "d01")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())

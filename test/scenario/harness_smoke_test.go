@@ -11,6 +11,7 @@ import (
 // run and report their command's exit, and teardown leaves nothing
 // behind.
 func TestHarness(t *testing.T) {
+	parallel(t)
 	w := NewWorld(t, "h0")
 	a := w.Host("A", []string{"alpha", "apple"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())

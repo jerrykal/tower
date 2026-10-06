@@ -76,7 +76,7 @@ func (w *World) teardown() {
 			exec.Command("pkill", "-9", "-f", "tmux -L "+sock+"$").Run()
 		}
 	}
-	exec.Command("pkill", "-f", w.Dir).Run()
+	exec.Command("pkill", "-f", w.Dir+"/").Run()
 	// Anything still running with this world's TOWER_HOME: a towerd a
 	// reconnect started during teardown, a bridge, a standby shim.
 	for _, pid := range pidsWithEnvPrefix("TOWER_HOME", w.Dir+"/") {

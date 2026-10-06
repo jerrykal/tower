@@ -50,6 +50,7 @@ func TestMain(m *testing.M) {
 		fmt.Println("scenario suite skipped: run it with mise run scenarios")
 		os.Exit(0)
 	}
+	setParallel()
 	if err := setup(); err != nil {
 		fmt.Fprintln(os.Stderr, "scenario:", err)
 		containerTeardown()
