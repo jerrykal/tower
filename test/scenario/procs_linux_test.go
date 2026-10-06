@@ -28,8 +28,9 @@ func listProcs() []proc {
 	return out
 }
 
-// procTree lists every process with its parent and command name, from
-// /proc/<pid>/stat: pid (comm) state ppid …, comm perhaps with spaces.
+// procTree lists every process with its parent, process group and
+// command name, from /proc/<pid>/stat: pid (comm) state ppid pgrp …, comm
+// perhaps with spaces.
 func procTree() []pnode {
 	dirs, _ := filepath.Glob("/proc/[0-9]*")
 	var out []pnode
@@ -43,12 +44,13 @@ func procTree() []pnode {
 			continue
 		}
 		f := strings.Fields(string(st[end+1:]))
-		if len(f) < 2 {
+		if len(f) < 3 {
 			continue
 		}
 		pid, _ := strconv.Atoi(strings.TrimSpace(string(st[:open])))
 		ppid, _ := strconv.Atoi(f[1])
-		out = append(out, pnode{pid: pid, ppid: ppid, comm: string(st[open+1 : end])})
+		pgid, _ := strconv.Atoi(f[2])
+		out = append(out, pnode{pid: pid, ppid: ppid, pgid: pgid, comm: string(st[open+1 : end])})
 	}
 	return out
 }

@@ -248,8 +248,8 @@ func sh(script string) Reply {
 }
 
 type proc struct {
-	pid, ppid, uid int
-	argv0          string
+	pid, ppid, pgid, uid int
+	argv0                string
 }
 
 // procs lists the container's processes.
@@ -264,29 +264,33 @@ func procs() []proc {
 		if err1 != nil || err2 != nil || syscall.Stat(d, &fi) != nil {
 			continue
 		}
-		// pid (comm) state ppid …: comm may hold spaces.
+		// pid (comm) state ppid pgrp …: comm may hold spaces.
 		i := strings.LastIndexByte(string(st), ')')
 		f := strings.Fields(string(st[i+1:]))
-		if len(f) < 2 {
+		if len(f) < 3 {
 			continue
 		}
 		ppid, _ := strconv.Atoi(f[1])
+		pgid, _ := strconv.Atoi(f[2])
 		argv0, _, _ := strings.Cut(string(cmd), "\x00")
-		out = append(out, proc{pid: pid, ppid: ppid, uid: int(fi.Uid), argv0: argv0})
+		out = append(out, proc{pid: pid, ppid: ppid, pgid: pgid, uid: int(fi.Uid), argv0: argv0})
 	}
 	return out
 }
 
 // sessionProcs are what ssh sessions run, by the sshd port they came in
 // on: the test user's descendants of the "sshd: tt@…" processes, not
-// those (sshd answers keepalives) and not what has left them (a towerd,
-// a tmux server).
+// those (sshd answers keepalives), not what has left them (a tmux
+// server), and not a daemon a session started and what runs under it: a
+// process leading a group of its own whose parent is no sshd (a towerd,
+// which whichever bridge finds none starts with setsid). Such a daemon
+// serves every name, as on a machine of its own.
 func sessionProcs() map[int][]int {
 	ps := procs()
-	parent := map[int]int{}
+	by := map[int]proc{}
 	sess := map[int]bool{}
 	for _, p := range ps {
-		parent[p.pid] = p.ppid
+		by[p.pid] = p
 		if strings.HasPrefix(p.argv0, "sshd: tt@") {
 			sess[p.pid] = true
 		}
@@ -296,11 +300,14 @@ func sessionProcs() map[int][]int {
 		if sess[p.pid] || p.uid != ttUID {
 			continue
 		}
-		for q, n := parent[p.pid], 0; q > 1 && n < 64; q, n = parent[q], n+1 {
-			if sess[q] {
+		for q, n := p, 0; q.pid > 1 && n < 64; q, n = by[q.ppid], n+1 {
+			if sess[q.ppid] {
 				if port := sshPort(p.pid); port != 0 {
 					out[port] = append(out[port], p.pid)
 				}
+				break
+			}
+			if q.pgid == q.pid && !strings.HasPrefix(by[q.ppid].argv0, "sshd") {
 				break
 			}
 		}

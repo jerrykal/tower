@@ -19,8 +19,8 @@ type proc struct {
 // pnode is a process in the process tree: procTree lists them per
 // platform.
 type pnode struct {
-	pid, ppid int
-	comm      string
+	pid, ppid, pgid int
+	comm            string
 }
 
 // descendants are the processes under pid in tree, nearest first.

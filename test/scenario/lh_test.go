@@ -302,12 +302,14 @@ func TestLH04(t *testing.T) {
 	f := w.Host("F", []string{"fox"}, SSHHost())
 	w.SSH("Fb", f)
 	w.Shape("Fb", lhWindow)
-	w.Home(a, f.Remote())
+	// B first: its bridge starts F's towerd, which the stall of B's name
+	// must not stop, as a stalled network would not.
 	fb := f.Remote()
 	fb.Name, fb.SSH = "Fb", "Fb"
 	w.Home(b, fb)
-	w.WaitLink(a, "F", "up", 10*time.Second)
 	w.WaitLink(b, "Fb", "up", 10*time.Second)
+	w.Home(a, f.Remote())
+	w.WaitLink(a, "F", "up", 10*time.Second)
 	w.Eventually(5*time.Second, "two homes on F", func() bool { return len(f.LiveHomes()) == 2 })
 	var took []time.Duration
 	for round := range 3 {

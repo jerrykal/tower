@@ -259,17 +259,37 @@ func freePorts(n int) ([]int, error) {
 }
 
 // procs are the sshd's connections' processes (sshd's own) and what
-// their sessions run (the rest under them; not what has left them, a
-// towerd or a tmux server).
+// their sessions run: the rest under them, but for a daemon one started
+// (underDaemon); a tmux server, which forks twice, has left them.
 func (d *sshd) procs() (conns, sessions []int) {
-	for _, p := range descendants(procTree(), d.cmd.Process.Pid) {
+	tree := procTree()
+	by := make(map[int]pnode, len(tree))
+	for _, p := range tree {
+		by[p.pid] = p
+	}
+	root := d.cmd.Process.Pid
+	for _, p := range descendants(tree, root) {
 		if strings.HasPrefix(p.comm, "sshd") {
 			conns = append(conns, p.pid)
-		} else {
+		} else if !underDaemon(p, root, by) {
 			sessions = append(sessions, p.pid)
 		}
 	}
 	return conns, sessions
+}
+
+// underDaemon reports whether p is, or runs under, a daemon a session
+// started below root: a process leading a group of its own whose parent
+// is no sshd (a towerd, which whichever bridge finds none starts with
+// setsid). It serves every name, as on a machine of its own, so no
+// name's stall or drop is its.
+func underDaemon(p pnode, root int, by map[int]pnode) bool {
+	for q := p; q.pid != root && q.pid > 1; q = by[q.ppid] {
+		if q.pgid == q.pid && !strings.HasPrefix(by[q.ppid].comm, "sshd") {
+			return true
+		}
+	}
+	return false
 }
 
 // drop ends the sshd's connections: what killing them does to ssh.
