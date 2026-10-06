@@ -27,7 +27,7 @@ func switchFrom(t *testing.T, h *Host, cl string, target proto.Ref) *proto.Ack {
 func TestV02(t *testing.T) {
 	w := NewWorld(t, "v02")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
 	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
@@ -70,7 +70,7 @@ func TestV02(t *testing.T) {
 func TestV03(t *testing.T) {
 	w := NewWorld(t, "v03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	link := filepath.Join(w.Dir, "tower-B")
 	if err := os.Symlink(towerBin, link); err != nil {
 		t.Fatal(err)
@@ -114,8 +114,8 @@ func TestV03(t *testing.T) {
 func TestV04(t *testing.T) {
 	w := NewWorld(t, "v04")
 	a := w.Host("A", []string{"alpha"})
-	x := w.Host("X", []string{"xray"}, HomeName("shared"))
-	y := w.Host("Y", []string{"yankee"}, HomeName("shared"))
+	x := w.Host("X", []string{"xray"}, HomeName("shared"), SSHHost())
+	y := w.Host("Y", []string{"yankee"}, HomeName("shared"), SSHHost())
 	w.Home(a, x.Remote(), y.Remote())
 	w.WaitUp(a, "X", "Y")
 	if w.Link(a, "X").ID == w.Link(a, "Y").ID {
@@ -138,8 +138,8 @@ func TestV04(t *testing.T) {
 func TestV05(t *testing.T) {
 	w := NewWorld(t, "v05")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	if err := config.SaveHosts(b.Paths().HostsFile(), []config.Host{c.Remote()}); err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +176,8 @@ func TestV05(t *testing.T) {
 func TestV06(t *testing.T) {
 	w := NewWorld(t, "v06")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	stdSetup(w, a, b, c)
 	w.LoopTo("t", a, nil, "bravo", "^B:bravo")
 	cl := b.ClientIDs("bravo")[0]
@@ -229,7 +229,7 @@ func TestV06(t *testing.T) {
 func TestV07(t *testing.T) {
 	w := NewWorld(t, "v07")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo", "berry"})
+	b := w.Host("B", []string{"bravo", "berry"}, SSHHost())
 	w.Home(a, b.Remote())
 	w.WaitUp(a, "B")
 	term := w.LoopTo("t", a, nil, "bravo", "^B:bravo")
@@ -273,8 +273,8 @@ func TestV07(t *testing.T) {
 func TestV08(t *testing.T) {
 	w := NewWorld(t, "v08")
 	a := w.Host("A", []string{"alpha"})
-	k := w.Host("K", []string{"k1", "k2"})
-	u := w.Host("U", []string{"u1"})
+	k := w.Host("K", []string{"k1", "k2"}, SSHHost())
+	u := w.Host("U", []string{"u1"}, SSHHost())
 	k.MustTmux("unbind", "-n", "M-o")
 	u.MustTmux("bind", "L", "display-message", "the user's L")
 	u.MustTmux("set-hook", "-g", "alert-bell", "display-message the-users-bell")

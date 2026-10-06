@@ -22,7 +22,7 @@ import (
 	"github.com/jerrykal/tower/internal/proto"
 )
 
-// uploads counts the installs the fake ssh saw to host: sessions whose
+// uploads counts the installs to host in the ssh log: sessions whose
 // command writes the binary from stdin.
 func (w *World) uploads(host string) int {
 	n := 0
@@ -69,7 +69,7 @@ func installed(t *testing.T, h *Host, version, want string) {
 func TestI01(t *testing.T) {
 	w := NewWorld(t, "i01")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	start := time.Now()
 	w.Home(a, b.Unpinned())
 	w.WaitLink(a, "B", "up", 15*time.Second)
@@ -103,7 +103,7 @@ func TestI01(t *testing.T) {
 	}
 
 	// tower host add installs as its last check.
-	c := w.Host("C", []string{"charlie"})
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	out, err := a.Tower("host", "add", "C", "--tmux", "-L "+c.Sock)
 	t.Logf("host add:\n%s", out)
 	if err != nil || !strings.Contains(out, "✓ tower: installed "+Version) {
@@ -126,7 +126,7 @@ func TestI01(t *testing.T) {
 func TestI02(t *testing.T) {
 	w := NewWorld(t, "i02")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	w.Home(a, b.Unpinned())
 	w.WaitLink(a, "B", "up", 15*time.Second)
 	l := w.FakeLoop(a)
@@ -160,8 +160,8 @@ func TestI02(t *testing.T) {
 func TestI03(t *testing.T) {
 	w := NewWorld(t, "i03")
 	a := w.Host("A", []string{"alpha"})
-	p := w.Host("P", []string{"papa"})
-	q := w.Host("Q", []string{"quebec"})
+	p := w.Host("P", []string{"papa"}, SSHHost())
+	q := w.Host("Q", []string{"quebec"}, SSHHost())
 	qr := q.Remote()
 	qr.Tower = "/nonexistent/tower"
 	w.Home(a, p.Remote(), qr)
@@ -259,9 +259,9 @@ func TestI04(t *testing.T) {
 		}))
 		defer srv.Close()
 		a := w.Host("A", []string{"alpha"}, Env("TOWER_DIST_DIR", dist), Env("TOWER_RELEASE_URL", srv.URL))
-		c := w.Host("C", []string{"charlie"}, Platform(unameOf[cached]))
-		r := w.Host("R", []string{"romeo"}, Platform(unameOf[released]))
-		x := w.Host("X", []string{"xray"}, Platform(unameOf[tampered]))
+		c := w.Host("C", []string{"charlie"}, Platform(unameOf[cached]), SSHHost())
+		r := w.Host("R", []string{"romeo"}, Platform(unameOf[released]), SSHHost())
+		x := w.Host("X", []string{"xray"}, Platform(unameOf[tampered]), SSHHost())
 		w.Home(a, c.Unpinned(), r.Unpinned(), x.Unpinned())
 		w.WaitLink(a, "C", "up", 15*time.Second)
 		installed(t, c, Version, Version)
@@ -286,7 +286,7 @@ func TestI04(t *testing.T) {
 	t.Run("dev", func(t *testing.T) {
 		w := NewWorld(t, "i04-dev")
 		a := w.Host("A", []string{"alpha"})
-		l := w.Host("L", []string{"lima"}, Platform(unameOf[cached]))
+		l := w.Host("L", []string{"lima"}, Platform(unameOf[cached]), SSHHost())
 		if err := config.SaveHosts(a.Paths().HostsFile(), []config.Host{l.Unpinned()}); err != nil {
 			t.Fatal(err)
 		}
@@ -313,7 +313,7 @@ func TestI05(t *testing.T) {
 	w := NewWorld(t, "i05")
 	a1 := w.Host("A1", []string{"one"})
 	a2 := w.Host("A2", []string{"two"})
-	b := w.Host("B", []string{"bravo"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
 	for _, h := range []*Host{a1, a2} {
 		if err := config.SaveHosts(h.Paths().HostsFile(), []config.Host{b.Unpinned()}); err != nil {
 			t.Fatal(err)
