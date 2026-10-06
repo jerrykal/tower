@@ -215,7 +215,8 @@ codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
   compose file: a pool of `TT_HOSTS` hosts (by default 4 for each world
   that runs at once, the most a world takes: S18), `tt-<run>-host-<n>`.
   The image has git, for the dashboard's repo data. `TestMain` builds the image (`tt-scenario-host`,
-  from cache after the first build; `TT_TMUX_VERSION` picks tmux), takes
+  from cache after the first build; `TT_TMUX_VERSION` picks tmux; an
+  image a change replaced, left untagged, is removed), takes
   down earlier runs' projects whose process is gone (a `go test`
   timeout skips teardown), brings the project up (`tt-<pid>`) and down
   at the end; containers, network and image carry the label

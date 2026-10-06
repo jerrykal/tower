@@ -121,6 +121,11 @@ func containerSetup() error {
 		"--build-arg", "UID="+strconv.Itoa(os.Getuid()), "--build-arg", "TMUX_VERSION="+tmuxVersion, "hosts"); err != nil {
 		return fmt.Errorf("build the host image: %v: %s", err, out)
 	}
+	// A changed image leaves the one it replaced untagged: gone, unless
+	// a container still runs it.
+	if ids, err := b.docker("images", "-q", "--filter", "label=tower-test", "--filter", "dangling=true"); err == nil && strings.TrimSpace(ids) != "" {
+		b.docker(append([]string{"rmi"}, strings.Fields(ids)...)...)
+	}
 	if out, err := b.docker(append(b.compose, "up", "-d")...); err != nil {
 		return fmt.Errorf("compose up: %v: %s", err, out)
 	}
