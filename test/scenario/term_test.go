@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -54,6 +56,15 @@ func (w *World) Term(name string, h *Host, extra map[string]string, argv ...stri
 	cmd := b.String()
 	if h.ctr != nil {
 		cmd = "docker exec -it -u tt -w " + transport.ShellQuote(env["HOME"]) + " " + h.ctr.ctr + " /bin/sh -c " + transport.ShellQuote(cmd)
+	} else {
+		// The command goes in a script, so a shell reporting argv killed
+		// names the script: the whole command line, PATH and all, can
+		// fill the screen and push LOOP-EXIT off it.
+		script := filepath.Join(w.Dir, "term-"+name+".sh")
+		if err := os.WriteFile(script, []byte("exec "+cmd+"\n"), 0o644); err != nil {
+			w.T.Fatal(err)
+		}
+		cmd = "sh " + transport.ShellQuote(script)
 	}
 	cmd += "; echo LOOP-EXIT=$?; sleep 600"
 	// The server's options are in place before its pane starts. The
