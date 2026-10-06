@@ -247,16 +247,24 @@ func TestHarnessLinks(t *testing.T) {
 		defer w.Stall("B", false)
 		time.Sleep(500 * time.Millisecond)
 		n, n2 := lines(c), lines(c2)
+		// Through the stall the other name's lines keep coming, every
+		// second: how many depends on how fast the machine starts sleep.
 		alive := 17 * time.Second // ServerAliveInterval × ServerAliveCountMax, and 2s
-		if c.wait(alive) {
-			t.Fatalf("a stalled session ended: exit %d, %q", c.code, c.stderr.String())
+		prev := n2
+		for end := time.Now().Add(alive); time.Now().Before(end); {
+			if c.wait(time.Second) {
+				t.Fatalf("a stalled session ended: exit %d, %q", c.code, c.stderr.String())
+			}
+			m := lines(c2)
+			if m == prev {
+				t.Fatalf("no line for a second through another name for the stalled host (%d in all)", m-n2)
+			}
+			prev = m
 		}
 		if m := lines(c); m != n {
 			t.Fatalf("%d lines came through a stall", m-n)
 		}
-		if m := lines(c2); m-n2 < 100 {
-			t.Fatalf("%d lines in %v through another name for the stalled host", m-n2, alive)
-		}
+		t.Logf("%d lines in %v through another name for the stalled host", lines(c2)-n2, alive)
 		w.Stall("B", false)
 		w.Eventually(3*time.Second, "output after the stall", func() bool { return lines(c) > n })
 	})
