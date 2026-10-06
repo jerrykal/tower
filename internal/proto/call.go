@@ -309,11 +309,13 @@ type LastArgs struct {
 }
 
 // LastResult: Local means a plain switch-client to Target on the client's
-// own server; Stored means a hand-off was stored and the loop will act;
+// own server; Stored means a hand-off was stored, and Ended that the loop
+// ends the client (otherwise tower last does, as a dashboard would);
 // neither means fall back to switch-client -l.
 type LastResult struct {
 	Local  bool   `json:"local,omitempty"`
 	Stored bool   `json:"stored,omitempty"`
+	Ended  bool   `json:"ended,omitempty"` // stored, and the loop ends the client
 	Target Ref    `json:"target,omitempty"`
 	Note   string `json:"note,omitempty"`
 }

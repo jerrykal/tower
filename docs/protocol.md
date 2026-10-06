@@ -332,8 +332,11 @@ The dashboard's `⏎` on a target on another server:
    popup never closes first (tmux would redraw the pane under it, a synced
    frame that ends the hold early).
 6. Otherwise (no loop waiting, `TOWER_EAGER=0`, or no `held` within 100ms)
-   the ack has no `ended` and the dashboard holds the frame and runs
-   `detach-client -t <client> -E 'exit 42'` itself. A `held` that comes
+   the ack has no `ended` and the dashboard, or `tower last`, holds the
+   frame and runs `detach-client -t <client> -E 'exit 42'` itself. So does
+   a switch stored while the loop, woken for an earlier one of the same
+   attach, has yet to confirm: prefix L pressed twice, or keys typed while
+   an attach starts arriving at once. A `held` that comes
    later gets no `end`, so only one side ever ends the client; a dashboard
    whose detach finds its client already gone neither fails nor ends the
    hold.
@@ -538,7 +541,9 @@ own:
 - **The binding carries towerd's `TOWER_*` environment** (a key binding
   starts from the tmux server's environment), and `TOWER_MKEY`.
 - `tower last` falls back to `switch-client -l` when the terminal has no
-  loop, the loop has no previous session, or towerd cannot be reached.
+  loop, the loop has no previous session, or towerd cannot be reached. A
+  hand-off it stores without `ended` it finishes as a dashboard does (step
+  6 of the hand-off).
 - `TOWER_BIND=0` turns the bindings off (V08).
 
 **Alert hooks.** tmux sets a window's bell, activity and silence flags

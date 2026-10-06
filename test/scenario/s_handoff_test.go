@@ -455,7 +455,8 @@ func TestS26(t *testing.T) {
 	}
 }
 
-// S27: rapid prefix L: every screen change of six quick hand-offs is held.
+// S27: rapid prefix L: every screen change of six quick hand-offs is held;
+// two at once still hand off.
 func TestS27(t *testing.T) {
 	parallel(t)
 	w := NewWorld(t, "s27")
@@ -492,6 +493,13 @@ func TestS27(t *testing.T) {
 	if leaves < 3 || bad != 0 || heldAtEnd {
 		t.Fatalf("%d leaves, %d changes not held, held at the end %v", leaves, bad, heldAtEnd)
 	}
+
+	// Twice at once, as keys typed while an attach starts arrive: the
+	// second switch is stored before the loop, woken for the first,
+	// confirms its hold, and the loop leaves the client to tower last.
+	w.WaitLoop(a, "^B:bravo", 3*time.Second)
+	term.Keys("M-l", "M-l")
+	w.WaitLoop(a, "^A:alpha", 4*time.Second)
 }
 
 // D01: tower dash: a second terminal picks its own target while the

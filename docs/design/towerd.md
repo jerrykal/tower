@@ -279,7 +279,9 @@ always the live one, ages moved on to now.
 
 `last` (the call): the client's loop's previous target, from the home's
 view; on the client's own server it answers `Local` (the CLI runs
-`switch-client`), else it stores a switch through the switch path.
+`switch-client`), else it stores a switch through the switch path and
+passes on the ack's `Ended`: without it the CLI ends the client as a
+dashboard does (hold, `detach-client -E 'exit 42'`).
 
 ## Home role (home.go, link.go)
 

@@ -48,7 +48,7 @@ client's return have limits of their own, as
 | S24 | Previous and current across hosts, a stream reset and a home crash: `-` ⏎ goes back; kept through the reset; relearned by the restarted home | towerd, loop | pass |
 | S25 | Everyday habits: closing the last pane with another session free (tmux moves, tower follows) and without (the previous session on another host, with a note); nothing left anywhere: exit; `tower last` across hosts; `prefix d` returns fast | loop, towerd | pass |
 | S26 | Hand-offs both ways without a flash: the frame held while the old client leaves and the new one enters, released after, nothing printed between, also when the dashboard cannot write its client's tty | loop, ui | pass |
-| S27 | `prefix L` six times, 120–240ms apart, between two hosts: every client change held, released at the end | loop | pass |
+| S27 | `prefix L` six times, 120–240ms apart, between two hosts: every client change held, released at the end; then twice at once (keys typed while an attach starts arrive together): the terminal still moves | loop | pass |
 | D01 | `tower dash` outside tmux: a second terminal starts at the picker and picks its own target while the first stays; `Esc` attaches to the last target, or exits with none | loop, ui | pass |
 
 ## Extras

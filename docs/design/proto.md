@@ -222,7 +222,7 @@ type Reply struct {
 | `wait-switch` | `{Loop, Gen}` → `{Switch}` | the loop, while attached |
 | `held` | `{Loop, Gen}` → `{End}` | the loop |
 | `standby` | `{Loop}` → `[]Offer{Host, Key, Argv}` | the loop |
-| `last` | `{Client}` → `LastResult{Local, Stored, Target, Note}` | `tower last` |
+| `last` | `{Client}` → `LastResult{Local, Stored, Ended, Target, Note}` | `tower last` |
 | `wake`, `netchange`, `reload` | – → `{}` (`reload` also activates the home role) | tests, `tower netchange`, `tower host` |
 | `plant` | `Request{Loop, Gen, Nonce, Target}` → `{}`: a stored switch, only with `TOWER_TEST_HOOKS` | the scenario suite |
 

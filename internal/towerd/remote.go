@@ -415,5 +415,5 @@ func (d *Daemon) last(ctx context.Context, client string) *proto.LastResult {
 	if !ack.OK {
 		return &proto.LastResult{Note: ack.Err, Target: prev}
 	}
-	return &proto.LastResult{Stored: true, Target: prev}
+	return &proto.LastResult{Stored: true, Ended: ack.Ended, Target: prev}
 }

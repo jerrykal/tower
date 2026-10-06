@@ -141,8 +141,7 @@ func (c *Conn) switchHere(ctx context.Context, r proto.Ref) error {
 // The switch is committed once towerd has stored it. When the loop ended
 // this client itself (Ended), wait for the client to go, so the popup
 // never closes first and tmux never redraws under the loop's held frame.
-// Otherwise hold the frame on the client's terminal and detach the client
-// with exit 42, which the loop takes from there.
+// Otherwise end the client here (EndClient).
 func (c *Conn) handoff(ctx context.Context, r proto.Ref) error {
 	cl, err := proto.ParseClient(c.Client)
 	if err != nil {
@@ -164,6 +163,17 @@ func (c *Conn) handoff(ctx context.Context, r proto.Ref) error {
 			time.Sleep(5 * time.Millisecond)
 		}
 		return nil
+	}
+	return c.EndClient(ctx)
+}
+
+// EndClient ends the pressing client for a stored switch the loop does
+// not end itself: it holds the frame on the client's terminal and
+// detaches the client with exit 42, which the loop takes from there.
+func (c *Conn) EndClient(ctx context.Context) error {
+	cl, err := proto.ParseClient(c.Client)
+	if err != nil {
+		return err
 	}
 	tty := c.hold(ctx)
 	_, err = c.Tmux.Run(ctx, "detach-client", "-t", cl.Name, "-E", "exit 42")

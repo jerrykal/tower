@@ -9,6 +9,7 @@ import (
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/tmux"
+	"github.com/jerrykal/tower/internal/ui"
 )
 
 // cmdLast is tower last, tmux's switch-client -l across hosts, run by
@@ -45,8 +46,14 @@ func cmdLast(args []string) error {
 		return fallback()
 	}
 	switch {
-	case res.Stored:
+	case res.Stored && res.Ended:
 		return nil // the loop moves the terminal
+	case res.Stored:
+		// The loop was not waiting to end the client (another switch
+		// woke it first, or it confirmed too late): end it here.
+		tmux.UseBin(srv.Bin)
+		dash := &ui.Conn{Tmux: srv, Client: cl}
+		return dash.EndClient(ctx)
 	case res.Local:
 		tmux.UseBin(srv.Bin)
 		a := []string{"switch-client", "-c", name, "-t", res.Target.Session}
