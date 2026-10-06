@@ -496,10 +496,23 @@ func TestS27(t *testing.T) {
 
 	// Twice at once, as keys typed while an attach starts arrive: the
 	// second switch is stored before the loop, woken for the first,
-	// confirms its hold, and the loop leaves the client to tower last.
-	w.WaitLoop(a, "^B:bravo", 3*time.Second)
+	// confirms its hold. The terminal moves on and stays attached, on
+	// whichever host: two presses may make one hand-off (both to the
+	// same last), and six under load may have made five.
+	ls := w.Loops(a)
+	if len(ls) != 1 {
+		t.Fatalf("loops %+v", ls)
+	}
+	gen := ls[0].Gen
 	term.Keys("M-l", "M-l")
-	w.WaitLoop(a, "^A:alpha", 4*time.Second)
+	w.Eventually(4*time.Second, "a hand-off, its client seen", func() bool {
+		ls := w.Loops(a)
+		return len(ls) == 1 && ls[0].Gen > gen && ls[0].Seen
+	})
+	time.Sleep(time.Second)
+	if ls := w.Loops(a); len(ls) != 1 || !ls[0].Seen || strings.Contains(term.Screen(), "without a valid hand-off") {
+		t.Fatalf("two at once: loops %+v, screen:\n%s", ls, term.Screen())
+	}
 }
 
 // D01: tower dash: a second terminal picks its own target while the
