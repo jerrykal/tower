@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -431,6 +432,71 @@ func logSwitch(t *testing.T, w *World, what string) {
 	if !stored.IsZero() && !seen.IsZero() {
 		t.Logf("%s: %v from the switch stored to the new client (through %s)", what, seen.Sub(stored).Round(time.Millisecond), via)
 	}
+}
+
+// realClients are the sessions of h's non-control clients on the test
+// server, sorted.
+func realClients(h string) []string {
+	out, _ := rssh(h, "tmux -L "+realSock+" list-clients -F '#{client_control_mode} #{session_name}'", nil)
+	var s []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if rest, ok := strings.CutPrefix(l, "0 "); ok {
+			s = append(s, rest)
+		}
+	}
+	slices.Sort(s)
+	return s
+}
+
+// TestR04 hands off back and forth between two real hosts over their
+// masters, through standbys, then to the laptop: each host left keeps no
+// client and the host the terminal is on has only its own. These hosts
+// end a session with its ssh even without the home's detach; the leak
+// seen in real use (decision 112) does not show here.
+func TestR04(t *testing.T) {
+	hs := realHosts(t)
+	if len(hs) < 2 {
+		t.Skip("R04 needs two hosts")
+	}
+	h1, h2 := hs[0], hs[1]
+	w, a := realWorld(t, "r04")
+	a.Set("TOWER_TEST_TIMING", w.Marks)
+	bin := realBuild(t, w.Dir)
+	realHost(t, w, h1, bin, false, "rt-"+h1)
+	realHost(t, w, h2, bin, false, "rt-"+h2)
+	w.Home(a, realEntry(h1, true), realEntry(h2, true))
+	for _, h := range []string{h1, h2} {
+		w.WaitLink(a, h, "up", 20*time.Second)
+	}
+	term := w.Loop("t", a, nil)
+	term.Wait(Prompt, 10*time.Second)
+	term.Pick("rt-" + h1 + " ")
+	w.WaitLoop(a, "^"+regexp.QuoteMeta(h1)+":rt-"+regexp.QuoteMeta(h1)+"(:|$)", 15*time.Second)
+	hops := []struct{ to, left string }{{h2, h1}, {h1, h2}, {h2, h1}, {"", h2}}
+	for i, hop := range hops {
+		if hop.to != "" {
+			w.Eventually(20*time.Second, "a standby on "+hop.to+" ready", func() bool {
+				return w.CountMarks("standby: ready "+hop.to) > 0
+			})
+		}
+		time.Sleep(time.Second)
+		w.ClearMarks()
+		if hop.to == "" {
+			term.DashTo("rt-local")
+			w.WaitLoop(a, "^A:rt-local", 15*time.Second)
+		} else {
+			term.DashTo("rt-" + hop.to)
+			w.WaitLoop(a, "^"+regexp.QuoteMeta(hop.to)+":rt-"+regexp.QuoteMeta(hop.to)+"(:|$)", 15*time.Second)
+			w.Eventually(5*time.Second, hop.to+" has only the terminal's client", func() bool {
+				return slices.Equal(realClients(hop.to), []string{"rt-" + hop.to})
+			})
+		}
+		start := time.Now()
+		w.Eventually(5*time.Second, hop.left+" keeps no client", func() bool { return len(realClients(hop.left)) == 0 })
+		t.Logf("hand-off %d: %s clean %v after the loop moved (ssh included)", i+1, hop.left, time.Since(start).Round(time.Millisecond))
+	}
+	term.Keys("C-b", "d")
+	term.Wait(`LOOP-EXIT=0`, 10*time.Second)
 }
 
 // TestR03 installs tower on connect over real ssh, into a test root: the

@@ -48,6 +48,8 @@ type homeRole struct {
 	cache    map[string]cachedHost
 	last     proto.Ref
 	savedAt  time.Time
+	reaping  map[string]*reapState // stale clients being detached, by reapKey
+	orphans  map[string]time.Time  // clients of a loop the home does not know: since when
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -99,7 +101,7 @@ func newHome(d *Daemon) *homeRole {
 	if tr == nil {
 		tr = newSSHTransport(d.env.CMDir())
 	}
-	h := &homeRole{d: d, tr: tr, inst: install.New(d.version, d.self), links: map[string]*link{}, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, cache: map[string]cachedHost{}}
+	h := &homeRole{d: d, tr: tr, inst: install.New(d.version, d.self), links: map[string]*link{}, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, cache: map[string]cachedHost{}, reaping: map[string]*reapState{}, orphans: map[string]time.Time{}}
 	h.ctx, h.cancel = context.WithCancel(d.ctx)
 	config.ReadJSON(d.env.State("hosts.json"), &h.cache)
 	var lf lastFile
@@ -410,6 +412,12 @@ func (h *homeRole) expireLoops() {
 	for _, id := range gone {
 		h.bye(id)
 	}
+	// Also what no state brings: a loop that said bye or went quiet, a
+	// home old enough to call a loop it never heard from gone, a detach
+	// to ask again.
+	h.d.mu.Lock()
+	h.reapStaleLocked()
+	h.d.mu.Unlock()
 }
 
 // hostState is a target host as prepare and switch need it.
@@ -523,6 +531,9 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	}
 	l.waiters = nil
 	h.last = t
+	// The previous attach has ended: its client goes now, not when its
+	// host next sends a state.
+	h.reapStaleLocked()
 	gen := l.gen
 	p := &proto.Prepared{Gen: gen, Target: t, Local: hs.local}
 	shimArgs := []string{"attach", "--loop", l.id, "--gen", strconv.Itoa(gen), "--home", h.d.id, "--inst", hs.inst, "--mkey", hs.mkey}

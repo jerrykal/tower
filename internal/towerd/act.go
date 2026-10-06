@@ -120,7 +120,7 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 	t := req.Target
 	snap := d.snapshotNow()
 	if t.Inst != "" && snap.Inst != "" && t.Inst != snap.Inst && req.Op != proto.OpNew {
-		if req.Op == proto.OpHas || req.Op == proto.OpKill {
+		if req.Op == proto.OpHas || req.Op == proto.OpKill || req.Op == proto.OpDetach {
 			ack.OK, ack.Gone, ack.Note = true, true, "already gone"
 			return ack
 		}
@@ -129,7 +129,7 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 	}
 	ctl := d.w.control()
 	if ctl == nil && req.Op != proto.OpNew && req.Op != proto.OpHas {
-		if req.Op == proto.OpKill {
+		if req.Op == proto.OpKill || req.Op == proto.OpDetach {
 			ack.OK, ack.Note = true, "already gone"
 			return ack
 		}
@@ -215,6 +215,8 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 		}
 	case proto.OpHas:
 		ack.Gone = !d.hasSession(ctl, t.Session, left)
+	case proto.OpDetach:
+		ack.Note, err = d.detachStale(req, snap, do)
 	default:
 		err = fmt.Errorf("unknown request %q", req.Op)
 	}
@@ -227,6 +229,39 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 		d.w.refresh()
 	}
 	return ack
+}
+
+// detachStale detaches a client the asking home says is left over: an
+// attach its loop has moved on from, or one of a loop that is gone. Its
+// ssh was ended, but its session can outlive an ssh that rode a control
+// master, and the client then stays until something here ends it. Only a client
+// registered for that home, loop and generation, and still the client
+// the registration was bound to, is detached.
+func (d *Daemon) detachStale(req *proto.Request, snap *snapshot, do func(string) (tmux.Reply, error)) (string, error) {
+	c, err := proto.ParseClient(req.Client)
+	if err != nil {
+		return "", errors.New("no client named")
+	}
+	d.mu.Lock()
+	var g reg
+	found := false
+	for _, r := range d.regs.list {
+		if r.bound() && r.Pid == c.Pid && r.Name == c.Name && r.Home == req.From && r.Loop == req.Loop && r.Gen == req.Gen {
+			g, found = *r, true
+			break
+		}
+	}
+	d.mu.Unlock()
+	if !found || snap.client(func(t *tclient) bool { return t.Name == g.Name && t.Created == g.Created }) == nil {
+		return "already gone", nil
+	}
+	if _, err := do("detach-client -t " + tmux.Quote(g.Name)); err != nil {
+		if gone(err) {
+			return "already gone", nil
+		}
+		return "", err
+	}
+	return "", nil
 }
 
 // fmtPanes lists a pane for the layout preview: a tab between fields,

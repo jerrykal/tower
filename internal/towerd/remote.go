@@ -198,6 +198,8 @@ func (d *Daemon) takeView(rec *homeRec, conn *stream.Conn, v *proto.View) {
 // execFor runs a home's request here; a change goes out as a state ahead
 // of the answer, so the home's next view shows it.
 func (d *Daemon) execFor(rec *homeRec, conn *stream.Conn, req *proto.Request) {
+	// The stream says who asks: a home detaches only its own clients.
+	req.From = rec.id
 	ack := d.runLocal(req)
 	if mutates(req.Op) && ack.OK {
 		d.mu.Lock()

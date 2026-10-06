@@ -143,7 +143,7 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
-| LS01 | Hand-offs through standbys; the host left gets a new one; resize reaches the client; standbys are no clients; nothing outlives the loop | loop | pass |
+| LS01 | Hand-offs through standbys; the host left gets a new one; resize reaches the client; standbys are no clients; nothing outlives the loop (a killed loop's standbys once they miss their heartbeats) | loop | pass |
 | LS02 | A stuck standby is given up after its wait and a new session lands, the frame held throughout | loop | pass |
 | LS03 | Wake, network change, towerd killed, stall: each replaces the standby; one made for an earlier link is never used | loop, towerd | pass |
 | LS04 | `TOWER_STANDBY=0`, `standby = false`, a remote upgrade, a reload: standbys follow | loop, towerd | pass |
@@ -152,6 +152,7 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 | LS07 | The relay adds microseconds to a keystroke's echo | relay | pass |
 | LS08 | The relay under load: throughput, keys into a flood, backpressure, flat memory | relay | pass |
 | LS09 | Every remote attach relayed: exits 255, 43, 42, hand-offs, a stall, `prefix d` the same as with ssh given the terminal | loop, relay | pass |
+| LS10 | A remote attach over a shared master leaves no client behind, even where its session outlives its ssh (the fake's): hand-offs back and forth leave each host only the terminal's client; a killed loop's client goes once the home calls the loop gone | towerd, loop | pass |
 
 LS06 and LS07 are tests of `internal/relay` (`go test ./internal/relay`):
 they need no host. LS08 is there too against a command given the terminal
@@ -168,3 +169,4 @@ Run by hand, never by an agent: `TOWER_REAL=pc,831 mise run scenarios -run R0`.
 | R01 | laptop → `pc` → `831` over real ssh: bridge start, an unresolvable host, control paths, attach, hand-off, a kill relayed, a remote dashboard, a wake reset; teardown leaves nothing | pass (bridges up 0.49s; picker → pc 0.29s; hand-off pc → 831 0.35s; kill relayed 831 → home → pc 131ms, 115ms of it ssh; streams back 0.15s and the client 0.27s after a wake) |
 | R03 | Install on connect over real ssh into `~/.cache/tower-test/harness/install` (`TOWER_INSTALL_DIR`), the linux/amd64 build from a dist cache; up, `current` swapped, no install again on reconnect | pass (installed and up in 1.8–3.8s) |
 | R02 | A hand-off from `pc` to the laptop and back, recorded at the terminal: held across the teardown and the new attach; back through `pc`'s standby | pass (switch stored → new client: pc → laptop 11ms, laptop → pc through its standby 17–23ms; held across the leave and the enter; a standby shim exits 30s after its loop) |
+| R04 | Hand-offs `pc` → `831` → `pc` → `831` → the laptop through standbys: each host left keeps no client, the host the terminal is on only its own | pass (the host left clean at the first look, 0.1–0.25s with the look's ssh; clean without the home's detach as well: the leak seen in real use does not show here) |

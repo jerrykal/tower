@@ -19,6 +19,7 @@ and the home role once an attach loop starts on its machine.
 | `keeper.go` | `tower _keep`: ends a dead towerd's control client and `_tower` |
 | `remote.go` | the remote role: one record per connected home; the dashboard's `view`; `last` |
 | `home.go` | the home role: merged view, loops, switches, prepare and after, standby offers, routing |
+| `reap.go` | the home's detach of its stale clients on remotes |
 | `link.go` | one host link at the home: the `Transport` seam, ssh, the stream, liveness, reconnect |
 | `bridge.go` | `tower towerd --stdio` |
 | `pace.go` | the token bucket shared by re-reads and pushes: two at once, then one per interval; a run that sent nothing (an unchanged body) costs no token |
@@ -155,6 +156,7 @@ gone. Then on the control client:
 | panes | `list-panes -s -t $id` (every pane of a session's windows), or `list-panes -t @id` for a window (`Kind`, or a target with a window and no `Kind`) |
 | has | `has-session -t $id`; no control client: `tmux -N has-session`; no server means gone |
 | dup | `new-session -d -t $id -s <name>` (grouped) |
+| detach | from a home's `exec` only: `detach-client -t <name>` for the client (`pid::name`) registered with that home (the stream's, not the request's), loop and gen, and still the client the registration was bound to; otherwise, or gone meanwhile, "already gone". No re-read before the answer: tmux drops the client only once it has gone, and the watch sees that |
 
 **A pane** is `pane_id`, `window_id`, left, top, width, height, active,
 `pane_current_command` and `pane_current_path`, the path with `~` for
@@ -388,6 +390,25 @@ type loopRec struct {
   args | tower path`.
 - Loops expire 15s after their last beat; the last target is saved in
   `last.json`.
+
+**Stale clients** (`reap.go`): a loop ends a remote attach by ending its
+ssh, which rides a control master, and the session there can outlive it,
+keeping its tmux client attached (seen in real use; a plain ssh over a
+master, killed, keeps its session until the master exits; decision 112).
+So the home detaches its own clients on
+remotes once their attach is over: a client of any other generation than
+its loop's (the home numbers attaches in `prepare`, which a loop calls
+only after its previous attach ended; a home that restarted numbers
+afresh, so an older client can carry a higher number), or whose loop the
+home has not known for 15s (a restarted home, or one that called a slow
+loop gone, learns a live loop again from its next beat). It looks on
+every state, on `prepare` (the client goes at once, not at its host's
+next state) and every second (a loop gone, a retry), only on hosts up,
+and sends `exec detach` off the hand-off path, again after 5s while the
+client is still listed (after an hour from a towerd that does not know
+`detach`), logging a client's first try and its success. Clients on this
+machine are left alone: the loop detaches them itself, and one whose
+loop died still has the terminal.
 
 **Routing** (`route`): a request for this machine runs here; otherwise
 `exec` on the target's link (refused at once if it is not up, or

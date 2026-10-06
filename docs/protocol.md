@@ -158,7 +158,7 @@ merely slow to accept is another host's healthy master and stays (S16).
 | `hello` | both, first | protocol range, towerd id, label, the name the home uses for the remote (`as`), version, home id; the remote's answer adds the chosen protocol, machine key, OS, tmux version, or an error |
 | `state` | remote → home | the remote's sessions and windows (ages against its own clock) with each session's git state, its zoxide directories with no session, its tmux instance, and the clients of **this home's** loops with where each is now |
 | `view` | home → remote | the merged view of every host, with this home's loops (current, previous), numbered |
-| `exec` | home → remote | a request to run there (kill, rename, new, capture, panes, dup, has-session) |
+| `exec` | home → remote | a request to run there (kill, rename, new, capture, panes, dup, has-session, detach of the home's stale client) |
 | `relay` | remote → home | a request from a dashboard on the remote (switch, or an action elsewhere) |
 | `ack` | answer to `exec` and `relay` | matched by request id |
 | `ping` / `pong` | both | keepalive; `pong` carries the sender's clock |
@@ -319,12 +319,14 @@ The dashboard's `⏎` on a target on another server:
    exit 42 to `after`, whatever the client's own exit was:
    - a local client is detached through towerd's control client
      (`detach-client -t <client> -E 'exit 42'`);
-   - a remote one's ssh gets SIGTERM: ssh closes the channel and the remote
-     client gets a hang-up, an ordinary client end there; nothing the old
-     host sends reaches the terminal after it. The loop writes that
+   - a remote one's ssh gets SIGTERM and its relay stops at once: nothing
+     the old host sends reaches the terminal after it. The loop writes that
      client's terminal restore (leave the alternate screen, mouse and paste
      modes off) itself, inside the hold, since the client's own never comes
-     back (R02).
+     back (R02). The session there can outlive its ssh, which rides a
+     control master, keeping the client attached; so the home then
+     detaches that client with an `exec detach`, off the hand-off's path
+     (LS10).
 
    The dashboard, told `ended`, only waits for its client to go, so its
    popup never closes first (tmux would redraw the pane under it, a synced

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"sort"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -258,6 +259,19 @@ func hold(files ...*os.File) {
 	}
 }
 
+// holdUntilMasterGoes keeps the given files open in a process of their own
+// while the master made at born is the host's: its session's command
+// hangs up only once the master exits or is lost.
+func holdUntilMasterGoes(f *os.File, host string, born int64) {
+	cmd := exec.Command("/bin/sh", "-c", `while [ "$(cat "$1" 2>/dev/null)" = "$2" ]; do sleep 0.1; done`, "sh", masterPath(host), strconv.FormatInt(born, 10))
+	cmd.ExtraFiles = []*os.File{f}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if cmd.Start() == nil {
+		recordHolder(cmd.Process.Pid)
+		cmd.Process.Release()
+	}
+}
+
 // runPlain is a session without a tty: the stream, a probe, a command.
 func (c *conn) runPlain() int {
 	inR, inW, _ := os.Pipe()
@@ -402,6 +416,13 @@ func (c *conn) runPty() int {
 				return 255
 			}
 			return c.finish(ev, 0, time.Time{})
+		}
+		if ev == endSignal && c.master != 0 {
+			// A session on a master outlives its ssh, as a plain ssh -tt
+			// over a master, killed, does: its command still runs, pty
+			// and all, until the master goes (decision 112).
+			holdUntilMasterGoes(master, c.a.host, c.master)
+			return 255
 		}
 		if ev == endDrop {
 			cmd.Process.Kill()

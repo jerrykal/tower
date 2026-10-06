@@ -708,6 +708,7 @@ func (l *link) takeState(conn *stream.Conn, st *proto.State) {
 	l.states++
 	if l.id != "" {
 		l.h.applyClients(l.id, l.cfg.Name, st.Inst, st.Sessions, st.Clients)
+		l.h.reapStaleLocked()
 	}
 	if l.gotState != nil {
 		select {

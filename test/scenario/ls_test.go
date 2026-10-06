@@ -56,8 +56,12 @@ func (h *Host) clientSize() string {
 func TestLS01(t *testing.T) {
 	w := NewWorld(t, "ls01")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	// A killed loop's standbys ride the master, which outlives the loop,
+	// and the fake keeps their sessions (decision 112): they hear no
+	// hang-up and go once their heartbeats stop.
+	silence := Env("TOWER_STANDBY_SILENCE", "5s")
+	b := w.Host("B", []string{"bravo"}, silence)
+	c := w.Host("C", []string{"charlie"}, silence)
 	w.Knobs("B", ptyKnobs)
 	w.Knobs("C", ptyKnobs)
 	stdSetup(w, a, b, c)
@@ -120,7 +124,7 @@ func TestLS01(t *testing.T) {
 	}
 	Kill9(pids[0])
 	t3.Wait(`LOOP-EXIT=137`, 5*time.Second)
-	w.noStandbys(3*time.Second, b, c)
+	w.noStandbys(8*time.Second, b, c)
 }
 
 // LS02: a standby that does not answer is given up after its wait and a
@@ -546,4 +550,53 @@ func TestLS09(t *testing.T) {
 	if results[0] != results[1] || results[1] != results[2] {
 		t.Fatalf("the modes differ:\n%s", strings.Join(results, "\n"))
 	}
+}
+
+// LS10: a remote attach over a shared master leaves no client behind,
+// even where its session there outlives its ssh (as the fake's does, and
+// as in real use; decision 112): hand-offs back and forth
+// leave each host only the client the terminal is on, and a killed
+// loop's client goes once the home calls the loop gone.
+func TestLS10(t *testing.T) {
+	w := NewWorld(t, "ls10")
+	a := w.Host("A", []string{"alpha"})
+	b := w.Host("B", []string{"bravo"})
+	c := w.Host("C", []string{"charlie"})
+	w.Knobs("B", ptyKnobs)
+	w.Knobs("C", ptyKnobs)
+	stdSetup(w, a, b, c)
+	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
+	w.WaitMark("standby: ready B", 5*time.Second)
+	w.WaitMark("standby: ready C", 5*time.Second)
+	hops := []struct {
+		to, left *Host
+		session  string
+	}{{b, c, "bravo"}, {c, b, "charlie"}, {b, c, "bravo"}, {c, b, "charlie"}}
+	for i, hop := range hops {
+		term.DashTo(hop.session)
+		w.WaitLoop(a, "^"+hop.to.Name+":"+hop.session, 8*time.Second)
+		term.Wait(statusBar(hop.session), 5*time.Second)
+		start := time.Now()
+		w.clientsAre(hop.to, 3*time.Second, hop.session)
+		w.clientsAre(hop.left, 3*time.Second)
+		w.Eventually(3*time.Second, "no registration left on "+hop.left.Name, func() bool { return len(hop.left.Regs()) == 0 })
+		t.Logf("hand-off %d: %s left clean in %v", i+1, hop.left.Name, time.Since(start).Round(time.Millisecond))
+	}
+
+	// A killed loop's client: its session outlives the ssh here, until the
+	// home has called the loop gone (15s without a beat) and the loop has
+	// stayed unknown for as long again.
+	pids := a.LoopPids()
+	if len(pids) != 1 {
+		t.Fatalf("loop pid files: %v", pids)
+	}
+	Kill9(pids[0])
+	term.Wait(`LOOP-EXIT=137`, 5*time.Second)
+	time.Sleep(2 * time.Second)
+	if got := c.Clients(); !slices.Equal(got, []string{"charlie"}) {
+		t.Fatalf("C's clients 2s after the loop died: %v; want the session still there", got)
+	}
+	start := time.Now()
+	w.clientsAre(c, 40*time.Second)
+	t.Logf("the killed loop's client gone %v later", (2*time.Second + time.Since(start)).Round(100*time.Millisecond))
 }

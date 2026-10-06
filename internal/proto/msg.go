@@ -78,7 +78,8 @@ const (
 	OpHas     = "has"
 	OpSwitch  = "switch"
 	OpDup     = "dup"
-	OpPanes   = "panes" // a session's (or window's) panes: layout and what runs there
+	OpPanes   = "panes"  // a session's (or window's) panes: layout and what runs there
+	OpDetach  = "detach" // a home's client there whose attach is over (Client, Loop, Gen)
 )
 
 // Kinds of things a request acts on.
