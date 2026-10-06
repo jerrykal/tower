@@ -36,14 +36,14 @@ const (
 )
 
 func session(a *args, k *Knobs) int {
-	c := &conn{a: a, w: newWatch(a.host, k), drop: k.Drop}
+	c := &conn{a: a, w: newWatch(a.Host, k), drop: k.Drop}
 	if code, ok := c.connect(); !ok {
 		return code
 	}
 	switch {
-	case a.tty && isTerminal(os.Stdin) && c.w.get().Pty:
+	case a.TTY && isTerminal(os.Stdin) && c.w.get().Pty:
 		return c.runPty()
-	case a.tty && isTerminal(os.Stdin):
+	case a.TTY && isTerminal(os.Stdin):
 		return c.runTTY()
 	default:
 		return c.runPlain()
@@ -63,7 +63,7 @@ func (c *conn) connect() (int, bool) {
 	k := c.w.get()
 	rtt := k.RTT()
 	if c.useMaster() {
-		if m, ok := readMaster(c.a.host); ok {
+		if m, ok := readMaster(c.a.Host); ok {
 			c.master = m
 			if c.halfOpen() {
 				return c.hangUntilGiveUp(), false
@@ -78,13 +78,13 @@ func (c *conn) connect() (int, bool) {
 	if k.Freeze {
 		if k.Mux {
 			// A new master waits out the freeze, up to ConnectTimeout.
-			if !c.waitThaw(c.a.connectTimeout()) {
-				fmt.Fprintf(os.Stderr, "ssh: connect to host %s port 22: Operation timed out\n", c.a.host)
+			if !c.waitThaw(c.a.ConnectTimeout()) {
+				fmt.Fprintf(os.Stderr, "ssh: connect to host %s port 22: Operation timed out\n", c.a.Host)
 				return 255, false
 			}
 			time.Sleep(time.Duration(rand.IntN(1000)) * time.Millisecond)
-		} else if !c.waitThaw(c.a.alive()) {
-			fmt.Fprintf(os.Stderr, "Timeout, server %s not responding.\n", c.a.host)
+		} else if !c.waitThaw(c.a.Alive()) {
+			fmt.Fprintf(os.Stderr, "Timeout, server %s not responding.\n", c.a.Host)
 			return 255, false
 		}
 	}
@@ -93,8 +93,8 @@ func (c *conn) connect() (int, bool) {
 		time.Sleep(rtt)
 		return 0, true
 	}
-	if c.a.opt("ControlMaster") != "no" {
-		if m, ok := makeMaster(c.a.host); ok {
+	if c.a.Opt("ControlMaster") != "no" {
+		if m, ok := makeMaster(c.a.Host); ok {
 			c.master = m
 		}
 	}
@@ -135,8 +135,8 @@ func (c *conn) frozen() bool {
 func (c *conn) hangUntilGiveUp() int {
 	for {
 		if c.giveUp() {
-			removeMaster(c.a.host, c.master)
-			fmt.Fprintf(os.Stderr, "Timeout, server %s not responding.\n", c.a.host)
+			removeMaster(c.a.Host, c.master)
+			fmt.Fprintf(os.Stderr, "Timeout, server %s not responding.\n", c.a.Host)
 			return 255
 		}
 		time.Sleep(pollEvery)
@@ -145,7 +145,7 @@ func (c *conn) hangUntilGiveUp() int {
 
 // giveUp reports whether a half-open master has outlived the alive window.
 func (c *conn) giveUp() bool {
-	alive := c.a.alive()
+	alive := c.a.Alive()
 	if alive == 0 || !c.halfOpen() {
 		return false
 	}
@@ -164,7 +164,7 @@ func (c *conn) monitor(events chan<- end, relayed bool) {
 			return
 		}
 		if c.master != 0 {
-			if m, ok := readMaster(c.a.host); !ok || m != c.master {
+			if m, ok := readMaster(c.a.Host); !ok || m != c.master {
 				if c.halfOpen() {
 					events <- endTimeout
 				} else {
@@ -173,7 +173,7 @@ func (c *conn) monitor(events chan<- end, relayed bool) {
 				return
 			}
 			if c.giveUp() {
-				removeMaster(c.a.host, c.master)
+				removeMaster(c.a.Host, c.master)
 				events <- endTimeout
 				return
 			}
@@ -183,7 +183,7 @@ func (c *conn) monitor(events chan<- end, relayed bool) {
 			if frozenSince.IsZero() {
 				frozenSince = time.Now()
 			}
-			if alive := c.a.alive(); alive > 0 && time.Since(frozenSince) >= alive {
+			if alive := c.a.Alive(); alive > 0 && time.Since(frozenSince) >= alive {
 				events <- endTimeout
 				return
 			}
@@ -213,14 +213,14 @@ func envList(m map[string]string) []string {
 
 func (c *conn) command() *exec.Cmd {
 	k := c.w.get()
-	cmd := exec.Command("/bin/sh", "-c", c.a.remote)
-	if c.a.remote == "" {
+	cmd := exec.Command("/bin/sh", "-c", c.a.Remote)
+	if c.a.Remote == "" {
 		cmd = exec.Command("/bin/sh")
 	}
 	env := maps.Clone(k.Env)
 	// ssh sends the client's TERM with a pty request; the remote's own
 	// TERM never reaches a tty session.
-	if c.a.tty && isTerminal(os.Stdin) {
+	if c.a.TTY && isTerminal(os.Stdin) {
 		env["TERM"] = os.Getenv("TERM")
 	}
 	cmd.Env = envList(env)
@@ -243,13 +243,13 @@ func (c *conn) finish(ev end, code int, ended time.Time) int {
 		return code
 	case endDrop:
 		if c.master != 0 {
-			removeMaster(c.a.host, c.master)
+			removeMaster(c.a.Host, c.master)
 		}
-		fmt.Fprintf(os.Stderr, "Connection to %s closed by remote host.\n", c.a.host)
+		fmt.Fprintf(os.Stderr, "Connection to %s closed by remote host.\n", c.a.Host)
 	case endMaster:
-		fmt.Fprintf(os.Stderr, "Shared connection to %s closed.\n", c.a.host)
+		fmt.Fprintf(os.Stderr, "Shared connection to %s closed.\n", c.a.Host)
 	case endTimeout:
-		fmt.Fprintf(os.Stderr, "Timeout, server %s not responding.\n", c.a.host)
+		fmt.Fprintf(os.Stderr, "Timeout, server %s not responding.\n", c.a.Host)
 	}
 	return 255
 }
@@ -428,7 +428,7 @@ func (c *conn) runPty() int {
 			// A session on a master outlives its ssh, as a plain ssh -tt
 			// over a master, killed, does: its command still runs, pty
 			// and all, until the master goes (decision 112).
-			holdUntilMasterGoes(master, c.a.host, c.master)
+			holdUntilMasterGoes(master, c.a.Host, c.master)
 			return 255
 		}
 		if ev == endDrop {
