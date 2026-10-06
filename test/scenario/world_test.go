@@ -182,7 +182,9 @@ func (h *Host) writeConf() {
 		"set -g default-shell /bin/sh",
 		"set -g base-index " + strconv.Itoa(h.BaseIndex),
 		"set -g escape-time 10",
-		"set -g status-left '[#{host_short}:#S] '",
+		// The simulated host's name: every host here has the machine's
+		// own host name, which may be long enough to cut the session off.
+		"set -g status-left '[" + h.Name + ":#S] '",
 		"set -g status-left-length 40",
 		"set -g detach-on-destroy no-detached",
 		"bind -n M-o run-shell -C " + tmux.Quote("display-popup -E -w 100% -h 100% "+tmux.Quote(popup)),
