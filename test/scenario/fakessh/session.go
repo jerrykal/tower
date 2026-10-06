@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -216,7 +217,13 @@ func (c *conn) command() *exec.Cmd {
 	if c.a.remote == "" {
 		cmd = exec.Command("/bin/sh")
 	}
-	cmd.Env = envList(k.Env)
+	env := maps.Clone(k.Env)
+	// ssh sends the client's TERM with a pty request; the remote's own
+	// TERM never reaches a tty session.
+	if c.a.tty && isTerminal(os.Stdin) {
+		env["TERM"] = os.Getenv("TERM")
+	}
+	cmd.Env = envList(env)
 	if h := k.Env["HOME"]; h != "" {
 		cmd.Dir = h
 	}
