@@ -250,11 +250,15 @@ func TestLS03(t *testing.T) {
 	old, attempts := standbys(), w.Link(a, "B").Attempts
 	w.ClearMarks()
 	Kill9(b.TowerdPid())
+	// The switch as soon as B is back, on a new link, the standby made for
+	// the earlier one perhaps still there. (Before that, the dashboard
+	// refuses B: it is connecting.)
+	w.Eventually(10*time.Second, "B back on a new link", func() bool {
+		l := w.Link(a, "B")
+		return l.Attempts > attempts && l.Status == "up"
+	})
 	term.DashTo("bravo")
 	w.WaitLoop(a, "^B:bravo", 10*time.Second)
-	if w.Link(a, "B").Attempts == attempts {
-		t.Fatal("B did not reconnect")
-	}
 	marks := w.MarkTexts()
 	if i := slices.Index(marks, "standby: taken"); i >= 0 && !slices.Contains(marks[:i], "standby: start B") {
 		t.Fatalf("a standby made for the earlier link was used: %v", marks)
