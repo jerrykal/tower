@@ -15,8 +15,8 @@ import (
 func TestLD02(t *testing.T) {
 	w := NewWorld(t, "ld02")
 	a := w.Host("A", []string{"alpha", "apple"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
 		w.Shape(n, func(l *Link) { l.DelayMs = 200 })
 	}

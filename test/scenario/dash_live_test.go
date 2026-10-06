@@ -130,8 +130,8 @@ func TestLD01(t *testing.T) {
 		t.Run(fmt.Sprint(rtt), func(t *testing.T) {
 			w := NewWorld(t, fmt.Sprintf("ld01-%d", rtt))
 			a := w.Host("A", []string{"alpha", "apple"})
-			b := w.Host("B", []string{"bravo"})
-			c := w.Host("C", []string{"charlie"})
+			b := w.Host("B", []string{"bravo"}, SSHHost())
+			c := w.Host("C", []string{"charlie"}, SSHHost())
 			for _, n := range []string{"B", "C"} {
 				w.Shape(n, func(l *Link) { l.DelayMs = rtt / 2 })
 			}
@@ -311,8 +311,8 @@ func TestLD01(t *testing.T) {
 func TestLD03(t *testing.T) {
 	w := NewWorld(t, "ld03")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"})
-	c := w.Host("C", []string{"charlie", "spam1", "spam2", "spam3", "spam4", "spam5"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie", "spam1", "spam2", "spam3", "spam4", "spam5"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
 		w.Shape(n, func(l *Link) { l.DelayMs = 75 })
 	}

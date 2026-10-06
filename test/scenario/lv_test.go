@@ -37,8 +37,8 @@ func newLV(t *testing.T, id string, rtt int) *lvWorld {
 	w := NewWorld(t, id)
 	x := &lvWorld{w: w}
 	x.a = w.Host("A", []string{"alpha"})
-	x.b = w.Host("B", []string{"b-one", "b-two"})
-	x.c = w.Host("C", []string{"c-one", "c-two"})
+	x.b = w.Host("B", []string{"b-one", "b-two"}, SSHHost())
+	x.c = w.Host("C", []string{"c-one", "c-two"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
 		w.Shape(n, func(l *Link) { l.DelayMs = rtt / 2 })
 	}
