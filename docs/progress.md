@@ -372,6 +372,18 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         lost. The relay keeps up; the runner is slower (plain 21–59
         MB/s) and too noisy for the floor, and where 100 MB/s is out
         of reach the wide-character cat's 0.8 of plain leaves no room.
+        Over real ssh (the sshd backend) on the same Mac the
+        wide-character cat misses it 3 of 3: 96–97 MB/s relayed, 111–114
+        plain; the build log passes (0.93–0.95 of plain), so its lag on
+        the runner (0.44–0.81 over real ssh) was the runner's. A spike
+        there (ssh from a local sshd, 200 MiB of wide characters, five
+        rounds) had ssh given the terminal at 139–142 MB/s and the relay
+        at 109–117, reading a full 32 KiB nearly every time: the relay
+        is the slower stage, not short of input. A socket pair of up to
+        1 MiB for ssh's stdout gained 3%; reading on until the pipe is
+        empty, or reading before polling, nothing. Left there: the
+        relay's 0.8 of plain behind a fast ssh, real or fake, is not
+        pinned down further.
       - The last bytes of a burst are sometimes lost when the command
         writing it exits: 2–10 of LS08's 22.8 MB build log, on both
         backends, plain (no tower in the way) and relayed. Where is
