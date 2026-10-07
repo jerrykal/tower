@@ -345,9 +345,9 @@ func TestRefresherSessionsAndDirs(t *testing.T) {
 	os.WriteFile(filepath.Join(wt, "b.txt"), []byte("b"), 0o644)
 	w.r.Look()
 	w.eventually("the worktree dirty", func() bool { g := w.r.Git(wt); return g != nil && g.Dirty })
-	if w.calls.Load() == calls {
-		t.Fatal("no OnChange for the change")
-	}
+	// The change's own OnChange can wait for the refresh's end: one told
+	// within notifyEvery before it holds it back.
+	w.eventually("an OnChange for the change", func() bool { return w.calls.Load() > calls })
 	st := w.r.Stats()
 	if st.Roots != 3 || st.Dirs != 6 || st.Zoxide != w.zox {
 		t.Fatalf("stats %+v", st)
