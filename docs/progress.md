@@ -438,6 +438,40 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       Then four rounds of `mise run test` on each of GitHub's Linux and
       macOS runners passed, and both shards on Linux (fake ssh): 8/8 in
       315s, the rest in 366s.
+
+      A review of the branch against `main` before CI found 15 issues,
+      all fixed (2a07d19 to 074bcb1; decisions 126–132):
+      - tower: a refused hand-off's note shown as text (a `#(…)` from a
+        host's ssh error ran); a request waiting for a link's first pong
+        ends with the link, and before its deadline; switches joining a
+        wake share its deadline, and a detach lost to another asker's
+        keeps the frame hold (two quick prefix L could flash); the home
+        says which side ends a stored hand-off's client, so a new
+        `tower last` leaves an older towerd's to its loop; `moveOn`
+        passes over a session where the loop's old client stays on a
+        towerd that cannot detach; a link's generation is the time it
+        came up, so an attach is given up after a restart or an edit of
+        the host's entry.
+      - the harness: a container run sweeps only its owner's dead runs
+        (another user's live run, or a devcontainer's, was taken down)
+        and starts its own image tag; ssh config and env files replaced
+        whole; no signal to pid 0 (a towerd gone made `kill(0)` take the
+        run down); pf pipes in a block of the run's; S05's servers on
+        the home's machine again; the whole of a recovery bounded again
+        (decision 132); the stall check held to the rate before the
+        stall; LS06 as above.
+
+      Prefix L measured on the fake, 20 hand-offs a run, key to the
+      home seeing the new client: median 10ms on `main` and on the
+      branch, four runs each. With the eager wake off, where `tower
+      last` ends the client itself, 15ms; `main` did not hand off there.
+
+      Shards on Linux at the end, `mise run test` passing:
+
+      | | fake ssh | containers |
+      | --- | --- | --- |
+      | `^TestLC` | 8/8 in 313s | 8/8 in 373s |
+      | the rest | passed in 364s | passed in 408s |
 - [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
       update [design/harness.md](design/harness.md),
       [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
