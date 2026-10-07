@@ -341,8 +341,10 @@ followed the stable period; at once after a give-up or a network change
 the monotonic clock by more than 2s, checked every second; or the `wake`
 call) closes every stream and exits every master in parallel. The link
 generation grows with each connect that came up: the time in ms, past the
-last, so a new link to the host (its entry changed, or the home
-restarted) has a later generation than any old one's. Interface addresses are compared
+last this towerd gave any link, so a new link to the host (its entry
+changed) has a later generation than any old one's whatever the clock
+did, and one after a home restart too unless the clock stepped back
+over the restart. Interface addresses are compared
 every second (`netchange` simulates a change).
 
 **Merged view**: the local host (status `local`) and every link in

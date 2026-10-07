@@ -463,16 +463,26 @@ func TestRouteHearsALinkDropBeforeItsFirstPong(t *testing.T) {
 	}
 }
 
-// A link's generation grows with each connect, and a new link's (the
-// host's entry changed, or the home restarted) is past an old one's.
+// A link's generation grows with each connect, past the last this
+// towerd gave any link (the host's entry changed) whatever the clock
+// does, and a restarted home's is past an old one's.
 func TestLinkGenGrows(t *testing.T) {
-	a := nextLinkGen(0)
-	if b := nextLinkGen(a); b <= a {
+	now := int(time.Now().UnixMilli())
+	a := nextLinkGen(0, now)
+	if b := nextLinkGen(a, now); b <= a {
 		t.Fatalf("next %d after %d", b, a)
 	}
-	time.Sleep(2 * time.Millisecond)
-	if c := nextLinkGen(0); c <= a {
-		t.Fatalf("a new link's %d is not past an earlier one's %d", c, a)
+	if b := nextLinkGen(a, now-60_000); b <= a {
+		t.Fatalf("next %d after %d, the clock a minute back", b, a)
+	}
+	if c := nextLinkGen(0, now+2); c <= a {
+		t.Fatalf("a restarted home's %d is not past an earlier one's %d", c, a)
+	}
+	// Another link to the host, the clock stepped back between them.
+	d := &Daemon{}
+	first := d.newLinkGen(now)
+	if second := d.newLinkGen(now - 60_000); second <= first {
+		t.Fatalf("the second link's %d is not past the first's %d", second, first)
 	}
 }
 

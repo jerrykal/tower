@@ -97,6 +97,7 @@ type Daemon struct {
 	lastCall  time.Time
 	calls     int
 	tmuxVer   string
+	linkGen   int // the last generation given a link (nextLinkGen)
 	bindState string
 	lookAt    time.Time // the last look (dirs.go)
 }

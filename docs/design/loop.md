@@ -105,8 +105,8 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
   the attach was prepared on (`Prepared.Link`), or a later one, counts:
   the loop's view can still show the earlier link connecting when a
   prepare that waited for the link answers. A link's generation is the
-  time it came up (ms, past the last), so a later link's is greater even
-  after the home restarts or the host's entry changes.
+  time it came up (ms, past the last its towerd gave), so a later link's
+  is greater even after the home restarts or the host's entry changes.
 - **The old client gone**, the frame is held again at once, then a remote
   client hung up or lost (255) gets the terminal restore its own never
   wrote (`relay.ClientRestore`).
