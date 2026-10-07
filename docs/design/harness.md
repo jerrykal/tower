@@ -262,7 +262,10 @@ codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
   towerd sockets are where the harness looks; only ssh crosses the
   network. `h.Tmux` starts a container host's server in the container
   (any command with `-f`, through the agent, by tmux's path there) and
-  reaches it through its socket otherwise; `h.Run` runs any of the host's
+  reaches it through its socket otherwise; `h.TmuxServer`, for a client
+  the test keeps open, runs the container's own tmux (`docker exec -i`),
+  as a control client of another version may not attach (3.7c to 3.2a);
+  `h.Run` runs any of the host's
   commands there (towerd started detached), and a terminal on a
   container host is a `docker exec -it` as `tt`, `LANG` and `LC_*`
   passed.

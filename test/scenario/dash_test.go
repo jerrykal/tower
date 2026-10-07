@@ -225,35 +225,42 @@ func TestS19(t *testing.T) {
 	stdSetup(w, a, b, c)
 	names := []string{"a b", "x:y", "p.q", "h#sh", "#{pid}", "q'uote", `dq"x`, "ünï😀", "-lead", "=eq",
 		`back\slash`, "$HOME", "~tilde", "semi;colon", "brace{}", "%end 1 1"}
-	// stored is a name as tmux keeps it: it escapes a backslash in a
-	// session name (C style), so `back\slash` is listed `back\\slash`.
-	stored := func(n string) string { return strings.ReplaceAll(n, `\`, `\\`) }
+	// kept is each name as B's tmux keeps it, which the new session's ack
+	// says: tmux escapes a backslash (C style), so `back\slash` is kept
+	// `back\\slash`, and 3.2a and 3.3a make : and . into _ (and 3.2a $
+	// into \$). Each character apart, so a rename's ² is kept after it.
+	kept := map[string]string{}
 	bid := w.Link(a, "B").ID
 	for _, n := range names {
-		if ack, _ := b.Act("", proto.Request{Op: proto.OpNew, Target: proto.Ref{Host: bid}, Name: n}, 0); !ack.OK {
+		ack, _ := b.Act("", proto.Request{Op: proto.OpNew, Target: proto.Ref{Host: bid}, Name: n}, 0)
+		if !ack.OK {
 			t.Fatalf("new %q: %s", n, ack.Err)
+		}
+		kept[n] = ack.Ref.Label
+		if n == `back\slash` && kept[n] != `back\\slash` || n == "ünï😀" && kept[n] != n {
+			t.Fatalf("new %q: kept as %q", n, kept[n])
 		}
 	}
 	for _, n := range names {
-		if !b.hasSession(stored(n)) {
+		if !b.hasSession(kept[n]) {
 			t.Fatalf("B lacks %q: %q", n, b.Sessions())
 		}
 	}
 	time.Sleep(600 * time.Millisecond)
 	cv := c.View("")
 	for _, n := range names {
-		if !HasSession(&cv.View, "B", stored(n)) {
+		if !HasSession(&cv.View, "B", kept[n]) {
 			t.Fatalf("C's view lacks B:%q", n)
 		}
 	}
 	for _, n := range names {
-		ack, _ := b.Act("", proto.Request{Op: proto.OpRename, Target: proto.Ref{Host: bid, Session: b.SessionID(stored(n))}, Name: n + "²"}, 0)
+		ack, _ := b.Act("", proto.Request{Op: proto.OpRename, Target: proto.Ref{Host: bid, Session: b.SessionID(kept[n])}, Name: n + "²"}, 0)
 		if !ack.OK {
 			t.Fatalf("rename %q: %s", n, ack.Err)
 		}
 	}
 	for _, n := range names {
-		if !b.hasSession(stored(n) + "²") {
+		if !b.hasSession(kept[n] + "²") {
 			t.Fatalf("B lacks %q: %q", n+"²", b.Sessions())
 		}
 	}

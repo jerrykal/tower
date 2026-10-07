@@ -209,7 +209,9 @@ func TestLH02(t *testing.T) {
 var lhTold = regexp.MustCompile(`(?i)(Z|zed)[^\n]*(not responding|stalled|unreachable|lost|down|did not answer|timed out)`)
 
 // bottomLines are the last n non-empty lines of a screen: the status
-// lines, the popup's above tmux's own.
+// lines, the popup's above tmux's own. The popup's footer is the last but
+// one where the popup covers tmux's status line (3.7c), the last but two
+// where tmux 3.2a keeps the status line below the popup's border.
 func bottomLines(screen string, n int) string {
 	var out []string
 	lines := strings.Split(screen, "\n")
@@ -254,7 +256,7 @@ func TestLH03(t *testing.T) {
 		pressed := time.Now()
 		if _, ok := x.term.WaitOK(`(?s).`, 0); ok {
 			told := time.Now().Add(30 * time.Second)
-			for !lhTold.MatchString(bottomLines(x.term.Screen(), 2)) {
+			for !lhTold.MatchString(bottomLines(x.term.Screen(), 3)) {
 				if time.Now().After(told) {
 					t.Fatalf("not told that Z does not answer (⏎ %v after the stall); screen:\n%s", after, x.term.Screen())
 				}

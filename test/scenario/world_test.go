@@ -281,6 +281,16 @@ func (h *Host) getenv(k string) string {
 // TmuxArgs select the host's server.
 func (h *Host) TmuxArgs() []string { return []string{"-L", h.Sock} }
 
+// TmuxServer is the host's server for a client the test keeps open: a
+// container host's is reached with the container's tmux, as a control
+// client of another version may not attach to it (3.7c to 3.2a).
+func (h *Host) TmuxServer() tmux.Server {
+	if h.ctr != nil {
+		return tmux.Server{Bin: h.ctrClient(), Args: h.TmuxArgs()}
+	}
+	return tmux.Server{Bin: tmux.Bin(), Args: h.TmuxArgs()}
+}
+
 // Tmux runs a tmux command on the host's server, through its socket: a
 // container host's too, which the container shares.
 func (h *Host) Tmux(args ...string) (string, error) { return h.tmux(false, args...) }

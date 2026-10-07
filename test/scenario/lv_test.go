@@ -140,10 +140,10 @@ func TestLV01(t *testing.T) {
 			}
 			x.w.LoopTo("t", x.a, nil, "c-one", "^C:c-one")
 			for range reps {
-				ids := c.ClientIDs("c-one")
-				if len(ids) == 0 {
-					t.Fatal("no client on c-one")
-				}
+				// The loop's place can reach the home's view before C
+				// lists the client the loop attached.
+				var ids []string
+				x.w.Eventually(5*time.Second, "a client on c-one", func() bool { ids = c.ClientIDs("c-one"); return len(ids) > 0 })
 				name := ClientName(ids[0])
 				add("switch-client", x.race(func() { c.MustTmux("switch-client", "-c", name, "-t", "=c-two") }, func(v *proto.View) bool { return loopAt(v, "C", "c-two") }))
 				c.MustTmux("switch-client", "-c", name, "-t", "=c-one")

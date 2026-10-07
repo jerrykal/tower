@@ -196,7 +196,7 @@ func TestS22(t *testing.T) {
 	}
 
 	// 400 concurrent commands on a control client, each matched.
-	raw, err := tmux.Attach(tmux.Server{Bin: tmux.Bin(), Args: b.TmuxArgs()}, "backup")
+	raw, err := tmux.Attach(b.TmuxServer(), "backup")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestS22(t *testing.T) {
 			var r tmux.Reply
 			var err error
 			if i%7 == 0 {
-				r, err = raw.DoTimeout(fmt.Sprintf("show -gv @missing-%d", i), 10*time.Second)
+				r, err = raw.DoTimeout(fmt.Sprintf("has-session -t =missing-%d", i), 10*time.Second)
 				if err != nil || !r.Err || !strings.Contains(r.Text(), fmt.Sprintf("missing-%d", i)) {
 					mu.Lock()
 					bad++

@@ -690,6 +690,26 @@ func (h *Host) ctrRun(env map[string]string, d time.Duration, argv ...string) (s
 	return rep.Out, err
 }
 
+// ctrClient writes, once, a script that runs the container's tmux in h's
+// container as tt, with h's environment and stdin and stdout passed
+// through, and returns its path.
+func (h *Host) ctrClient() string {
+	p := filepath.Join(h.w.Dir, "tmux-"+h.Name)
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	env := h.EnvMap()
+	s := "#!/bin/sh\nexec docker exec -i -u tt"
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		s += " -e " + transport.ShellQuote(k+"="+env[k])
+	}
+	s += " " + h.ctr.ctr + " " + ctrTmux + " \"$@\"\n"
+	if err := os.WriteFile(p, []byte(s), 0o755); err != nil {
+		h.w.T.Fatal(err)
+	}
+	return p
+}
+
 // ctrStart starts argv in h's container as tt with environment env, in a
 // session of its own, and returns.
 func (h *Host) ctrStart(env map[string]string, argv ...string) error {
