@@ -1,10 +1,12 @@
 name: test
 on:
   push:
-    branches: [main]
+    branches-ignore: ["chore/**"]
   pull_request:
 jobs:
   test:
+    # A pull request from a branch of this repository has its push's run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]

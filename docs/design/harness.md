@@ -363,9 +363,29 @@ Login nor an account: the harness runs every sshd as the test user.
   writes on, as `cat` and Go's own writes do. LS08's reader gives up
   after 10s without a byte, so bytes lost on the way fail the run
   instead of hanging it.
+- A macOS runner is too slow for LS08's throughput floor, on either
+  backend. With `TT_LS08_REPORT=<file>` (the workflow sets it there)
+  each rate is measured three times, the best of each compared, and a
+  shortfall written to the file rather than failed; bytes lost or extra
+  fail as ever.
 - Teardown stops the world's sshds first, killing their connections'
   processes (found under the sshd), then takes the world's rules and
   pipes off lo0.
+
+## CI
+
+`.github/workflows/scenarios.yml` runs a shard a job through
+`scripts/ci-scenarios.sh`, as `mise run scenarios` does but keeping the
+run's directories, which a failed job uploads (`worlds.tgz`, three
+days). A scenario that failed is run again alone and its result made a
+warning; the job stays red. A push that changes code, to any branch but
+`chore/…`, runs the container shards at tmux 3.2a and 3.7c on
+`ubuntu-24.04`, after loading the kernel modules the containers shape
+with (`ifb`, `sch_netem`, `sch_ingress`, `cls_matchall`, `act_mirred`);
+the home's tmux is the runner's. By hand (`workflow_dispatch`), `full`
+adds 3.3a, 3.4, 3.5a and 3.6b, the fake ssh on Linux, and the fake ssh
+and sshd on `macos-15`; `macos-sshd` runs that alone. A pull request
+from a branch here has its push's run; one from a fork runs its own.
 
 ## Teardown
 

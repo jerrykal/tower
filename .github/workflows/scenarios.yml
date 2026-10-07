@@ -1,0 +1,99 @@
+name: scenarios
+# A push that changes code, to any branch but chore/…, runs the Linux
+# container shards at the oldest and newest tmux. The full set runs by
+# hand only. No schedule, no retries: a scenario that failed is run again
+# alone for a note, and the job stays red.
+on:
+  push:
+    branches-ignore: ["chore/**"]
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
+  pull_request:
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
+  workflow_dispatch:
+    inputs:
+      set:
+        description: "full: containers at every tmux from 3.2a to 3.7c, the fake ssh on Linux and macOS, macOS sshd; push: what a push runs; macos-sshd: macOS sshd alone"
+        type: choice
+        options: [full, push, macos-sshd]
+        default: full
+concurrency:
+  group: scenarios-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+permissions:
+  contents: read
+jobs:
+  linux:
+    # A pull request from a branch of this repository has its push's run.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+      && inputs.set != 'macos-sshd'
+    strategy:
+      fail-fast: false
+      matrix:
+        hosts: [container]
+        tmux: ${{ fromJSON(inputs.set == 'full' && '["3.2a","3.3a","3.4","3.5a","3.6b","3.7c"]' || '["3.2a","3.7c"]') }}
+        shard: [lc, rest]
+        include: ${{ fromJSON(inputs.set == 'full' && '[{"hosts":"fake","shard":"lc"},{"hosts":"fake","shard":"rest"}]' || '[]') }}
+    name: linux ${{ matrix.hosts }} ${{ matrix.tmux }} ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - name: tmux, and the kernel's shaping for the containers
+        env:
+          HOSTS: ${{ matrix.hosts }}
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq tmux
+          tmux -V && nproc
+          if [ "$HOSTS" = container ]; then
+            mods=(ifb sch_netem sch_ingress cls_matchall act_mirred)
+            sudo modprobe -a "${mods[@]}" || { sudo apt-get install -yq "linux-modules-extra-$(uname -r)" && sudo modprobe -a "${mods[@]}"; }
+            docker version --format 'docker {{.Server.Version}}' && docker compose version
+          fi
+      - name: scenarios
+        env:
+          HOSTS: ${{ matrix.hosts }}
+          SHARD: ${{ matrix.shard }}
+          TT_TMUX_VERSION: ${{ matrix.tmux }}
+        run: scripts/ci-scenarios.sh
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: worlds-linux-${{ matrix.hosts }}-${{ matrix.tmux }}-${{ matrix.shard }}
+          path: |
+            worlds.tgz
+            scenarios.log
+            rerun-*.log
+          retention-days: 3
+  macos:
+    if: inputs.set == 'full' || inputs.set == 'macos-sshd'
+    strategy:
+      fail-fast: false
+      matrix:
+        hosts: ${{ fromJSON(inputs.set == 'macos-sshd' && '["sshd"]' || '["sshd","fake"]') }}
+        shard: [lc, rest]
+    name: macos ${{ matrix.hosts }} ${{ matrix.shard }}
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - run: brew install tmux && tmux -V && sysctl -n hw.ncpu hw.memsize
+      - name: scenarios
+        env:
+          HOSTS: ${{ matrix.hosts }}
+          SHARD: ${{ matrix.shard }}
+          # A macOS runner is too slow for LS08's throughput floor
+          # (decision 135): reported, not failed.
+          TT_LS08_REPORT: ${{ runner.temp }}/ls08-report.txt
+        run: scripts/ci-scenarios.sh
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: worlds-macos-${{ matrix.hosts }}-${{ matrix.shard }}
+          path: |
+            worlds.tgz
+            scenarios.log
+            rerun-*.log
+          retention-days: 3

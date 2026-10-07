@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -198,17 +199,44 @@ func ls08Pump(t *testing.T, w *World, home *Host, remote string, count int64, re
 	return r
 }
 
+// ls08Report is TT_LS08_REPORT, a file: on a shared runner too slow for
+// LS08's floor (a macOS runner, decision 135) each rate is measured three
+// times, the best of each compared, and a shortfall written there rather
+// than failed. Bytes lost or extra fail all the same.
+var ls08Report = os.Getenv("TT_LS08_REPORT")
+
 // ls08Compare runs remote plain, then relayed: the relay keeps up at 100
 // MB/s, or 0.9 of the plain rate.
 func ls08Compare(t *testing.T, w *World, home *Host, name, remote string, count int64) {
 	t.Helper()
 	p := ls08Pump(t, w, home, remote, count, false)
 	r := ls08Pump(t, w, home, remote, count, true)
+	if ls08Report != "" {
+		for range 2 {
+			if q := ls08Pump(t, w, home, remote, count, false); q.elapsed < p.elapsed {
+				p = q
+			}
+			if q := ls08Pump(t, w, home, remote, count, true); q.elapsed < r.elapsed {
+				r = q
+			}
+		}
+	}
 	t.Logf("%s, %d bytes: plain %.0f MB/s (ssh, host and reader %v CPU); relayed %.0f MB/s (relay %v CPU, %.0f%% of a core; ssh, host and reader %v)",
 		name, count, p.mbps(), p.othersCPU.Round(time.Millisecond), r.mbps(), r.relayCPU.Round(time.Millisecond),
 		100*r.relayCPU.Seconds()/r.elapsed.Seconds(), r.othersCPU.Round(time.Millisecond))
 	if r.mbps() < 100 && r.mbps() < 0.9*p.mbps() {
-		t.Errorf("%s relayed at %.0f MB/s: under 100 MB/s and under 0.9 × plain %.0f MB/s", name, r.mbps(), p.mbps())
+		msg := fmt.Sprintf("%s relayed at %.0f MB/s: under 100 MB/s and under 0.9 × plain %.0f MB/s", name, r.mbps(), p.mbps())
+		if ls08Report == "" {
+			t.Error(msg)
+			return
+		}
+		t.Log("reported, not failed: " + msg)
+		f, err := os.OpenFile(ls08Report, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		fmt.Fprintf(f, "%s (best of 3)\n", msg)
 	}
 }
 
