@@ -392,7 +392,7 @@ func TestLastFollowsTheClientThatMoved(t *testing.T) {
 func TestMoveOnPassesOverTheLoopsOwnOldClient(t *testing.T) {
 	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{}), env: &config.Env{StateDir: t.TempDir()}}
 	d.dirs = dirs.New(dirs.Options{Home: t.TempDir()})
-	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, savedAt: time.Now()}
+	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, savedAt: time.Now(), reaping: map[string]*reapState{}}
 	d.home = h
 	d.snap = &snapshot{At: time.Now(), Sessions: []proto.Session{
 		{ID: "$1", Name: "prev", Attached: 1, Ago: 5000},
@@ -417,6 +417,14 @@ func TestMoveOnPassesOverTheLoopsOwnOldClient(t *testing.T) {
 		if !ok || next.Session != tc.want {
 			t.Fatalf("%s: moved on to %+v (%v), want %s", tc.name, next, ok, tc.want)
 		}
+	}
+	// Its own older attach on a host whose towerd cannot detach it (the
+	// reap was told "unknown request"): it stays, so the session is taken.
+	old := proto.Client{Loop: "L", Gen: 2, Home: "home0001", Session: "$1", Pid: 7, Name: "/dev/pts/7"}
+	h.clientsB["home0001"] = []proto.Client{old}
+	h.reaping[reapKey("home0001", old)] = &reapState{next: time.Now().Add(reapOldPeer)}
+	if next, ok := h.moveOn("L", ended); !ok || next.Session != "$2" {
+		t.Fatalf("a client the reap cannot detach: moved on to %+v (%v), want $2", next, ok)
 	}
 }
 

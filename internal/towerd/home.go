@@ -802,13 +802,21 @@ func (h *homeRole) sessionGone(ctx context.Context, r proto.Ref) (bool, error) {
 func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
-	v := h.buildView(time.Now())
+	now := time.Now()
+	v := h.buildView(now)
 	over := map[[2]string]int{}
 	for hostID, cs := range h.clientsB {
 		for _, c := range cs {
-			if l := h.loops[c.Loop]; c.Home == h.d.id && l != nil && c.Gen != l.gen {
-				over[[2]string{hostID, c.Session}]++
+			l := h.loops[c.Loop]
+			if c.Home != h.d.id || l == nil || c.Gen == l.gen {
+				continue
 			}
+			// The reap detaches it, unless its host's towerd answered
+			// that it cannot (asked again only after reapOldPeer).
+			if r := h.reaping[reapKey(hostID, c)]; r != nil && r.next.Sub(now) > reapRetry {
+				continue
+			}
+			over[[2]string{hostID, c.Session}]++
 		}
 	}
 	taken := func(hostID string, s proto.Session) bool { return s.Attached > over[[2]string{hostID, s.ID}] }

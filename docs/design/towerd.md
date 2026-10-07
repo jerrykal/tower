@@ -391,7 +391,8 @@ type loopRec struct {
   the previous session if nobody is on it, else the most recently used
   session nobody is on, on any reachable host ("tower: X ended; now on
   Y"), else exit. A client of this home's whose attach is over (an older
-  generation than its loop's, not yet reaped) is nobody.
+  generation than its loop's, not yet reaped) is nobody, unless its
+  host's towerd told the reap it cannot detach (it then stays).
 - `standby`: offers for up, unstalled hosts up for 1s, standby allowed,
   not the loop's current host; key `link gen | towerd id | version | tmux
   args | tower path`.
