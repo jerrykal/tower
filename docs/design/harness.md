@@ -325,7 +325,9 @@ Login nor an account: the harness runs every sshd as the test user.
   of its pid's), and a pipe given back is used again. `TestMain` takes a
   reference on pf (`pfctl -E`), flushes the anchors of earlier runs whose
   process is gone (another user's stay), checks a 50ms pipe each way
-  gives a 90–200ms round trip, and at
+  gives a 90–200ms round trip (once on a fresh runner its connection got
+  no answer in 5s: a failed check prints pf's and dummynet's state and
+  runs again, and CI makes that a warning), and at
   the end flushes the anchor, deletes its pipes and gives the reference
   back (the empty anchor stays listed). All through `sudo -n`, which
   GitHub's macOS runners have. Elsewhere (Linux, for working on the

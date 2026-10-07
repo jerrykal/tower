@@ -3,8 +3,8 @@
 # SHARD is lc or rest, HOSTS container or sshd. The run's
 # directories are kept for the workflow's upload; each scenario that
 # failed is run again alone, for a note, and the shard's own exit status
-# is the step's. LS08's shortfalls reported (TT_LS08_REPORT) become
-# warnings.
+# is the step's. LS08's shortfalls reported (TT_LS08_REPORT), and a
+# dummynet check that failed once at setup, become warnings.
 set -uo pipefail
 export TOWER_HOSTS=$HOSTS
 if [ "$SHARD" = lc ]; then sel=(-run '^TestLC'); else sel=(-skip '^TestLC'); fi
@@ -29,6 +29,9 @@ for t in $(grep -E '^--- FAIL: Test' scenarios.log | awk '{print $3}' | sort -u)
 	cat "rerun-$t.log"
 	echo "::endgroup::"
 done
+if grep -q '^scenario: the dummynet check failed once' scenarios.log; then
+	echo "::warning title=dummynet check::failed once at setup, then passed (pf and dummynet's state in the full log)"
+fi
 if [ -s "${TT_LS08_REPORT:-}" ]; then
 	while IFS= read -r l; do echo "::warning title=LS08, reported::$l"; done <"$TT_LS08_REPORT"
 fi

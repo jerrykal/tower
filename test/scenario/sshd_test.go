@@ -577,10 +577,27 @@ func pfStart() (*pfNet, error) {
 		return nil, fmt.Errorf("pfctl -E: %v: %s", err, out)
 	}
 	if err := p.check(); err != nil {
-		p.close()
-		return nil, err
+		// Once on a fresh macOS runner the check's connection got no
+		// answer in 5s: say what pf and dummynet had, and check again.
+		fmt.Fprintf(os.Stderr, "scenario: the dummynet check failed once: %v\n%s", err, p.diag())
+		if err := p.check(); err != nil {
+			d := p.diag()
+			p.close()
+			return nil, fmt.Errorf("%v\n%s", err, d)
+		}
 	}
 	return p, nil
+}
+
+// diag is what pf and dummynet have: the run's anchor, pf's state, the
+// pipes.
+func (p *pfNet) diag() string {
+	var b strings.Builder
+	for _, args := range [][]string{{"pfctl", "-a", p.anchor, "-s", "all"}, {"pfctl", "-s", "info"}, {"dnctl", "pipe", "show"}} {
+		out, _ := exec.Command("sudo", append([]string{"-n"}, args...)...).CombinedOutput()
+		fmt.Fprintf(&b, "$ %s\n%s", strings.Join(args, " "), out)
+	}
+	return b.String()
 }
 
 // sweep flushes the anchors of earlier runs that ended without their
