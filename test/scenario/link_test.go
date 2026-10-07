@@ -37,8 +37,15 @@ func (w *World) SSH(alias string, target *Host) {
 	if w.links == nil {
 		w.links = map[string]*linkState{}
 	}
-	if old := w.links[alias]; old != nil && old.sshd != nil {
-		old.sshd.stop()
+	if old := w.links[alias]; old != nil {
+		// The name's own faults off first: a frozen port, a dead one's
+		// rules, a stall, a Down, would hold for the new registration.
+		prev := *old
+		old.freeze, old.stall, old.down = false, false, ""
+		w.apply(alias, prev)
+		if old.sshd != nil {
+			old.sshd.stop()
+		}
 	}
 	w.links[alias] = &linkState{target: target}
 	if target.ctr != nil {

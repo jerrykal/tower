@@ -30,8 +30,14 @@ func (h *Host) TowerdPid() int {
 	return h.HostPid(n)
 }
 
-// Alive reports whether pid runs.
-func Alive(pid int) bool { return pid > 0 && syscall.Kill(pid, 0) == nil }
+// Alive reports whether pid runs: one of another user's (EPERM) does.
+func Alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}
 
 // LiveHomes are the homes connected to the host's towerd.
 func (h *Host) LiveHomes() []proto.HomeStatus {

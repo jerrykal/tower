@@ -589,7 +589,7 @@ func (p *pfNet) sweep() {
 	out, _ := exec.Command("sudo", "-n", "pfctl", "-a", "com.apple", "-s", "Anchors").Output()
 	for _, a := range strings.Fields(string(out)) {
 		pid, err := strconv.Atoi(strings.TrimPrefix(a, "com.apple/tt-"))
-		if err == nil && pid > 0 && strings.HasPrefix(a, "com.apple/tt-") && !running(pid) {
+		if err == nil && pid > 0 && strings.HasPrefix(a, "com.apple/tt-") && !Alive(pid) {
 			exec.Command("sudo", "-n", "pfctl", "-a", a, "-F", "all").Run()
 		}
 	}

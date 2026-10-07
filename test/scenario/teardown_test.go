@@ -52,10 +52,10 @@ func (w *World) teardown() {
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for _, pid := range pids {
-		for alive(pid) && time.Now().Before(deadline) {
+		for Alive(pid) && time.Now().Before(deadline) {
 			time.Sleep(20 * time.Millisecond)
 		}
-		if alive(pid) {
+		if Alive(pid) {
 			syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}
@@ -105,8 +105,6 @@ func (w *World) teardown() {
 		os.RemoveAll(w.Dir)
 	}
 }
-
-func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
 // homeOf is the container host whose TOWER_HOME holds path, or nil.
 func (w *World) homeOf(path string) *Host {

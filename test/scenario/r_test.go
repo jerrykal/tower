@@ -141,7 +141,7 @@ func (w *World) stopHomes() {
 			fmt.Sscan(string(b), &pid)
 			if pid > 1 {
 				syscall.Kill(pid, syscall.SIGTERM)
-				for i := 0; i < 100 && alive(pid); i++ {
+				for i := 0; i < 100 && Alive(pid); i++ {
 					time.Sleep(50 * time.Millisecond)
 				}
 			}

@@ -16,9 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/transport"
 )
 
@@ -219,13 +219,6 @@ func runOwner() string {
 	return fmt.Sprintf("%s.%d.%s", host, os.Getuid(), ns)
 }
 
-// running reports whether pid is a process: one of another user's
-// (EPERM) is.
-func running(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
-}
-
 // sweep takes down the projects, and untags the images, of the owner's
 // earlier runs that ended without their teardown (a go test timeout):
 // those whose run's process is gone.
@@ -236,7 +229,7 @@ func (b *ctrBackend) sweep() {
 			return false
 		}
 		pid, err := strconv.Atoi(m[1])
-		return err == nil && pid > 0 && !running(pid)
+		return err == nil && pid > 0 && !Alive(pid)
 	}
 	own := "label=tower-test.owner=" + b.owner
 	out, _ := b.docker("ps", "-a", "--filter", "label=tower-test", "--filter", own, "--format", `{{.Label "com.docker.compose.project"}}`)
@@ -467,21 +460,10 @@ func (w *World) ctrName(alias string, target *Host) {
 		b.WriteString("export " + k + "=" + transport.ShellQuote(env[k]) + "\n")
 	}
 	p := filepath.Join(target.ctr.envDir(w), strconv.Itoa(port)+".env")
-	if err := writeAtomic(p, []byte(b.String()), 0o644); err != nil {
+	if err := config.WriteFile(p, []byte(b.String())); err != nil {
 		w.T.Fatal(err)
 	}
 	w.writeSSHConfig()
-}
-
-// writeAtomic replaces path with data in one step (a rename): an ssh or
-// tt-run reading it meanwhile sees the old file or the new, never a
-// partial one.
-func writeAtomic(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 // sshConfig is the world's ssh config: each ssh name to its container
@@ -538,7 +520,7 @@ func (w *World) writeSSHConfig() {
 		fmt.Fprintf(&b, "  HostKeyAlias %s\n", alias)
 	}
 	// Live ssh calls read it while a Down or Heal rewrites it.
-	if err := writeAtomic(w.sshConfig(), []byte(b.String()), 0o644); err != nil {
+	if err := config.WriteFile(w.sshConfig(), []byte(b.String())); err != nil {
 		w.T.Fatal(err)
 	}
 }

@@ -236,7 +236,10 @@ scenario's remote hosts are `SSHHost()`; homes stay on this machine.
   `tower-test`, and `tower-test.owner`: the machine, user and pid
   namespace of the run. A sweep judges only its owner's runs, and
   another user's process (`EPERM`) runs: a daemon can serve other users,
-  and a devcontainer has pids of its own.
+  and a devcontainer has pids of its own. What runs from before the
+  owner label left (`tt-scenario-host:latest`, `tt-<pid>` projects)
+  carries `tower-test` with no owner, and no sweep takes it: remove it by
+  hand.
 - The run's `TOWER_TEST_DIR`, `TMUX_TMPDIR` and `TMPDIR` are bind-mounted
   at their own paths and the container user `tt` has the test user's
   uid, so a container host's `TOWER_HOME`, timing marks and tmux and
