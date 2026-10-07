@@ -365,13 +365,13 @@ Login nor an account: the harness runs every sshd as the test user.
 run's directories, which a failed job uploads (`worlds.tgz`, three
 days). A scenario that failed is run again alone and its result made a
 warning; the job stays red. A push that changes code, to any branch but
-`chore/…`, runs the container shards at tmux 3.2a and 3.7c on
-`ubuntu-24.04`, after loading the kernel modules the containers shape
-with (`ifb`, `sch_netem`, `sch_ingress`, `cls_matchall`, `act_mirred`);
-the home's tmux is the runner's. By hand (`workflow_dispatch`), `full`
-adds 3.3a, 3.4, 3.5a and 3.6b, and sshd on `macos-15`; `macos-sshd`
-runs that alone. A pull request
-from a branch here has its push's run; one from a fork runs its own.
+`chore/…`, runs the sshd shards on `macos-15`, and the container shards
+at tmux 3.2a and 3.7c on `ubuntu-24.04` after loading the kernel modules
+the containers shape with (`ifb`, `sch_netem`, `sch_ingress`,
+`cls_matchall`, `act_mirred`); the home's tmux is the runner's. By hand
+(`workflow_dispatch`), `full` adds 3.3a, 3.4, 3.5a and 3.6b;
+`macos-sshd` runs macOS alone. A pull request from a branch here has its
+push's run; one from a fork runs its own.
 
 ## Teardown
 

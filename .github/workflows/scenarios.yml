@@ -1,7 +1,7 @@
 name: scenarios
 # A push that changes code, to any branch but chore/…, runs the Linux
-# container shards at the oldest and newest tmux. The full set runs by
-# hand only. No schedule, no retries: a scenario that failed is run again
+# container shards at the oldest and newest tmux and the macOS sshd
+# shards. The full set runs by hand only. No schedule, no retries: a scenario that failed is run again
 # alone for a note, and the job stays red.
 on:
   push:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       set:
-        description: "full: containers at every tmux from 3.2a to 3.7c, and macOS sshd; push: what a push runs; macos-sshd: macOS sshd alone"
+        description: "full: containers at every tmux from 3.2a to 3.7c, and macOS sshd; push: what a push runs (containers at 3.2a and 3.7c, macOS sshd); macos-sshd: macOS sshd alone"
         type: choice
         options: [full, push, macos-sshd]
         default: full
@@ -64,7 +64,8 @@ jobs:
             rerun-*.log
           retention-days: 3
   macos:
-    if: inputs.set == 'full' || inputs.set == 'macos-sshd'
+    # A pull request from a branch of this repository has its push's run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:

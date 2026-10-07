@@ -406,7 +406,7 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       | --- | --- | --- |
       | `^TestLC` | 8/8 in 314s | 8/8 in 365s |
       | the rest | 84 passed, 4 skipped, 1 failed in 360s: LS03 (b), "a new standby to B" not within 15s of a network change, 3 of 3 alone | 85 passed, 4 skipped, 0 failed in 410s |
-- [ ] **Phase 6, CI.** On every push that changes code, to any branch
+- [x] **Phase 6, CI.** On every push that changes code, to any branch
       but `chore/…`, and on pull requests: the Linux container shards at
       the oldest and newest tmux (3.2a and 3.7c), a newer push cancelling
       the run still going; `test` on branch pushes too. The full set (the
@@ -578,6 +578,18 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       harness note for removal by hand. Both shards on Linux containers
       after: 8/8 in 360s, the rest 85 passed and 4 skipped in 414s;
       hand-offs a median 6ms and LC08 as before.
+
+      The branch's push ran green: `test` on Linux and macOS, and the
+      four container jobs. macOS sshd, five more rounds: 9 of 10, LH02
+      waiting 10s for its slow link's first connect (10.4s on the
+      runner); the slow-host family now slows its links once they are
+      up. The next five rounds lost one job to the sshd backend's
+      dummynet check before any scenario (no answer in 5s on a fresh
+      runner, never seen in some 30 jobs before): a failed check now
+      says what pf had and runs again, and CI makes that a warning.
+      Then five rounds in a row passed, 10 of 10, LS08 reported on 5
+      runners, the check passing at once on each. macOS sshd joined the
+      push set (decision 142).
 - [x] **Phase 7, remove the fake ssh.** `fakessh` and `fakenet` are
       gone, and every scenario runs on containers (Linux's default) or
       sshds (macOS's) (decision 138). [design/harness.md](design/harness.md),
