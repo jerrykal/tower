@@ -505,7 +505,9 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         own commands do, so a rename of `_tower`'s window in the hook
         reached no one either. The hook starts a tmux client that
         renames it (decision 133); bells reached the views in 4ms at no
-        delay and 139ms at 150ms round trips (LV01), as 3.7c's.
+        delay and 139ms at 150ms round trips (LV01), as 3.7c's. 3.3a
+        writes a control client no `%message` either, so this runs on
+        every tmux before 3.4 (133ms at 150ms round trips).
 
       And the tests: S19 holds to the names tmux kept (3.2a and 3.3a
       make `:` and `.` into `_`, 3.2a `$` into `\$`), from the new
@@ -522,6 +524,41 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       | --- | --- | --- | --- |
       | `^TestLC` | 8/8 in 313s | 8/8 in 367s | 8/8 in 367s |
       | the rest | passed in 365s | passed in 411s | passed in 411s |
+
+      On GitHub's runners the first full trial failed nearly every 3.6b
+      and 3.7c job: the runner's tmux 3.4 reaches no server of 3.6b or
+      newer, so every tmux command for a container host now runs that
+      host's own tmux, through its agent (0.3ms more a call). U02 at
+      3.2a lost a key typed before B listed its client; it waits for
+      the client. A slower Linux runner misses LS08's floor as a macOS
+      one does, so every runner reports it (decision 135). The second
+      trial passed all 18 jobs, Linux at six tmux versions and both
+      backends on macOS, LS08 reported on 6.
+
+      macOS sshd, five rounds of both shards by hand: the rest 5 of 5,
+      `^TestLC` 2 of 5.
+      - LC06, twice, failing alone too: with R50 seen stalled, the
+        picker lists R50's sessions after every reachable match, and the
+        query for s50 took R150's s150. The sessions are now s000, s050,
+        s150 and s400, which no query for another matches, even
+        scattered.
+      - LC05, once: R400's first connect, real ssh's 13 round trips of
+        about 1s, outran the 15s a link waited for the hello (13.8s on
+        Linux containers). The hello and first state now have 30s
+        (decision 137).
+
+      Five more rounds after both fixes: 8 of 10. Left open, so macOS
+      sshd stays out of the push set:
+      - LC05 again: the hello in, the first state was still held to
+        the old 15s (fixed since: the same 30s), but the connect itself
+        took 22s with that jitter on the runner (five dummynet pipes a
+        way, one picked a packet), past `start`'s 20s wait for the
+        links.
+      - S23, passing alone: B's request through the frozen home was
+        aborted when B saw the home stalled ("not responding" in
+        1.06s), before its deadline, so the home ran it on thawing;
+        alone it was answered "no answer in time", at the deadline. A
+        request the asker aborted at a stall can still run.
 - [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
       update [design/harness.md](design/harness.md),
       [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
