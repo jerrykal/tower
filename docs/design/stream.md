@@ -87,7 +87,11 @@ stall.
 deadline to the peer's clock, queues it, and waits for the ack, the
 context, the deadline, or the stream's end. A stall aborts every waiting
 request at once with `ErrStalled`. The receiver gets the deadline in its
-own clock and uses it as is.
+own clock and uses it as is. Once live, a request also carries when this
+end would stop waiting for it (`StartBy`: the stall a silence from now
+would mark, less the margin, in the peer's clock); the reader answers
+one it reads after that with an error and never passes it on, so a
+request aborted at a stall does not run when the peer thaws (S23).
 
 ## Concurrency
 

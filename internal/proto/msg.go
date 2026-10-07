@@ -94,6 +94,7 @@ type Request struct {
 	ID       string `json:"id"`
 	Op       string `json:"op"`
 	Deadline int64  `json:"dl,omitempty"` // unix ms in the holder's clock
+	StartBy  int64  `json:"sb,omitempty"` // unix ms in the holder's clock: run only if read by then
 	Target   Ref    `json:"target"`
 	Kind     string `json:"kind,omitempty"`
 	Name     string `json:"name,omitempty"`

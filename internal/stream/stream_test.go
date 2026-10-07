@@ -315,6 +315,80 @@ func TestStallAndRecovery(t *testing.T) {
 	}
 }
 
+// gate passes reads through until shut, then holds what it reads until
+// opened: a frozen process's end of the stream.
+type gate struct {
+	r    io.Reader
+	mu   sync.Mutex
+	open *sync.Cond
+	shut bool
+}
+
+func newGate(r io.Reader) *gate {
+	g := &gate{r: r}
+	g.open = sync.NewCond(&g.mu)
+	return g
+}
+
+func (g *gate) Read(p []byte) (int, error) {
+	n, err := g.r.Read(p)
+	g.mu.Lock()
+	for g.shut {
+		g.open.Wait()
+	}
+	g.mu.Unlock()
+	return n, err
+}
+
+func (g *gate) set(shut bool) {
+	g.mu.Lock()
+	g.shut = shut
+	g.mu.Unlock()
+	g.open.Broadcast()
+}
+
+// A request aborted as its peer stalled never runs there: the peer,
+// frozen with it unread, reads it on thawing and answers an error.
+func TestStalledRequestNeverRunsLater(t *testing.T) {
+	ar, bw := io.Pipe()
+	br, aw := io.Pipe()
+	g := newGate(br)
+	ran := make(chan string, 10)
+	var b *Conn
+	a := New(ar, aw, Options{Ping: 50 * time.Millisecond, Silence: 10 * time.Second})
+	b = New(g, bw, Options{OnMsg: func(m *proto.Msg) {
+		if m.T == proto.TExec {
+			ran <- m.Req.ID
+			go b.Answer(&proto.Ack{ID: m.Req.ID, OK: true})
+		}
+	}})
+	t.Cleanup(func() { g.set(false); a.Close(nil); b.Close(nil); ar.Close(); br.Close() })
+	a.Start()
+	b.Start()
+	a.Live()
+	time.Sleep(300 * time.Millisecond)
+
+	g.set(true) // b freezes
+	start := time.Now()
+	if _, err := a.Request(context.Background(), proto.TExec, &proto.Request{ID: "late", Op: proto.OpKill, Deadline: Now() + 10000}); err != ErrStalled {
+		t.Fatalf("a request to a frozen peer: %v after %v, want it aborted at the stall", err, time.Since(start))
+	}
+	g.set(false) // b thaws, the request still unread
+	select {
+	case id := <-ran:
+		t.Fatalf("%s ran after its asker gave it up", id)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if !a.Stalled() {
+		if ack, err := a.Request(context.Background(), proto.TExec, &proto.Request{ID: "next", Op: proto.OpKill, Deadline: Now() + 2000}); err != nil || !ack.OK {
+			t.Fatalf("a request after the thaw: %+v %v", ack, err)
+		}
+	}
+	if id := <-ran; id != "next" {
+		t.Fatalf("ran %s", id)
+	}
+}
+
 func TestSilenceCloses(t *testing.T) {
 	c, p := newFakePeer(t, 0, Options{Ping: 50 * time.Millisecond, Silence: 400 * time.Millisecond})
 	c.Start()

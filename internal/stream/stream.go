@@ -400,6 +400,13 @@ func (c *Conn) dispatch(m *proto.Msg) {
 			}
 		}
 	case proto.THello, proto.TState, proto.TView, proto.TExec, proto.TRelay, proto.TLook:
+		if r := m.Req; r != nil && r.StartBy != 0 && Now() > r.StartBy {
+			// Read after its asker stopped waiting (this end was frozen, or
+			// the stream held it that long): never run.
+			c.o.Log("stream: %s %s %s read %dms after its asker stopped waiting: not run", m.T, r.Op, r.ID, Now()-r.StartBy)
+			c.Answer(&proto.Ack{ID: r.ID, Err: "read too late to run"})
+			return
+		}
 		if c.o.OnMsg != nil {
 			c.o.OnMsg(m)
 		}
@@ -626,6 +633,15 @@ func (c *Conn) Request(ctx context.Context, t string, req *proto.Request) (*prot
 		return nil, ErrStalled
 	}
 	stallC := c.stallC
+	margin := max(MinMargin, c.slowRTT())
+	if c.live {
+		// The peer runs it only if it reads it while this end still waits:
+		// before the stall that would abort it here, less the margin for
+		// the answer. A peer frozen with it unread answers an error on
+		// thawing, rather than run what was given up.
+		stallAt := Now() - c.Silent().Milliseconds() + (c.o.Ping + max(time.Second, 3*c.slowRTT())).Milliseconds()
+		r.StartBy = stallAt - margin.Milliseconds() + c.offset().Milliseconds()
+	}
 	var wait <-chan time.Time
 	if r.Deadline != 0 {
 		left := time.Duration(r.Deadline-Now()) * time.Millisecond
@@ -633,7 +649,6 @@ func (c *Conn) Request(ctx context.Context, t string, req *proto.Request) (*prot
 			c.mu.Unlock()
 			return nil, ErrDeadline
 		}
-		margin := max(MinMargin, c.slowRTT())
 		r.Deadline = r.Deadline - margin.Milliseconds() + c.offset().Milliseconds()
 		timer := time.NewTimer(left)
 		defer timer.Stop()

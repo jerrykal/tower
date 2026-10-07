@@ -214,7 +214,8 @@ merely slow to accept is another host's healthy master and stays (S16).
   a refused hand-off leaves the loop where it was, with a note. An attach
   whose host stalls before the home sees its client is killed and the loop
   goes back to its previous session (LH03). A request aborted by a stall
-  may still run if the host is heard again before its deadline.
+  never runs later: it carries when its sender stops waiting, and a host
+  that reads it after that (it was frozen) answers an error (S23).
 - **Dead links.** The home gives up a host stalled for 3s plus four of its
   slow round trips (5–7s after it went silent). As the stall is marked, the
   home probes ssh with a fresh session on the host's master (`ssh -o
@@ -620,8 +621,9 @@ request id and a deadline (5s):
   the home runs it locally or sends `exec` over the target's stream.
 
 Every hop converts the deadline to its own clock and refuses to start the
-action after it, so a request the user was told had failed never runs later
-(S23, LD02). The towerd that runs an action remembers its answer by request
+action after it, and drops one it reads after its sender stopped waiting
+(aborted at a stall), so a request the user was told had failed never runs
+later (S23, LD02). The towerd that runs an action remembers its answer by request
 id for 10 minutes and answers a repeat from it. A kill of something already
 gone is `ok` with "already gone". Previews travel only on request, for the
 selected window (V06); a preview shows the session's windows, which it has
