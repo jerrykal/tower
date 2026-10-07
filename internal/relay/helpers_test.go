@@ -169,11 +169,20 @@ func buildLine(i, n int) string {
 }
 
 // helperBuildLog writes a build log of $LINES lines, one write a line.
+// A write that comes back short (a pty's can on macOS) goes on with the
+// rest, as a program's write loop does.
 func helperBuildLog() int {
 	n := envInt("LINES")
 	for i := 1; i <= n; i++ {
-		if _, err := unix.Write(1, []byte(buildLine(i, n))); err != nil {
-			return 1
+		for b := []byte(buildLine(i, n)); len(b) > 0; {
+			k, err := unix.Write(1, b)
+			if err == unix.EINTR {
+				continue
+			}
+			if err != nil {
+				return 1
+			}
+			b = b[k:]
 		}
 	}
 	return 0
