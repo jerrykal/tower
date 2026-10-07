@@ -23,7 +23,7 @@ cat scenarios.log
 echo "::endgroup::"
 for t in $(grep -E '^--- FAIL: Test' scenarios.log | awk '{print $3}' | sort -u); do
 	TOWER_TEST_DIR=$base/r mise exec -- go test -count=1 -timeout 10m ./test/scenario/ -run "^$t\$" -v >"rerun-$t.log" 2>&1
-	alone=$(grep -E "^--- (PASS|FAIL|SKIP): $t " "rerun-$t.log" | awk '{print $2}')
+	alone=$(grep -E "^--- (PASS|FAIL|SKIP): $t " "rerun-$t.log" | awk '{sub(":", "", $2); print $2}')
 	echo "::warning title=$t::failed in the shard; alone: ${alone:-no result}"
 	echo "::group::$t alone"
 	cat "rerun-$t.log"

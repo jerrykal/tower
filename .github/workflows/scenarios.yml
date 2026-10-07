@@ -56,6 +56,9 @@ jobs:
           HOSTS: ${{ matrix.hosts }}
           SHARD: ${{ matrix.shard }}
           TT_TMUX_VERSION: ${{ matrix.tmux }}
+          # A shared runner can be too slow for LS08's throughput floor
+          # (decision 135): reported, not failed.
+          TT_LS08_REPORT: ${{ runner.temp }}/ls08-report.txt
         run: scripts/ci-scenarios.sh
       - uses: actions/upload-artifact@v7
         if: failure()

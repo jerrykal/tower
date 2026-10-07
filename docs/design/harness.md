@@ -260,11 +260,11 @@ codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
   at their own paths and the container user `tt` has the test user's
   uid, so a container host's `TOWER_HOME`, timing marks and tmux and
   towerd sockets are where the harness looks; only ssh crosses the
-  network. `h.Tmux` starts a container host's server in the container
-  (any command with `-f`, through the agent, by tmux's path there) and
-  reaches it through its socket otherwise; `h.TmuxServer`, for a client
-  the test keeps open, runs the container's own tmux (`docker exec -i`),
-  as a control client of another version may not attach (3.7c to 3.2a);
+  network. `h.Tmux` runs the container's own tmux, through the agent
+  (0.3ms more than this machine's), as a client of another version may
+  not reach the server: Ubuntu 24.04's 3.4 reaches 3.5a, not 3.6b. So
+  does `h.TmuxServer`, for a client the test keeps open (`docker exec
+  -i`; a 3.7c control client does not attach to 3.2a), and teardown;
   `h.Run` runs any of the host's
   commands there (towerd started detached), and a terminal on a
   container host is a `docker exec -it` as `tt`, `LANG` and `LC_*`
@@ -364,8 +364,10 @@ Login nor an account: the harness runs every sshd as the test user.
   after 10s without a byte, so bytes lost on the way fail the run
   instead of hanging it.
 - A macOS runner is too slow for LS08's throughput floor, on either
-  backend. With `TT_LS08_REPORT=<file>` (the workflow sets it there)
-  each rate is measured three times, the best of each compared, and a
+  backend, and a slower Linux runner for the containers' (77–92 MB/s
+  relayed, 0.85–0.89 of plain, where a faster one relays 130). With
+  `TT_LS08_REPORT=<file>` (the workflow sets it on every runner) each
+  rate is measured three times, the best of each compared, and a
   shortfall written to the file rather than failed; bytes lost or extra
   fail as ever.
 - Teardown stops the world's sshds first, killing their connections'

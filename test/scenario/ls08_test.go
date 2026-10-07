@@ -199,8 +199,8 @@ func ls08Pump(t *testing.T, w *World, home *Host, remote string, count int64, re
 	return r
 }
 
-// ls08Report is TT_LS08_REPORT, a file: on a shared runner too slow for
-// LS08's floor (a macOS runner, decision 135) each rate is measured three
+// ls08Report is TT_LS08_REPORT, a file: on a shared runner, which can be
+// too slow for LS08's floor (decision 135), each rate is measured three
 // times, the best of each compared, and a shortfall written there rather
 // than failed. Bytes lost or extra fail all the same.
 var ls08Report = os.Getenv("TT_LS08_REPORT")
