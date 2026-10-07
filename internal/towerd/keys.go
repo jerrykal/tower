@@ -1,6 +1,7 @@
 package towerd
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -144,6 +145,18 @@ func (k *keys) install(ctl *tmux.Control) {
 	}
 	config.WriteJSON(k.path(), kf)
 	if config.Flag("TOWER_ALERTS", true) {
+		cmd := "display-message -c " + tmux.Quote(ctl.Name()) + " tower-alert"
+		d.mu.Lock()
+		old := tmuxBefore(d.tmuxVer, 3, 3)
+		d.mu.Unlock()
+		if old {
+			// tmux 3.2 takes display-message's -c for a flag, so no client
+			// can be named, and tells no control client what a hook's own
+			// commands do: a tmux client the hook starts renames _tower's
+			// window, which the control client, attached there, hears of.
+			cmd = "run-shell -b " + tmux.Quote(tmux.Literal(transport.ShellQuote(tmux.Bin()))+
+				" -S #{q:socket_path} rename-window -t ="+towerSession+": tower-alert")
+		}
 		for _, hook := range alertHooks {
 			r, err := ctl.Do("show-hooks -g " + hook)
 			if err != nil {
@@ -154,7 +167,6 @@ func (k *keys) install(ctl *tmux.Control) {
 				d.logf("keys: %s[%s] is the user's: left alone", hook, alertIndex)
 				continue
 			}
-			cmd := "display-message -c " + tmux.Quote(ctl.Name()) + " tower-alert"
 			if r, err := ctl.Do("set-hook -g " + tmux.Quote(hook+"["+alertIndex+"]") + " " + tmux.Quote(cmd)); err != nil || r.Err {
 				d.logf("keys: set-hook %s: %s %v", hook, r.Text(), err)
 				continue
@@ -209,4 +221,19 @@ func (k *keys) restore(ctl *tmux.Control) {
 			ctl.Do("set-hook -gu " + tmux.Quote(hook+"["+alertIndex+"]"))
 		}
 	}
+}
+
+// tmuxBefore reports whether tmux version v (#{version}: "3.2a",
+// "next-3.6", "openbsd-7.4") is before major.minor; one it cannot read
+// is not.
+func tmuxBefore(v string, major, minor int) bool {
+	i := strings.IndexAny(v, "0123456789")
+	if i < 0 {
+		return false
+	}
+	var ma, mi int
+	if n, _ := fmt.Sscanf(v[i:], "%d.%d", &ma, &mi); n < 2 || strings.HasPrefix(v, "openbsd-") {
+		return false
+	}
+	return ma < major || ma == major && mi < minor
 }

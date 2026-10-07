@@ -547,7 +547,9 @@ own:
   hand-off it stores without `ended` (the result says `asker`) it
   finishes as a dashboard does (step 6 of the hand-off); a towerd that
   says neither predates that, and its loop moves the terminal. One refused (the client's attach over, a host not
-  up) it says on the client, as tmux says its own errors; an error once
+  up) it says on the client, as tmux says its own errors (on tmux 3.2,
+  which cannot name a client to `display-message`, on the one tmux finds
+  for the pane); an error once
   its client is gone it drops.
 - `TOWER_BIND=0` turns the bindings off (V08).
 
@@ -555,7 +557,10 @@ own:
 without telling control clients. towerd adds global hooks `alert-bell`,
 `alert-activity` and `alert-silence` at index 7193, each `display-message -c
 <its control client> tower-alert`, and re-reads when that message arrives
-(LV01). One the user set at that index is left alone; towerd removes only
+(LV01). On tmux 3.2, which takes `-c` there for a flag and tells control
+clients nothing a hook's own commands do, each hook starts a tmux client
+that renames `_tower`'s window instead, and the re-read follows its
+`%window-renamed`. One the user set at that index is left alone; towerd removes only
 its own on stop; `TOWER_ALERTS=0` turns them off.
 
 ## Live dashboards

@@ -475,3 +475,16 @@ func TestLinkGenGrows(t *testing.T) {
 		t.Fatalf("a new link's %d is not past an earlier one's %d", c, a)
 	}
 }
+
+// tmuxBefore reads #{version}: a letter after the minor, a next- build,
+// and builds with no version number (master, OpenBSD's) are not before.
+func TestTmuxBefore(t *testing.T) {
+	for v, want := range map[string]bool{
+		"3.2": true, "3.2a": true, "2.9a": true, "3.3": false, "3.3a": false, "3.7c": false,
+		"4.0": false, "next-3.3": false, "next-3.2": true, "master": false, "openbsd-7.6": false, "": false,
+	} {
+		if got := tmuxBefore(v, 3, 3); got != want {
+			t.Errorf("tmuxBefore(%q, 3, 3) = %v, want %v", v, got, want)
+		}
+	}
+}

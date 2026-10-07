@@ -507,7 +507,7 @@ func TestHandoff(t *testing.T) {
 	tty := filepath.Join(t.TempDir(), "tty")
 	os.WriteFile(tty, nil, 0o600)
 	m, f, x := newTestModel(t, testDash(), false)
-	x.out["display-message"] = tty + "\t$0\t@0\n"
+	x.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	x.out["list-clients"] = "4242 /dev/ttys042\n"
 	press(t, m, "b", "a", "n", "enter")
 	sw := f.actsOf(proto.OpSwitch)
@@ -528,7 +528,7 @@ func TestHandoff(t *testing.T) {
 	// The detach fails and the client is still there: release the hold.
 	os.WriteFile(tty, nil, 0o600)
 	m2, _, x2 := newTestModel(t, testDash(), false)
-	x2.out["display-message"] = tty + "\t$0\t@0\n"
+	x2.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	x2.err["detach-client"] = errTest
 	m2.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
 	x2.out["list-clients"] = itoa(os.Getpid()) + " /dev/ttys042\n"
@@ -542,7 +542,7 @@ func TestHandoff(t *testing.T) {
 	// client's to release.
 	os.WriteFile(tty, nil, 0o600)
 	m5, _, x5 := newTestModel(t, testDash(), false)
-	x5.out["display-message"] = tty + "\t$0\t@0\n"
+	x5.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	x5.err["detach-client"] = errTest
 	m5.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
 	x5.next = map[string][]string{"list-clients": {itoa(os.Getpid()) + " /dev/ttys042\n", ""}}
@@ -555,7 +555,7 @@ func TestHandoff(t *testing.T) {
 	os.WriteFile(tty, nil, 0o600)
 	t.Setenv("TOWER_TEST_NOTTY", "1")
 	m3, _, x3 := newTestModel(t, testDash(), false)
-	x3.out["display-message"] = tty + "\t$0\t@0\n"
+	x3.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	x3.out["list-clients"] = "4242 /dev/ttys042\n"
 	press(t, m3, "b", "a", "n", "enter")
 	if b, _ := os.ReadFile(tty); len(b) != 0 || len(x3.called("detach-client")) != 1 {

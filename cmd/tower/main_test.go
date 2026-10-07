@@ -84,4 +84,11 @@ func TestLastRefusalIsLiteral(t *testing.T) {
 	if want := "tower: alpha is down: boom ##(touch x) ##S"; got[len(got)-1] != want {
 		t.Fatalf("refusal %q, want %q", got[len(got)-1], want)
 	}
+	if got := refusal("/dev/pts/3", "x"); !slices.Equal(got[:3], []string{"display-message", "-c", "/dev/pts/3"}) {
+		t.Fatalf("refusal on a named client: %q", got)
+	}
+	// tmux 3.2, which takes -c for a flag: no client named.
+	if got := refusal("", "x"); !slices.Equal(got, []string{"display-message", "tower: x"}) {
+		t.Fatalf("refusal on the client tmux finds: %q", got)
+	}
 }

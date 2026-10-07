@@ -191,11 +191,15 @@ func (x *fakeTmux) Run(ctx context.Context, args ...string) (string, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	x.calls = append(x.calls, append([]string(nil), args...))
-	if q := x.next[args[0]]; len(q) > 0 {
-		x.next[args[0]] = q[1:]
-		return q[0], x.err[args[0]]
+	k := args[0]
+	if k == "list-clients" && strings.Contains(strings.Join(args, " "), "client_tty") {
+		k = "client-info" // clientInfo's list-clients, apart from ClientListed's
 	}
-	return x.out[args[0]], x.err[args[0]]
+	if q := x.next[k]; len(q) > 0 {
+		x.next[k] = q[1:]
+		return q[0], x.err[k]
+	}
+	return x.out[k], x.err[k]
 }
 
 func (x *fakeTmux) called(cmd string) [][]string {

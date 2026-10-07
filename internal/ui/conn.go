@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -150,17 +151,20 @@ func (c *Conn) clientInfo(ctx context.Context) (*clientInfo, error) {
 	if c.Tmux == nil {
 		return nil, errors.New("no tmux server")
 	}
-	out, err := c.Tmux.Run(ctx, "display-message", "-p", "-c", cl.Name,
-		"#{client_tty}\t#{session_id}\t#{window_id}")
+	// list-clients, not display-message -c: tmux 3.2 takes display-message's
+	// -c for a flag.
+	out, err := c.Tmux.Run(ctx, "list-clients", "-F",
+		"#{client_name}\t#{client_tty}\t#{session_id}\t#{window_id}")
 	if err != nil {
 		return nil, err
 	}
-	f, err := tmux.Fields(strings.TrimRight(out, "\n"), 3)
-	if err != nil {
-		return nil, err
+	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if f, err := tmux.Fields(l, 4); err == nil && f[0] == cl.Name {
+			c.info = &clientInfo{tty: f[1], session: f[2], window: f[3]}
+			return c.info, nil
+		}
 	}
-	c.info = &clientInfo{tty: f[0], session: f[1], window: f[2]}
-	return c.info, nil
+	return nil, fmt.Errorf("no client %s", cl.Name)
 }
 
 // alive reports whether a process with pid exists.

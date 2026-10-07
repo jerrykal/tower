@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/client"
@@ -83,15 +84,25 @@ func cmdLast(args []string) error {
 		// Refused: an earlier attach's client (its loop moved on since
 		// the key), or a host not up.
 		tmux.UseBin(srv.Bin)
-		srv.Run(ctx, refusal(name, res.Note)...)
+		if _, err := srv.Run(ctx, refusal(name, res.Note)...); err != nil && strings.Contains(err.Error(), "usage: display-message") {
+			// tmux 3.2 takes -c for a flag: say it on the client tmux
+			// finds for the pane prefix L was pressed in, most likely the
+			// one that pressed it.
+			srv.Run(ctx, refusal("", res.Note)...)
+		}
 		return nil
 	}
 	return fallback()
 }
 
-// refusal is the display-message that says on client name why the home
-// refused a hand-off. display-message expands formats, and the note can
-// hold a host's ssh error: its #s are doubled, so a #(…) in it stays text.
+// refusal is the display-message that says on client name (none: the
+// client tmux finds) why the home refused a hand-off. display-message
+// expands formats, and the note can hold a host's ssh error: its #s are
+// doubled, so a #(…) in it stays text.
 func refusal(name, note string) []string {
-	return []string{"display-message", "-c", name, tmux.Literal("tower: " + note)}
+	a := []string{"display-message"}
+	if name != "" {
+		a = append(a, "-c", name)
+	}
+	return append(a, tmux.Literal("tower: "+note))
 }
