@@ -547,18 +547,37 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         Linux containers). The hello and first state now have 30s
         (decision 137).
 
-      Five more rounds after both fixes: 8 of 10. Left open, so macOS
-      sshd stays out of the push set:
+      Five more rounds after both fixes: 8 of 10, each failure passing
+      alone:
       - LC05 again: the hello in, the first state was still held to
-        the old 15s (fixed since: the same 30s), but the connect itself
-        took 22s with that jitter on the runner (five dummynet pipes a
-        way, one picked a packet), past `start`'s 20s wait for the
-        links.
-      - S23, passing alone: B's request through the frozen home was
-        aborted when B saw the home stalled ("not responding" in
-        1.06s), before its deadline, so the home ran it on thawing;
-        alone it was answered "no answer in time", at the deadline. A
-        request the asker aborted at a stall can still run.
+        the old 15s (now the same 30s), and the connect itself took 22s
+        with that jitter on the runner (five dummynet pipes a way, one
+        picked a packet), past `start`'s 20s wait for the links. LC05
+        checks that a slow link stays up: its links now come up at
+        their round trip and slow once up.
+      - S23: B's request through the frozen home was aborted when B saw
+        the home stalled ("not responding" in 1.06s), before its
+        deadline, and the home ran it on thawing (protocol.md even said
+        it may). A request now carries when its sender stops waiting,
+        and one read after that is answered an error, never run
+        (decision 139; the stream's test fails without it).
+
+      A `/code-review high` of Phases 6 and 7 found 10 issues; fixed:
+      a towerd's links share one rising sequence of generations, so a
+      clock stepped back gives no new link an older one (decision 140);
+      the dashboard knows its client by name and pid, in one
+      `list-clients` a hand-off where it ran two (decision 141); LS10
+      makes C's connections half-open as the loop dies, so the home's
+      reap of the client is checked again over real ssh (gone 28.5s
+      later); a name registered again drops its faults; the harness
+      writes its files with `config.WriteFile` and has one `Alive`.
+      Left as they are: a new `tower last` against a towerd built
+      between two of this branch's commits (never released); the 30s
+      hello wait for a remote that hangs before its hello (decision
+      137); leftovers of runs from before the owner label, noted in the
+      harness note for removal by hand. Both shards on Linux containers
+      after: 8/8 in 360s, the rest 85 passed and 4 skipped in 414s;
+      hand-offs a median 6ms and LC08 as before.
 - [x] **Phase 7, remove the fake ssh.** `fakessh` and `fakenet` are
       gone, and every scenario runs on containers (Linux's default) or
       sshds (macOS's) (decision 138). [design/harness.md](design/harness.md),
