@@ -243,12 +243,16 @@ func TestHarnessLinks(t *testing.T) {
 		c, c2 := w.startSSH(a, "B", loop), w.startSSH(a, "B2", loop)
 		lines := func(c *sshCall) int { return strings.Count(c.stdout.String(), "\n") }
 		w.Eventually(3*time.Second, "output", func() bool { return lines(c) > 3 && lines(c2) > 3 })
+		// Through the stall the other name's lines keep coming, every
+		// second and at 0.8 of their rate before it at least: how fast
+		// they come depends on how fast the machine starts sleep.
+		n0, t0 := lines(c2), time.Now()
+		time.Sleep(3 * time.Second)
+		rate := float64(lines(c2)-n0) / time.Since(t0).Seconds()
 		w.Stall("B", true)
 		defer w.Stall("B", false)
 		time.Sleep(500 * time.Millisecond)
-		n, n2 := lines(c), lines(c2)
-		// Through the stall the other name's lines keep coming, every
-		// second: how many depends on how fast the machine starts sleep.
+		n, n2, t2 := lines(c), lines(c2), time.Now()
 		alive := 17 * time.Second // ServerAliveInterval × ServerAliveCountMax, and 2s
 		prev := n2
 		for end := time.Now().Add(alive); time.Now().Before(end); {
@@ -264,7 +268,11 @@ func TestHarnessLinks(t *testing.T) {
 		if m := lines(c); m != n {
 			t.Fatalf("%d lines came through a stall", m-n)
 		}
-		t.Logf("%d lines in %v through another name for the stalled host", lines(c2)-n2, alive)
+		through := float64(lines(c2)-n2) / time.Since(t2).Seconds()
+		t.Logf("%d lines in %v through another name for the stalled host: %.1f a second, %.1f before the stall", lines(c2)-n2, alive, through, rate)
+		if through < 0.8*rate {
+			t.Fatalf("lines through another name for the stalled host came at %.1f a second, under 0.8 × %.1f before the stall", through, rate)
+		}
 		w.Stall("B", false)
 		w.Eventually(3*time.Second, "output after the stall", func() bool { return lines(c) > n })
 	})
