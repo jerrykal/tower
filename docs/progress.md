@@ -365,8 +365,13 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       - LS08 is under its floor on the runner (relayed at least 100
         MB/s or 0.9 × plain): plain runs at 21–59 MB/s, relayed at
         0.44–1.28 of it, on both backends; it passes alone some runs.
-        The floor stays; a Mac of the user's would tell runner from
-        relay.
+        The floor stays. On a Mac of the user's (fake ssh, three runs)
+        LS08 passes every time: the cats run plain at 122–172 MB/s,
+        relayed at 124–137 (0.78–1.12 of plain, over 100 MB/s), the
+        build log plain at 41 MB/s, relayed at 54–55, and no byte is
+        lost. The relay keeps up; the runner is slower (plain 21–59
+        MB/s) and too noisy for the floor, and where 100 MB/s is out
+        of reach the wide-character cat's 0.8 of plain leaves no room.
       - The last bytes of a burst are sometimes lost when the command
         writing it exits: 2–10 of LS08's 22.8 MB build log, on both
         backends, plain (no tower in the way) and relayed. Where is
