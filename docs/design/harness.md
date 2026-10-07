@@ -111,9 +111,13 @@ and `TOWER_TEST_PAD=30000` (states and views padded to 30 KB, so a stalled
 pipe fills); the connection family (LC) and LH06 with `ProductionTimings`.
 
 Recoveries (LC03, LC04, LC06: a fault, the network's return or a pick,
-until the client is back) are checked in three parts (`checkRecoveries`),
-since a new connection costs what the ssh at the other end makes it
-cost: the fake's about 6.5 round trips, real ssh's 13. The connection,
+until the client is back) are checked whole and in three parts
+(`checkRecoveries`), since a new connection costs what the ssh at the
+other end makes it cost: the fake's about 6.5 round trips, real ssh's
+13. The whole recovery is within the scenario's limit on the fake, and
+over real ssh within it plus 7.5 round trips (14 for the connection in
+place of 6.5) and R0's connection; this bounds too a connection under
+way as the network came back, which the parts do not. The connection,
 from the link's last attempt to the link up (ssh, tower started there,
 the hello, the first state), is at most 14 round trips past R0's in the
 same world, counted at RTT 150 and 400 and only for a connection begun
