@@ -122,15 +122,35 @@ func TestLS06FrameWrites(t *testing.T) {
 	c := collect(tt)
 	ch := relay(s, tt.Terminal)
 
-	const holds = 200
-	time.Sleep(20 * time.Millisecond) // the helper starting
-	for range holds {
+	holds := 0
+	hold := func() {
 		n := tt.Hold()
 		spin(time.Duration(50+r.IntN(200)) * time.Microsecond)
 		tt.Release(n)
 		spin(time.Duration(50+r.IntN(200)) * time.Microsecond)
+		holds++
 	}
-	if res := <-ch; res.err != nil || res.code != 0 {
+	time.Sleep(20 * time.Millisecond) // the helper starting
+	for range 200 {
+		hold()
+	}
+	// A helper paused inside a sequence through all of them (a loaded
+	// machine) has them all forced: hold on until one waits, while the
+	// relay lasts.
+	var res relayResult
+	for done := false; !done; {
+		select {
+		case res = <-ch:
+			done = true
+		default:
+			if tt.waited.Load() > 0 {
+				res, done = <-ch, true
+			} else {
+				hold()
+			}
+		}
+	}
+	if res.err != nil || res.code != 0 {
 		t.Fatalf("relay: %+v", res)
 	}
 	got := c.exactly(t, len(stream)+2*holds*len(SyncBegin), 10*time.Second)
@@ -143,6 +163,10 @@ func TestLS06FrameWrites(t *testing.T) {
 			syncs++
 			if !p.idle() {
 				inside++
+			}
+			// The terminal parses it too: one that cut a sequence ends it.
+			for _, b := range got[i : i+len(SyncBegin)] {
+				p.put(b)
 			}
 			i += len(SyncBegin)
 			continue
@@ -158,13 +182,28 @@ func TestLS06FrameWrites(t *testing.T) {
 		}
 		t.Fatalf("the output differs from the stream at %d of %d (got %d bytes)", i, len(stream), len(rest))
 	}
-	// A write that has waited PlaceWait goes in anyway: one the helper
-	// stalled inside a sequence for that long, and only such, is inside.
-	if forced := tt.forced.Load(); syncs != 2*holds || int64(inside) != forced {
-		t.Fatalf("%d sync sequences arrived, %d inside a sequence, %d forced; want %d, none inside but the forced", syncs, inside, forced, 2*holds)
+	// A write that has waited PlaceWait goes in anyway: where the helper
+	// paused inside a sequence (a loaded machine), the first of the
+	// writes forced at once is inside it. No write waits past the end of
+	// the sequence it met: a tracker that missed one has its writes wait
+	// through the output that flows on, and forced at random.
+	longest, run := 0, 0
+	var sp refParser
+	for _, b := range stream {
+		if sp.put(b); sp.idle() {
+			run = 0
+		} else {
+			run++
+			longest = max(longest, run)
+		}
 	}
-	t.Logf("%d bytes, %d frame writes: %d at once, %d after waiting for a sequence to end, %d forced",
-		len(stream), syncs, tt.placed.Load(), tt.waited.Load(), tt.forced.Load())
+	forced, through := tt.forced.Load(), tt.through.Load()
+	if syncs != 2*holds || int64(inside) > forced || through > int64(longest) {
+		t.Fatalf("%d sync sequences arrived, %d inside a sequence, %d forced, a write waited through %d bytes; want %d, none inside but the forced, at most %d bytes (the longest sequence)",
+			syncs, inside, forced, through, 2*holds, longest)
+	}
+	t.Logf("%d bytes, %d frame writes: %d at once, %d after waiting for a sequence to end, %d forced; %d inside, at most %d bytes waited through of %d",
+		len(stream), syncs, tt.placed.Load(), tt.waited.Load(), forced, inside, through, longest)
 	if tt.waited.Load() == 0 {
 		t.Fatal("no write waited for a sequence: the test did not exercise placement")
 	}

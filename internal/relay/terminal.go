@@ -60,10 +60,14 @@ type Terminal struct {
 	queued atomic.Bool // queue is not empty
 	tr     tracker     // the relayed output, owned by the relay
 	behind bool        // the queue met a sequence and waits for its end, owned by the relay
+	sent   int64       // relayed bytes written, owned by the relay
+	from   int64       // sent when the relay met the queue, -1 before; owned by the relay
 
 	// Counts of the loop's writes during relays, for tests: written at
-	// once, after waiting for a sequence to end, and after PlaceWait.
-	placed, waited, forced atomic.Int64
+	// once, after waiting for a sequence to end, and after PlaceWait; and
+	// the most relayed bytes a write waited through (at most the rest of
+	// one sequence, unless the tracker missed its end).
+	placed, waited, forced, through atomic.Int64
 }
 
 // NewTerminal makes the Terminal reading in and writing out (usually the
@@ -153,6 +157,7 @@ func (t *Terminal) begin() (wakeR int, err error) {
 	t.relaying = true
 	t.wakeW = w
 	t.tr.reset()
+	t.from = -1
 	return r, nil
 }
 
@@ -206,6 +211,10 @@ func (t *Terminal) flush(force bool) error {
 		t.placed.Add(n)
 	}
 	t.behind = false
+	if t.from >= 0 {
+		t.through.Store(max(t.through.Load(), t.sent-t.from))
+		t.from = -1
+	}
 	// The terminal parses these too: follow them, so that a forced write
 	// that ended a sequence early leaves the tracker where the terminal is.
 	t.tr.feed(q)
@@ -217,6 +226,9 @@ func (t *Terminal) flush(force bool) error {
 func (t *Terminal) emit(p []byte) error {
 	for {
 		if t.queued.Load() {
+			if t.from < 0 {
+				t.from = t.sent
+			}
 			var err error
 			switch {
 			case t.tr.ground():
@@ -233,11 +245,16 @@ func (t *Terminal) emit(p []byte) error {
 		}
 		if !t.queued.Load() {
 			t.tr.feed(p)
+			t.sent += int64(len(p))
 			return writeAll(t.out, p)
 		}
 		// Inside a sequence with writes waiting: up to its end.
 		t.behind = true
+		if t.from < 0 {
+			t.from = t.sent
+		}
 		i := t.tr.feedToGround(p)
+		t.sent += int64(i)
 		if err := writeAll(t.out, p[:i]); err != nil {
 			return err
 		}

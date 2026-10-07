@@ -422,9 +422,17 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         writes (22cab0f), as in the scenario suite's LS08.
       - `TestLS06FrameWrites` (1, macOS): a helper stalled inside a
         sequence for over `PlaceWait`, so the queued writes went in
-        there, forced, as designed; the test now allows inside only the
-        forced ones (0b7b546). Stopping the helper for 80ms during the
-        writes failed it 13 of 20 before, none after.
+        there, forced, as designed. The test now follows the frame
+        writes into its reference parser, as the terminal does, so only
+        the first of the writes forced at once can be inside; allows
+        that many; and bounds the relayed bytes any write waited through
+        by the stream's longest sequence, which a tracker that misses a
+        sequence's end exceeds a hundredfold (the counters alone could
+        not tell it from a stall). It holds on until a write has waited,
+        should a stall cover the 200 holds. Stalls of 80–150ms inside an
+        OSC 52 or after a joiner, at five points, passed 30 of 30 each;
+        a tracker blind to ESC inside DCS, or inside every string,
+        failed 30 of 30; 30 of 30 passed with every core busy.
 
       Then four rounds of `mise run test` on each of GitHub's Linux and
       macOS runners passed, and both shards on Linux (fake ssh): 8/8 in
