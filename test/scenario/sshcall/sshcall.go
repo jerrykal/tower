@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -70,23 +69,6 @@ func Parse(argv []string) (*Args, error) {
 
 // Opt is the value of -o k.
 func (a *Args) Opt(k string) string { return a.Opts[strings.ToLower(k)] }
-
-// Alive is how long a dead connection takes to give up:
-// ServerAliveInterval × ServerAliveCountMax (0: never).
-func (a *Args) Alive() time.Duration {
-	iv, _ := strconv.Atoi(a.Opt("ServerAliveInterval"))
-	n, err := strconv.Atoi(a.Opt("ServerAliveCountMax"))
-	if err != nil {
-		n = 3
-	}
-	return time.Duration(iv*n) * time.Second
-}
-
-// ConnectTimeout is -o ConnectTimeout (0: none).
-func (a *Args) ConnectTimeout() time.Duration {
-	s, _ := strconv.Atoi(a.Opt("ConnectTimeout"))
-	return time.Duration(s) * time.Second
-}
 
 // Log appends the call to $TOWER_TEST_SSH_LOG.
 func Log(a *Args) {

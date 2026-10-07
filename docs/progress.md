@@ -560,9 +560,8 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         alone it was answered "no answer in time", at the deadline. A
         request the asker aborted at a stall can still run.
 - [x] **Phase 7, remove the fake ssh.** `fakessh` and `fakenet` are
-      out of the suite: the harness builds and uses neither, and every
-      scenario runs on containers (Linux's default) or sshds (macOS's)
-      (decision 138). [design/harness.md](design/harness.md),
+      gone, and every scenario runs on containers (Linux's default) or
+      sshds (macOS's) (decision 138). [design/harness.md](design/harness.md),
       [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section
       and the workflow say so. The fake's own steps went: ssh itself
       exiting 42 (S06 (c)) and 43 (LS09 takes the host's client
@@ -571,8 +570,7 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       `Pty`, `Mux`, `ExitWith`, `SlowControl`) and the fake-only
       branches in LH, LS and V. The real-host scenarios (R) are as they
       were. Both shards on Linux containers: 8/8 in 368s, the rest 85
-      passed and 4 skipped in 414s. The two directories themselves
-      wait for removal.
+      passed and 4 skipped in 414s.
 
 Two quirks of the current harness on Linux are left for the
 replacement:
