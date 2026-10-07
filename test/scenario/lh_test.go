@@ -39,15 +39,18 @@ func newLH(t *testing.T, id string, sk, zk func(*Link)) *lhWorld {
 	x.f = w.Host("F", []string{"fox", "fig"}, SSHHost())
 	x.s = w.Host("S", []string{"sun"}, SSHHost())
 	x.z = w.Host("Z", []string{"zed"}, SSHHost())
+	w.Home(x.a, x.f.Remote(), x.s.Remote(), x.z.Remote())
+	for _, n := range []string{"F", "S", "Z"} {
+		w.WaitLink(x.a, n, "up", 10*time.Second)
+	}
+	// The links slow once up: real ssh's first connect over slowLink takes
+	// 9–10s on a macOS runner, whose jitter reorders more, and the family
+	// is about a slow host, not its first connect.
 	if sk != nil {
 		w.Shape("S", sk)
 	}
 	if zk != nil {
 		w.Shape("Z", zk)
-	}
-	w.Home(x.a, x.f.Remote(), x.s.Remote(), x.z.Remote())
-	for _, n := range []string{"F", "S", "Z"} {
-		w.WaitLink(x.a, n, "up", 10*time.Second)
 	}
 	x.term = w.LoopTo("t", x.a, nil, "fox", "^F:fox")
 	return x
