@@ -158,8 +158,10 @@ func TestLS06FrameWrites(t *testing.T) {
 		}
 		t.Fatalf("the output differs from the stream at %d of %d (got %d bytes)", i, len(stream), len(rest))
 	}
-	if syncs != 2*holds || inside != 0 {
-		t.Fatalf("%d sync sequences arrived, %d inside a sequence; want %d, none inside", syncs, inside, 2*holds)
+	// A write that has waited PlaceWait goes in anyway: one the helper
+	// stalled inside a sequence for that long, and only such, is inside.
+	if forced := tt.forced.Load(); syncs != 2*holds || int64(inside) != forced {
+		t.Fatalf("%d sync sequences arrived, %d inside a sequence, %d forced; want %d, none inside but the forced", syncs, inside, forced, 2*holds)
 	}
 	t.Logf("%d bytes, %d frame writes: %d at once, %d after waiting for a sequence to end, %d forced",
 		len(stream), syncs, tt.placed.Load(), tt.waited.Load(), tt.forced.Load())
