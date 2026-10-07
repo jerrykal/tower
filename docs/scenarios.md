@@ -161,7 +161,7 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 | LS07 | The relay adds microseconds to a keystroke's echo | relay | pass |
 | LS08 | The relay under load: throughput, keys into a flood, backpressure, flat memory | relay | pass |
 | LS09 | Every remote attach relayed: exits 255, 43, 42, hand-offs, a stall, `prefix d` the same as with ssh given the terminal | loop, relay | pass |
-| LS10 | A remote attach over a shared master leaves no client behind, even where its session outlives its ssh: hand-offs back and forth leave each host only the terminal's client; a killed loop's client goes once the home calls the loop gone | towerd, loop | pass |
+| LS10 | A remote attach over a shared master leaves no client behind, even where its session outlives its ssh: hand-offs back and forth leave each host only the terminal's client; a killed loop's client, its host never told its ssh ended (the network changed), goes once the home calls the loop gone | towerd, loop | pass |
 
 LS06 and LS07 are tests of `internal/relay` (`go test ./internal/relay`):
 they need no host. LS08 is there too against a command given the terminal

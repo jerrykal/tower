@@ -579,10 +579,10 @@ func ls09Exits(w *World, b *Host, term *Term, readyNow func(), onB func(string, 
 }
 
 // LS10: a remote attach over a shared master leaves no client behind,
-// even where its session there outlives its ssh (as in real use;
-// decision 112): hand-offs back and forth
-// leave each host only the client the terminal is on, and a killed
-// loop's client goes once the home calls the loop gone.
+// even where its session there outlives its ssh (decision 112):
+// hand-offs back and forth leave each host only the client the terminal
+// is on, and a killed loop's client, its host never told its ssh ended,
+// goes once the home calls the loop gone.
 func TestLS10(t *testing.T) {
 	parallel(t)
 	w := NewWorld(t, "ls10")
@@ -608,18 +608,22 @@ func TestLS10(t *testing.T) {
 		t.Logf("hand-off %d: %s left clean in %v", i+1, hop.left.Name, time.Since(start).Round(time.Millisecond))
 	}
 
-	// A killed loop's client: its session outlives the ssh here, until the
-	// home has called the loop gone (15s without a beat) and the loop has
-	// stayed unknown for as long again.
+	// A killed loop's client. Over a link that stays up its session ends
+	// with its ssh, and with it the client; where the network changed
+	// under it (the laptop moved, or slept), C never hears the ssh end,
+	// and the session stays until the home has called the loop gone (15s
+	// without a beat) and the loop has stayed unknown for as long again.
 	pids := a.LoopPids()
 	if len(pids) != 1 {
 		t.Fatalf("loop pid files: %v", pids)
 	}
+	w.NetworkChange("C", time.Now())
 	Kill9(pids[0])
 	term.Wait(`LOOP-EXIT=137`, 5*time.Second)
 	time.Sleep(2 * time.Second)
-	// Here (OpenSSH 9.6 at both ends, in the host containers) the session
-	// ends with its ssh, and with it the client.
+	if got := c.Clients(); !slices.Equal(got, []string{"charlie"}) {
+		t.Fatalf("C's clients 2s after the loop died: %v; want the session still there", got)
+	}
 	start := time.Now()
 	w.clientsAre(c, 40*time.Second)
 	t.Logf("the killed loop's client gone %v later", (2*time.Second + time.Since(start)).Round(100*time.Millisecond))

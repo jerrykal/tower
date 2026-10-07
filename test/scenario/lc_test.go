@@ -554,12 +554,20 @@ func TestLC04(t *testing.T) {
 }
 
 // LC05: a slow but live link (200–800ms each way at R400) for 30s,
-// with network changes every 3s, is never dropped.
+// with network changes every 3s, is never dropped. The links come up at
+// their round trip and then slow: real ssh's first connect over R400's
+// slow link takes 14s on Linux and 22s on a macOS runner, whose jitter
+// reorders more (decision 137 gives a link 30s for it), and staying up is
+// what is checked here.
 func TestLC05(t *testing.T) {
-	x := newLC(t, "lc05", func(rtt int, l *Link) {
+	x := newLC(t, "lc05", nil)
+	x.knobs = func(rtt int, l *Link) {
 		l.DelayMs = rtt/2 + 3*rtt/4
 		l.JitterMs = 3 * rtt / 4
-	})
+	}
+	for i, rtt := range lcRTTs {
+		x.w.Shape(x.hosts[i].Name, func(l *Link) { x.shape(rtt, l) })
+	}
 	x.attachAll()
 	tr := x.track()
 	attempts := map[string]int{}
