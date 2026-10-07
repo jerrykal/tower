@@ -353,7 +353,7 @@ type loopRec struct {
     cur, prev proto.Ref
     sw        *pendingSwitch // target, nonce, gen, at, wait, aborted
     waiters   []chan struct{} // wait-switch calls of the current attach
-    woke      *switchWait     // the attach's one wake: held, waiting, ended
+    woke      *switchWait     // the attach's one wake: held, until, waiting, ended
     seen      bool            // the home has seen this attach's client
     beat      time.Time
 }
@@ -378,7 +378,8 @@ type loopRec struct {
   it and wait up to 100ms for `held`: the answer says `Ended` when the loop
   ends the client. A switch stored while the attach's wake still waits,
   or once the loop ends the client, joins that wake (`woke`, dropped at
-  the next prepare) rather than being left to its asker.
+  the next prepare) rather than being left to its asker, and waits only
+  for what is left of the wake's 100ms: its switches hear one outcome.
 - `held`: `End` only while the wake still waits and only once.
 - `after`: the table in protocol.md. 42 or `Ended`: a stored switch for
   this attach under `TOWER_HANDOFF_TTL` (30s) hands off; otherwise the
@@ -423,7 +424,8 @@ is within the margin is refused ("too little time left to reach X"),
 but only on a measured round trip: before the link's first pong the
 margin is the hello's time, which counts the connect, so a request
 within two of it (the margin kept back and the trip there) waits for
-that pong first (a stale client's detach at link-up). Errors:
+that pong first (a stale client's detach at link-up), until only the
+least margin (`stream.MinMargin`) is left. Errors:
 "X is not responding", "X did not answer in time", "X is down: reason". A `relay`
 from a remote: the switch path or `route`, then the asking host gets the
 merged view (`SendNow`), then the `ack`.

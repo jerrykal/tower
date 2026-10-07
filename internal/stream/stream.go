@@ -518,9 +518,12 @@ func (c *Conn) ToPeer(localMs int64) int64 {
 	return localMs + c.Offset().Milliseconds()
 }
 
+// MinMargin is the least Margin there is.
+const MinMargin = 200 * time.Millisecond
+
 // Margin is what a hop keeps back of a deadline for the answer to get
-// home in time: one slow recent round trip, at least 200ms.
-func (c *Conn) Margin() time.Duration { return max(200*time.Millisecond, c.SlowRTT()) }
+// home in time: one slow recent round trip, at least MinMargin.
+func (c *Conn) Margin() time.Duration { return max(MinMargin, c.SlowRTT()) }
 
 // StallAfter is how long the peer may be silent before it is marked
 // stalled: a ping interval plus three slow round trips, at least a second
@@ -630,7 +633,7 @@ func (c *Conn) Request(ctx context.Context, t string, req *proto.Request) (*prot
 			c.mu.Unlock()
 			return nil, ErrDeadline
 		}
-		margin := max(200*time.Millisecond, c.slowRTT())
+		margin := max(MinMargin, c.slowRTT())
 		r.Deadline = r.Deadline - margin.Milliseconds() + c.offset().Milliseconds()
 		timer := time.NewTimer(left)
 		defer timer.Stop()

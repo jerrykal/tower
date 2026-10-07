@@ -37,7 +37,7 @@ func (c *Conn) SlowRTT() time.Duration         // second slowest of the last 8, 
 func (c *Conn) Offset() time.Duration          // peer clock minus ours
 func (c *Conn) ToLocal(peerMs int64) int64     // a peer deadline in our clock
 func (c *Conn) ToPeer(localMs int64) int64
-func (c *Conn) Margin() time.Duration          // one slow RTT, at least 200ms
+func (c *Conn) Margin() time.Duration          // one slow RTT, at least MinMargin (200ms)
 func (c *Conn) Measured() <-chan struct{}      // closed by the first pong: SlowRTT is measured, not the hello's
 ```
 

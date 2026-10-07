@@ -80,9 +80,11 @@ type pendingSwitch struct {
 }
 
 // switchWait is the one wake of an attach's loop: the switch that woke
-// it, and any stored after it for the same attach, wait on it together.
+// it, and any stored after it for the same attach, wait on it together,
+// up to one deadline, so they all hear one outcome at once.
 type switchWait struct {
 	held    chan struct{} // closed when the loop holds the frame and will end the client
+	until   time.Time     // when its switches stop waiting for held: heldWait from the wake
 	waiting bool          // the switches still wait for held
 	ended   bool          // the loop ends the old client
 }
@@ -620,7 +622,7 @@ func (h *homeRole) storeSwitch(ctx context.Context, req *proto.Request) *proto.A
 		// it does. Keys typed while an attach starts arrive together.
 		sw.wait = l.woke
 	case config.Flag("TOWER_EAGER", true) && len(l.waiters) > 0:
-		sw.wait = &switchWait{held: make(chan struct{}), waiting: true}
+		sw.wait = &switchWait{held: make(chan struct{}), until: time.Now().Add(heldWait), waiting: true}
 		l.woke = sw.wait
 		for _, w := range l.waiters {
 			close(w)
@@ -637,8 +639,9 @@ func (h *homeRole) storeSwitch(ctx context.Context, req *proto.Request) *proto.A
 		return ack
 	}
 	// Committed: the wait for the loop's hold goes on even if the
-	// dashboard goes away.
-	t1 := time.NewTimer(heldWait)
+	// dashboard goes away. A switch that joined the wake waits only for
+	// what is left of it: once the wake is over, the loop is told no end.
+	t1 := time.NewTimer(time.Until(sw.wait.until))
 	defer t1.Stop()
 	select {
 	case <-sw.wait.held:
@@ -896,8 +899,10 @@ func (h *homeRole) route(ctx context.Context, req *proto.Request) *proto.Ack {
 	}
 	if short(2) {
 		// Before the first pong the margin is the hello's time, the
-		// connect included: a round trip measures the link's.
-		t := time.NewTimer(time.Duration(req.Deadline-stream.Now()) * time.Millisecond)
+		// connect included: a round trip measures the link's. Past the
+		// deadline less the least margin no measure makes room, so the
+		// refusal comes then, not at the deadline.
+		t := time.NewTimer(time.Duration(req.Deadline-stream.Now())*time.Millisecond - stream.MinMargin)
 		select {
 		case <-conn.Measured():
 		case <-ctx.Done():
