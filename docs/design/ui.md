@@ -324,11 +324,11 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   client, as in protocol.md. On `ended` the popup waits for its client's
   pid to go (at most 3s); without it, it ends its client (`EndClient`,
   which `tower last` shares): only the pressing client itself, which tmux
-  still lists by its name with its pid (`ClientListed`: a new client can
-  take the tty as soon as it is gone; one no longer listed is left
-  alone), gets the frame hold on its tty (`#{client_tty}`, read from
-  `list-clients` as the popup opens: tmux 3.2 cannot name a client to
-  `display-message`) unless `TOWER_SYNC=0`, `TOWER_TEST_NOTTY`, or the tty
+  still lists by its name with its pid (a new client can take the tty as
+  soon as it is gone; one no longer listed is left alone), gets the frame
+  hold on its tty (`#{client_tty}`); one `list-clients` says both, and
+  where the client is (as the popup opens; tmux 3.2 cannot name a client
+  to `display-message`) unless `TOWER_SYNC=0`, `TOWER_TEST_NOTTY`, or the tty
   cannot be written, and `detach-client -t <client> -E 'exit 42'`. A
   detach that fails while the client is still there, and still listed,
   releases the hold and shows the error; one no longer listed is being

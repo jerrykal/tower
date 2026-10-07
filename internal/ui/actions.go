@@ -176,13 +176,14 @@ func (c *Conn) EndClient(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// A client is named by its tty, which a new client can take as soon
-	// as this one is gone: only the pressing client itself is ended, and
-	// one tmux no longer lists is gone (exiting, perhaps still alive).
-	if listed, err := ClientListed(ctx, c.Tmux, cl); err == nil && !listed {
+	// Only the pressing client itself is ended (listClient), and one tmux
+	// no longer lists is gone (exiting, perhaps still alive). One
+	// list-clients says both that and where to hold the frame.
+	info, lerr := c.listClient(ctx)
+	if lerr == nil && info == nil {
 		return nil
 	}
-	tty := c.hold(ctx)
+	tty := c.hold(info)
 	_, err = c.Tmux.Run(ctx, "detach-client", "-t", cl.Name, "-E", "exit 42")
 	if err != nil && alive(cl.Pid) {
 		// One tmux no longer lists is being ended by another (a second
@@ -211,17 +212,16 @@ func ClientListed(ctx context.Context, t Tmux, cl proto.ClientID) (bool, error) 
 	return slices.Contains(strings.Split(out, "\n"), strconv.Itoa(cl.Pid)+" "+cl.Name), nil
 }
 
-// hold writes the frame hold to the pressing client's terminal and
-// returns its tty, or "" when it does not (TOWER_SYNC=0, or the tty cannot
-// be written, as under some sshds). tmux ends each of its own synced
-// frames with the end of the mode, so this re-holds after any frame tmux
-// drew since the loop's hold.
-func (c *Conn) hold(ctx context.Context) string {
+// hold writes the frame hold to the pressing client's terminal (info's)
+// and returns its tty, or "" when it does not (TOWER_SYNC=0, no tty
+// known, or one that cannot be written, as under some sshds). tmux ends
+// each of its own synced frames with the end of the mode, so this
+// re-holds after any frame tmux drew since the loop's hold.
+func (c *Conn) hold(info *clientInfo) string {
 	if !config.Flag("TOWER_SYNC", true) || os.Getenv("TOWER_TEST_NOTTY") != "" {
 		return ""
 	}
-	info, err := c.clientInfo(ctx)
-	if err != nil || info.tty == "" {
+	if info == nil || info.tty == "" {
 		return ""
 	}
 	if writeTTY(info.tty, relay.SyncBegin) != nil {

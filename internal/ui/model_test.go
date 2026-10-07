@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -507,8 +508,7 @@ func TestHandoff(t *testing.T) {
 	tty := filepath.Join(t.TempDir(), "tty")
 	os.WriteFile(tty, nil, 0o600)
 	m, f, x := newTestModel(t, testDash(), false)
-	x.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
-	x.out["list-clients"] = "4242 /dev/ttys042\n"
+	x.out["client-info"] = "4242\t/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	press(t, m, "b", "a", "n", "enter")
 	sw := f.actsOf(proto.OpSwitch)
 	if len(sw) != 1 || sw[0].Target.Session != "$4" || sw[0].Target.Inst != "2:2" || sw[0].Deadline == 0 || sw[0].ID == "" {
@@ -524,11 +524,14 @@ func TestHandoff(t *testing.T) {
 	if !m.quitted {
 		t.Fatal("the dashboard closes after a hand-off")
 	}
+	if n := len(x.called("list-clients")); n != 1 {
+		t.Fatalf("one list-clients for the client and its tty, not %d: %v", n, x.calls)
+	}
 
 	// The detach fails and the client is still there: release the hold.
 	os.WriteFile(tty, nil, 0o600)
 	m2, _, x2 := newTestModel(t, testDash(), false)
-	x2.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
+	x2.out["client-info"] = itoa(os.Getpid()) + "\t/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	x2.err["detach-client"] = errTest
 	m2.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
 	x2.out["list-clients"] = itoa(os.Getpid()) + " /dev/ttys042\n"
@@ -542,10 +545,10 @@ func TestHandoff(t *testing.T) {
 	// client's to release.
 	os.WriteFile(tty, nil, 0o600)
 	m5, _, x5 := newTestModel(t, testDash(), false)
-	x5.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
+	x5.out["client-info"] = itoa(os.Getpid()) + "\t/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	x5.err["detach-client"] = errTest
 	m5.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
-	x5.next = map[string][]string{"list-clients": {itoa(os.Getpid()) + " /dev/ttys042\n", ""}}
+	x5.out["list-clients"] = ""
 	press(t, m5, "b", "a", "n", "enter")
 	if b, _ := os.ReadFile(tty); string(b) != relay.SyncBegin || !m5.quitted {
 		t.Fatalf("a detach that lost to another: tty %q quit %v note %q", b, m5.quitted, m5.note.text)
@@ -555,19 +558,35 @@ func TestHandoff(t *testing.T) {
 	os.WriteFile(tty, nil, 0o600)
 	t.Setenv("TOWER_TEST_NOTTY", "1")
 	m3, _, x3 := newTestModel(t, testDash(), false)
-	x3.out["client-info"] = "/dev/ttys042\t" + tty + "\t$0\t@0\n"
-	x3.out["list-clients"] = "4242 /dev/ttys042\n"
+	x3.out["client-info"] = "4242\t/dev/ttys042\t" + tty + "\t$0\t@0\n"
 	press(t, m3, "b", "a", "n", "enter")
 	if b, _ := os.ReadFile(tty); len(b) != 0 || len(x3.called("detach-client")) != 1 {
 		t.Fatalf("notty: tty %q calls %v", b, x3.calls)
 	}
 
-	// The client is gone and its tty another client's: nothing is ended.
+	// The client is gone and its tty another client's: nothing is ended,
+	// and no frame held on that client's terminal.
+	os.WriteFile(tty, nil, 0o600)
 	m4, _, x4 := newTestModel(t, testDash(), false)
-	x4.out["list-clients"] = "4343 /dev/ttys042\n"
+	x4.out["client-info"] = "4343\t/dev/ttys042\t" + tty + "\t$1\t@1\n"
 	press(t, m4, "b", "a", "n", "enter")
-	if len(x4.called("detach-client")) != 0 || !m4.quitted {
-		t.Fatalf("a tty taken by another client: quit %v calls %v", m4.quitted, x4.calls)
+	if b, _ := os.ReadFile(tty); len(x4.called("detach-client")) != 0 || !m4.quitted || len(b) != 0 {
+		t.Fatalf("a tty taken by another client: quit %v tty %q calls %v", m4.quitted, b, x4.calls)
+	}
+}
+
+// The pressing client is its tty with its pid: a new client on the same
+// tty is not it.
+func TestClientInfoByPid(t *testing.T) {
+	_, _, x := newTestModel(t, testDash(), false)
+	c := &Conn{Tmux: x, Client: testClient}
+	x.out["client-info"] = "4343\t/dev/ttys042\t/dev/pts/9\t$1\t@1\n"
+	if info, err := c.clientInfo(context.Background()); err == nil {
+		t.Fatalf("another client on the tty taken for the pressing one: %+v", info)
+	}
+	x.out["client-info"] = "4343\t/dev/ttys042\t/dev/pts/9\t$1\t@1\n4242\t/dev/ttys042\t/dev/pts/8\t$2\t@2\n"
+	if info, err := c.clientInfo(context.Background()); err != nil || info.tty != "/dev/pts/8" || info.session != "$2" {
+		t.Fatalf("the pressing client: %+v %v", info, err)
 	}
 }
 

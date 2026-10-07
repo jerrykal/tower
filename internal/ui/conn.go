@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -140,10 +141,23 @@ type clientInfo struct {
 // it.
 func (c *Conn) clientInfo(ctx context.Context) (*clientInfo, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.info != nil {
-		return c.info, nil
+	info := c.info
+	c.mu.Unlock()
+	if info != nil {
+		return info, nil
 	}
+	info, err := c.listClient(ctx)
+	if err == nil && info == nil {
+		err = fmt.Errorf("no client %s", c.Client)
+	}
+	return info, err
+}
+
+// listClient asks tmux for the pressing client, keeping what it says for
+// clientInfo; nil when tmux no longer lists it. A client is named by its
+// tty, which a new client can take as soon as this one is gone: only its
+// name with its pid is the pressing client.
+func (c *Conn) listClient(ctx context.Context) (*clientInfo, error) {
 	cl, err := proto.ParseClient(c.Client)
 	if err != nil {
 		return nil, err
@@ -154,17 +168,20 @@ func (c *Conn) clientInfo(ctx context.Context) (*clientInfo, error) {
 	// list-clients, not display-message -c: tmux 3.2 takes display-message's
 	// -c for a flag.
 	out, err := c.Tmux.Run(ctx, "list-clients", "-F",
-		"#{client_name}\t#{client_tty}\t#{session_id}\t#{window_id}")
+		"#{client_pid}\t#{client_name}\t#{client_tty}\t#{session_id}\t#{window_id}")
 	if err != nil {
 		return nil, err
 	}
 	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if f, err := tmux.Fields(l, 4); err == nil && f[0] == cl.Name {
-			c.info = &clientInfo{tty: f[1], session: f[2], window: f[3]}
-			return c.info, nil
+		if f, err := tmux.Fields(l, 5); err == nil && f[0] == strconv.Itoa(cl.Pid) && f[1] == cl.Name {
+			info := &clientInfo{tty: f[2], session: f[3], window: f[4]}
+			c.mu.Lock()
+			c.info = info
+			c.mu.Unlock()
+			return info, nil
 		}
 	}
-	return nil, fmt.Errorf("no client %s", cl.Name)
+	return nil, nil
 }
 
 // alive reports whether a process with pid exists.
