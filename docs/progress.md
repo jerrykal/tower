@@ -406,12 +406,18 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       | --- | --- | --- |
       | `^TestLC` | 8/8 in 314s | 8/8 in 365s |
       | the rest | 84 passed, 4 skipped, 1 failed in 360s: LS03 (b), "a new standby to B" not within 15s of a network change, 3 of 3 alone | 85 passed, 4 skipped, 0 failed in 410s |
-- [ ] **Phase 6, CI.** Linux container shards on every pull request,
-      at the oldest and newest tmux (3.2a and 3.7c); the full set,
-      `macos-latest` included, by hand only (`workflow_dispatch`), on no
-      schedule. LS08 on a macOS runner is measured several times, its
-      best runs compared, and reported rather than failed. No automatic
-      retries.
+- [ ] **Phase 6, CI.** On every push that changes code, to any branch
+      but `chore/…`, and on pull requests: the Linux container shards at
+      the oldest and newest tmux (3.2a and 3.7c), a newer push cancelling
+      the run still going; `test` on branch pushes too. The full set (the
+      tmux versions between, the fake ssh on Linux and macOS, macOS
+      sshd) by hand only (`workflow_dispatch`), on no schedule. macOS
+      sshd joins the push set once LV01's race is fixed, LS08 there is
+      measured several times, its best runs compared, and reported
+      rather than failed, and five runs by hand in a row pass. No
+      automatic retries: a failure is rerun alone for a note, and the job
+      stays red. Trials run on a `chore/` branch with a push trigger
+      (`workflow_dispatch` needs the workflow on `main`).
 
       First, the unit tests: `main`'s `test` workflow failed 22 of its
       last 42 runs, on six tests. Two had been fixed already
@@ -485,6 +491,37 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       124). The stall check saw 5.7 lines a second before the stall and
       through it; S05 passed on sshd with its servers on the home's
       machine; no process, pipe or rule was left.
+
+      tmux 3.2a on the container hosts failed five scenarios at first,
+      three for tower itself. tmux 3.2 takes `display-message`'s `-c`
+      for a flag (`-cx` is an unknown option), so naming a client is a
+      usage error:
+      - the dashboard read its client's tty, session and window that
+        way, and a hand-off failed before the switch (LH03): now from
+        `list-clients`, one call as before (decision 134);
+      - `tower last`'s refusal went unsaid: on 3.2 it goes to the client
+        tmux finds for the pane;
+      - the alert hooks: and 3.2 tells control clients nothing a hook's
+        own commands do, so a rename of `_tower`'s window in the hook
+        reached no one either. The hook starts a tmux client that
+        renames it (decision 133); bells reached the views in 4ms at no
+        delay and 139ms at 150ms round trips (LV01), as 3.7c's.
+
+      And the tests: S19 holds to the names tmux kept (3.2a and 3.3a
+      make `:` and `.` into `_`, 3.2a `$` into `\$`), from the new
+      session's ack; S22's control client runs the container's own tmux
+      (`h.TmuxServer`) and gets its errors from `has-session` (3.2a's
+      `show -v` of a missing user option is none); LH03 looks for the
+      popup's footer in the last three lines, as 3.2a keeps the status
+      line below the popup; LV01 waits for C to list the loop's client,
+      its failures on macOS sshd.
+
+      Shards on Linux at the end, `mise run test` passing:
+
+      | | fake ssh | containers, 3.7c | containers, 3.2a |
+      | --- | --- | --- | --- |
+      | `^TestLC` | 8/8 in 313s | 8/8 in 367s | 8/8 in 367s |
+      | the rest | passed in 365s | passed in 411s | passed in 411s |
 - [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
       update [design/harness.md](design/harness.md),
       [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
