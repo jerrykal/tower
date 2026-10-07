@@ -61,8 +61,10 @@ func cmdLast(args []string) error {
 		return fallback()
 	}
 	switch {
-	case res.Stored && res.Ended:
-		return nil // the loop moves the terminal
+	case res.Stored && !res.Asker:
+		// The loop ends the client (Ended), or a towerd from before the
+		// asker's part says neither: the loop moves the terminal.
+		return nil
 	case res.Stored:
 		// The loop was not waiting to end the client (none waiting, or
 		// it confirmed too late): end it here.

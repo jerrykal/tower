@@ -544,8 +544,9 @@ own:
   starts from the tmux server's environment), and `TOWER_MKEY`.
 - `tower last` falls back to `switch-client -l` when the terminal has no
   loop, the loop has no previous session, or towerd cannot be reached. A
-  hand-off it stores without `ended` it finishes as a dashboard does (step
-  6 of the hand-off); one refused (the client's attach over, a host not
+  hand-off it stores without `ended` (the result says `asker`) it
+  finishes as a dashboard does (step 6 of the hand-off); a towerd that
+  says neither predates that, and its loop moves the terminal. One refused (the client's attach over, a host not
   up) it says on the client, as tmux says its own errors; an error once
   its client is gone it drops.
 - `TOWER_BIND=0` turns the bindings off (V08).

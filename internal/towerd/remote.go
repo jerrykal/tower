@@ -383,8 +383,9 @@ func copyView(v *proto.View, shift int64) proto.View {
 
 // last is tower last for a client: the previous target of the client's
 // loop, as a local switch-client when it is on the client's own server,
-// else as a stored switch. Neither: the caller falls back to tmux's own
-// switch-client -l.
+// else as a stored switch, whose client the loop ends (Ended) or the
+// asker does (Asker). A refusal names the target and why; with neither
+// the caller falls back to tmux's own switch-client -l.
 func (d *Daemon) last(ctx context.Context, client string) *proto.LastResult {
 	g := d.clientReg(client)
 	if g == nil {
@@ -415,5 +416,5 @@ func (d *Daemon) last(ctx context.Context, client string) *proto.LastResult {
 	if !ack.OK {
 		return &proto.LastResult{Note: ack.Err, Target: prev}
 	}
-	return &proto.LastResult{Stored: true, Ended: ack.Ended, Target: prev}
+	return &proto.LastResult{Stored: true, Ended: ack.Ended, Asker: !ack.Ended, Target: prev}
 }
