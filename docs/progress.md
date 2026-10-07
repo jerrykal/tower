@@ -408,9 +408,10 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       | the rest | 84 passed, 4 skipped, 1 failed in 360s: LS03 (b), "a new standby to B" not within 15s of a network change, 3 of 3 alone | 85 passed, 4 skipped, 0 failed in 410s |
 - [ ] **Phase 6, CI.** Linux container shards on every pull request,
       at the oldest and newest tmux (3.2a and 3.7c); the full set,
-      `macos-latest` included, weekly and by hand, not nightly. LS08 on
-      a macOS runner is measured several times, its best runs compared,
-      and reported rather than failed. No automatic retries.
+      `macos-latest` included, by hand only (`workflow_dispatch`), on no
+      schedule. LS08 on a macOS runner is measured several times, its
+      best runs compared, and reported rather than failed. No automatic
+      retries.
 
       First, the unit tests: `main`'s `test` workflow failed 22 of its
       last 42 runs, on six tests. Two had been fixed already
