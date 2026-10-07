@@ -667,6 +667,7 @@ func TestPrepareCarriesTheNote(t *testing.T) {
 	a.hosts(b.remote())
 	a.start(false)
 	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	w.eventually(3*time.Second, "A's first look", func() bool { return viewHas(a.d.view(proto.ViewArgs{}).View, "A", "alpha") })
 	note := "it's ended; now on B:bravo"
 	target := a.ref(b, "bravo")
 	target.Pane = "%0" // a pane picked in the dashboard
