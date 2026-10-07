@@ -362,9 +362,9 @@ func TestLH05(t *testing.T) {
 			if pid == 0 {
 				t.Fatal("no master to W")
 			}
-			syscall.Kill(pid, syscall.SIGSTOP)
-			t.Cleanup(func() { syscall.Kill(pid, syscall.SIGCONT) })
-			time.AfterFunc(2500*time.Millisecond, func() { syscall.Kill(pid, syscall.SIGCONT) })
+			Signal(pid, syscall.SIGSTOP)
+			t.Cleanup(func() { Signal(pid, syscall.SIGCONT) })
+			time.AfterFunc(2500*time.Millisecond, func() { Signal(pid, syscall.SIGCONT) })
 		}
 		start := time.Now()
 		go a.Call(proto.CallWake, nil, nil)
@@ -400,7 +400,10 @@ func TestLH06(t *testing.T) {
 	w.Eventually(10*time.Second, "B's client on bravo", func() bool { return slices.Equal(b.Clients(), []string{"bravo"}) })
 	time.Sleep(2 * time.Second)
 	old := b.TowerdPid()
-	t.Cleanup(func() { syscall.Kill(old, syscall.SIGCONT); Kill9(old) })
+	if old == 0 {
+		t.Fatal("B's towerd is not running")
+	}
+	t.Cleanup(func() { Signal(old, syscall.SIGCONT); Kill9(old) })
 	// The master: the fake's record of it, or the real one's pid.
 	masterOf := func() string {
 		if w.real {
@@ -448,7 +451,7 @@ func TestLH06(t *testing.T) {
 		}
 	}()
 	start := time.Now()
-	syscall.Kill(old, syscall.SIGSTOP)
+	Signal(old, syscall.SIGSTOP)
 	w.WaitLink(a, "B", "stalled", 10*time.Second)
 	stalled := time.Since(start)
 	w.WaitLink(a, "B", "connecting|down", 20*time.Second)

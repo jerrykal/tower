@@ -162,7 +162,15 @@ func ClientName(id string) string {
 }
 
 // Kill9 SIGKILLs pid.
-func Kill9(pid int) { syscall.Kill(pid, syscall.SIGKILL) }
+func Kill9(pid int) { Signal(pid, syscall.SIGKILL) }
+
+// Signal sends sig to pid, a process's: 0 or less (no pid, or a group)
+// it leaves alone, as kill(2) would signal the test's own group with 0.
+func Signal(pid int, sig syscall.Signal) {
+	if pid > 0 {
+		syscall.Kill(pid, sig)
+	}
+}
 
 // WaitGone waits until pid has exited.
 func (w *World) WaitGone(pid int, d time.Duration) bool {

@@ -563,7 +563,8 @@ type pfNet struct {
 	mu     sync.Mutex
 	anchor string
 	token  string // pf's enable reference, released at the end
-	next   int    // the next pipe number
+	next   int    // the next pipe number never used: pipeBlock numbers of the run's own
+	free   []int  // pipe numbers used and given back
 	rules  map[string]string
 	pipes  map[string][]int
 }
@@ -574,8 +575,9 @@ func pfStart() (*pfNet, error) {
 	if out, err := exec.Command("sudo", "-n", "true").CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("the sshd backend's links and faults need pfctl and dnctl through sudo -n: %v: %s", err, out)
 	}
-	p := &pfNet{anchor: "com.apple/tt-" + strconv.Itoa(os.Getpid()), next: 7001, rules: map[string]string{}, pipes: map[string][]int{}}
+	p := &pfNet{anchor: "com.apple/tt-" + strconv.Itoa(os.Getpid()), rules: map[string]string{}, pipes: map[string][]int{}}
 	p.sweep()
+	p.next = pipeBase()
 	out, err := exec.Command("sudo", "-n", "pfctl", "-E").CombinedOutput()
 	if m := regexp.MustCompile(`Token : (\d+)`).FindSubmatch(out); err == nil && m != nil {
 		p.token = string(m[1])
@@ -590,12 +592,12 @@ func pfStart() (*pfNet, error) {
 }
 
 // sweep flushes the anchors of earlier runs that ended without their
-// teardown.
+// teardown: those whose process is gone (another user's is not).
 func (p *pfNet) sweep() {
 	out, _ := exec.Command("sudo", "-n", "pfctl", "-a", "com.apple", "-s", "Anchors").Output()
 	for _, a := range strings.Fields(string(out)) {
 		pid, err := strconv.Atoi(strings.TrimPrefix(a, "com.apple/tt-"))
-		if err == nil && strings.HasPrefix(a, "com.apple/tt-") && !alive(pid) {
+		if err == nil && pid > 0 && strings.HasPrefix(a, "com.apple/tt-") && !running(pid) {
 			exec.Command("sudo", "-n", "pfctl", "-a", a, "-F", "all").Run()
 		}
 	}
@@ -667,6 +669,11 @@ func (p *pfNet) shape(name string, ports []int, n int, delays []int, bw int) err
 	if len(p.pipes[name]) != 2*n {
 		p.deletePipes(name)
 		for range 2 * n {
+			if k := len(p.free); k > 0 {
+				p.pipes[name] = append(p.pipes[name], p.free[k-1])
+				p.free = p.free[:k-1]
+				continue
+			}
 			p.pipes[name] = append(p.pipes[name], p.next)
 			p.next++
 		}
@@ -697,11 +704,38 @@ func (p *pfNet) shape(name string, ports []int, n int, delays []int, bw int) err
 	return p.load()
 }
 
+// deletePipes takes name's pipes away; their numbers are used again once
+// the anchor loaded without name's rules.
 func (p *pfNet) deletePipes(name string) {
 	for _, pipe := range p.pipes[name] {
 		exec.Command("sudo", "-n", "dnctl", "pipe", "delete", strconv.Itoa(pipe)).Run()
 	}
+	p.free = append(p.free, p.pipes[name]...)
 	delete(p.pipes, name)
+}
+
+// pipeBlock is how many pipe numbers a run has: more than it shapes at
+// once, as numbers given back are used again.
+const pipeBlock = 1000
+
+// pipeBase is the first of the run's pipe numbers: a block no pipe is in
+// (a concurrent run's, or one a run that ended without its teardown
+// left), starting at one of the pid's.
+func pipeBase() int {
+	const blocks = 64 // pipe numbers go to 65535
+	out, _ := exec.Command("sudo", "-n", "dnctl", "pipe", "show").Output()
+	used := map[int]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^\s*(\d+):`).FindAllStringSubmatch(string(out), -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			used[n/pipeBlock] = true
+		}
+	}
+	for i := range blocks {
+		if k := 1 + (os.Getpid()+i)%(blocks-1); !used[k] {
+			return k * pipeBlock
+		}
+	}
+	return (1 + os.Getpid()%(blocks-1)) * pipeBlock
 }
 
 // set sets name's filter rules; empty takes them away.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jerrykal/tower/internal/transport"
@@ -49,7 +51,8 @@ const (
 )
 
 type ctrBackend struct {
-	run      string   // compose project suffix: this process's pid
+	run      string   // compose project suffix and image tag: this process's pid, and a nonce
+	owner    string   // label value of whoever runs the suite (runOwner)
 	compose  []string // docker compose and its file
 	env      []string // compose's variables
 	key      string   // the client key
@@ -87,7 +90,7 @@ func SSHHost() HostOpt {
 // containerSetup brings the hosts up: a key, the compose project, each
 // host's address and host key.
 func containerSetup() error {
-	b := &ctrBackend{run: strconv.Itoa(os.Getpid())}
+	b := &ctrBackend{run: fmt.Sprintf("%d-%04x", os.Getpid(), rand.IntN(1<<16)), owner: runOwner()}
 	dir := filepath.Join(root, "ssh")
 	if err := os.MkdirAll(filepath.Join(root, "slots"), 0o755); err != nil {
 		return err
@@ -114,7 +117,7 @@ func containerSetup() error {
 	}
 	b.compose = []string{"compose", "-f", filepath.Join("hosts", "compose.yaml")}
 	b.sweep()
-	b.env = append(os.Environ(), "TT_RUN="+b.run,
+	b.env = append(os.Environ(), "TT_RUN="+b.run, "TT_OWNER="+b.owner,
 		"TT_PUBKEY="+strings.TrimSpace(string(pub)), "TOWER_TEST_DIR="+root)
 	if os.Getenv("TT_HOSTS") == "" {
 		b.env = append(b.env, "TT_HOSTS="+strconv.Itoa(ctrPerWorld*parallelWorlds))
@@ -124,14 +127,12 @@ func containerSetup() error {
 	if tmuxVersion == "" {
 		tmuxVersion = "3.7c"
 	}
-	if out, err := b.docker("build", "-q", "--label", "tower-test", "-t", "tt-scenario-host:latest",
+	// The run's own tag, which compose starts: another run building at
+	// once, from other sources or another tmux, tags its own.
+	if out, err := b.docker("build", "-q", "--label", "tower-test", "--label", "tower-test.owner="+b.owner,
+		"-t", ctrImage+":"+b.run,
 		"--build-arg", "UID="+strconv.Itoa(os.Getuid()), "--build-arg", "TMUX_VERSION="+tmuxVersion, "hosts"); err != nil {
 		return fmt.Errorf("build the host image: %v: %s", err, out)
-	}
-	// A changed image leaves the one it replaced untagged: gone, unless
-	// a container still runs it.
-	if ids, err := b.docker("images", "-q", "--filter", "label=tower-test", "--filter", "dangling=true"); err == nil && strings.TrimSpace(ids) != "" {
-		b.docker(append([]string{"rmi"}, strings.Fields(ids)...)...)
 	}
 	if out, err := b.docker(append(b.compose, "up", "-d")...); err != nil {
 		return fmt.Errorf("compose up: %v: %s", err, out)
@@ -202,20 +203,58 @@ func containerSetup() error {
 	return os.WriteFile(b.knownBad, []byte(strings.Join(bad, "\n")+"\n"), 0o600)
 }
 
-// sweep takes down the projects of earlier runs that ended without
-// their teardown (a go test timeout): those labelled tower-test whose
-// run's process is gone.
+// ctrImage is the host image; each run tags it with its run.
+const ctrImage = "tt-scenario-host"
+
+// runRE is a run of the container backend: its process's pid, and a nonce.
+var runRE = regexp.MustCompile(`^(\d+)-[0-9a-f]{4}$`)
+
+// runOwner names whoever runs the suite, as far as their pids go: the
+// machine, the user and the pid namespace. A docker daemon can serve
+// other users, and a container (a devcontainer on the machine's daemon)
+// has pids of its own: only an owner's own runs are judged by their pid.
+func runOwner() string {
+	host, _ := os.Hostname()
+	ns, _ := os.Readlink("/proc/self/ns/pid")
+	ns = strings.Trim(strings.TrimPrefix(ns, "pid:"), "[]")
+	return fmt.Sprintf("%s.%d.%s", host, os.Getuid(), ns)
+}
+
+// running reports whether pid is a process: one of another user's
+// (EPERM) is.
+func running(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}
+
+// sweep takes down the projects, and untags the images, of the owner's
+// earlier runs that ended without their teardown (a go test timeout):
+// those whose run's process is gone.
 func (b *ctrBackend) sweep() {
-	out, _ := b.docker("ps", "-a", "--filter", "label=tower-test", "--format", `{{.Label "com.docker.compose.project"}}`)
+	gone := func(run string) bool {
+		m := runRE.FindStringSubmatch(run)
+		if m == nil {
+			return false
+		}
+		pid, err := strconv.Atoi(m[1])
+		return err == nil && pid > 0 && !running(pid)
+	}
+	own := "label=tower-test.owner=" + b.owner
+	out, _ := b.docker("ps", "-a", "--filter", "label=tower-test", "--filter", own, "--format", `{{.Label "com.docker.compose.project"}}`)
 	seen := map[string]bool{}
 	for _, p := range strings.Fields(out) {
-		pid, err := strconv.Atoi(strings.TrimPrefix(p, "tt-"))
-		if seen[p] || err != nil || !strings.HasPrefix(p, "tt-") || alive(pid) {
+		if seen[p] || !strings.HasPrefix(p, "tt-") || !gone(strings.TrimPrefix(p, "tt-")) {
 			continue
 		}
 		seen[p] = true
 		if out, err := b.docker("compose", "-p", p, "down", "--timeout", "1"); err != nil {
 			fmt.Fprintf(os.Stderr, "take down %s: %v: %s\n", p, err, out)
+		}
+	}
+	out, _ = b.docker("images", "--filter", "label=tower-test", "--filter", own, "--format", "{{.Repository}} {{.Tag}}")
+	for _, l := range strings.Split(out, "\n") {
+		if f := strings.Fields(l); len(f) == 2 && f[0] == ctrImage && gone(f[1]) {
+			b.docker("rmi", ctrImage+":"+f[1])
 		}
 	}
 }
@@ -229,13 +268,17 @@ func hostPort(ip string, port int) string {
 }
 
 // containerTeardown removes the compose project's containers and
-// network (both labelled tower-test); the image stays, as a cache.
+// network (both labelled tower-test) and the run's image tag; the build
+// cache keeps the image's layers for the next run.
 func containerTeardown() {
 	if ctrs == nil {
 		return
 	}
 	if out, err := ctrs.docker(append(ctrs.compose, "down", "--timeout", "2")...); err != nil {
 		fmt.Fprintf(os.Stderr, "compose down: %v: %s\n", err, out)
+	}
+	if out, err := ctrs.docker("rmi", ctrImage+":"+ctrs.run); err != nil {
+		fmt.Fprintf(os.Stderr, "untag the host image: %v: %s\n", err, out)
 	}
 }
 

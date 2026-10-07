@@ -195,7 +195,7 @@ func TestHarnessLinks(t *testing.T) {
 		if pid <= 0 {
 			t.Fatal("the far side's pid is not running")
 		}
-		t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+		t.Cleanup(func() { Signal(pid, syscall.SIGKILL) })
 		time.Sleep(500 * time.Millisecond)
 		w.Freeze("B", true)
 		start := time.Now()

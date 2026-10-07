@@ -1,17 +1,19 @@
 # The simulated hosts of the scenario suite (TOWER_HOSTS=container): a
 # pool of TT_HOSTS containers the harness assigns to worlds and resets
 # between them. The harness brings the project up and down; every
-# container, network and image carries the label tower-test and a tt-
-# name (tt-<run>-host-<n>).
+# container, network and image carries the label tower-test, the label
+# tower-test.owner (the machine, user and pid namespace of the run, so a
+# run sweeps only its owner's dead runs) and a tt- name (tt-<run>-host-<n>).
 name: tt-${TT_RUN}
 
 services:
   host:
-    # Built by the harness (docker build): compose would stamp each run's
-    # project into the image and leave the last one dangling.
-    image: tt-scenario-host:latest
+    # Built by the harness (docker build) and tagged with the run:
+    # compose would stamp each run's project into the image and leave the
+    # last one dangling.
+    image: tt-scenario-host:${TT_RUN}
     pull_policy: never
-    labels: [tower-test]
+    labels: [tower-test, "tower-test.owner=${TT_OWNER}"]
     deploy:
       replicas: ${TT_HOSTS:-6}
     # NET_ADMIN: the agent's shaping and faults. SYS_PTRACE: it reads
@@ -34,4 +36,4 @@ services:
 networks:
   hosts:
     name: tt-${TT_RUN}-net
-    labels: [tower-test]
+    labels: [tower-test, "tower-test.owner=${TT_OWNER}"]

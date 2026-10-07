@@ -45,7 +45,7 @@ func TestLoopCtrlC(t *testing.T) {
 	// What ctrl-c on a cooked terminal sends the loop. (The pane's own
 	// shell, which a terminal would not have, would take the key's SIGINT
 	// too and end the pane.)
-	syscall.Kill(a.LoopPids()[0], syscall.SIGINT)
+	Signal(a.LoopPids()[0], syscall.SIGINT)
 	t2.Wait(Prompt, 3*time.Second)
 	t.Logf("cooked: ctrl-c → the picker in %v", time.Since(start).Round(time.Millisecond))
 	t2.Keys("Escape")

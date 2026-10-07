@@ -146,11 +146,11 @@ func TestLS02(t *testing.T) {
 		t.Fatal("no standby to B")
 	}
 	for _, p := range stopped {
-		syscall.Kill(p, syscall.SIGSTOP)
+		Signal(p, syscall.SIGSTOP)
 	}
 	defer func() {
 		for _, p := range stopped {
-			syscall.Kill(p, syscall.SIGCONT)
+			Signal(p, syscall.SIGCONT)
 		}
 	}()
 	mark := len(term.Recording())
@@ -191,7 +191,7 @@ func TestLS02(t *testing.T) {
 		}
 	}
 	for _, p := range stopped {
-		syscall.Kill(p, syscall.SIGCONT)
+		Signal(p, syscall.SIGCONT)
 	}
 	w.Eventually(5*time.Second, "the stuck standby gone", func() bool {
 		now := w.StandbyPids(b)
@@ -425,7 +425,7 @@ func TestLS05(t *testing.T) {
 		res = append(res, "client state "+state)
 		_, ok = term.WaitOK(statusBar("bravo"), 100*time.Millisecond)
 		res = append(res, fmt.Sprintf("screen while suspended %v", ok))
-		syscall.Kill(pid, syscall.SIGCONT)
+		Signal(pid, syscall.SIGCONT)
 		_, ok = term.WaitOK(statusBar("bravo"), 3*time.Second)
 		res = append(res, fmt.Sprintf("screen back %v", ok))
 		term.Type("echo jc$((1+1))")

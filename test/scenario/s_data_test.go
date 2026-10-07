@@ -317,9 +317,9 @@ func TestS23(t *testing.T) {
 	// The home frozen: a timeout, never run after it thaws.
 	count := len(c.Sessions())
 	hp := a.TowerdPid()
-	syscall.Kill(hp, syscall.SIGSTOP)
+	Signal(hp, syscall.SIGSTOP)
 	ack, el = act(proto.Request{Op: proto.OpNew, Target: proto.Ref{Host: cid}, Name: "late"})
-	syscall.Kill(hp, syscall.SIGCONT)
+	Signal(hp, syscall.SIGCONT)
 	t.Logf("new with the home frozen: %q in %v", ack.Err, el)
 	if ack.OK || el > 3*time.Second || !strings.Contains(ack.Err, "did not answer") {
 		t.Fatalf("new with the home frozen: %+v in %v", ack, el)

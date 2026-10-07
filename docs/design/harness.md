@@ -98,7 +98,8 @@ attach loop or the dashboard call towerd as those would:
   fake ssh for a remote) in a terminal of its own; `Attach` ends the
   previous attach's terminal first, as a loop ends its old client.
   `WaitSwitch`, `Held` and `After` are the loop's other calls;
-- `h.TowerdPid()`, `h.LiveHomes()`, `h.Regs()`, `h.HiddenSessions()`,
+- `h.TowerdPid()` (0 when none runs; `Kill9` and `Signal` leave 0
+  alone, which kill(2) would take for the test's own group), `h.LiveHomes()`, `h.Regs()`, `h.HiddenSessions()`,
   `h.TowerdProcs()` and `h.TowerBin(bin, args…)` (another build, for
   upgrades).
 
@@ -239,13 +240,18 @@ codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
   source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
   compose file: a pool of `TT_HOSTS` hosts (by default 4 for each world
   that runs at once, the most a world takes: S18), `tt-<run>-host-<n>`.
-  The image has git, for the dashboard's repo data. `TestMain` builds the image (`tt-scenario-host`,
-  from cache after the first build; `TT_TMUX_VERSION` picks tmux; an
-  image a change replaced, left untagged, is removed), takes
-  down earlier runs' projects whose process is gone (a `go test`
-  timeout skips teardown), brings the project up (`tt-<pid>`) and down
-  at the end; containers, network and image carry the label
-  `tower-test`.
+  The image has git, for the dashboard's repo data. `TestMain` builds the
+  image (`tt-scenario-host`, from the build cache after the first build;
+  `TT_TMUX_VERSION` picks tmux) under the run's own tag, so a run building
+  at once from other sources or another tmux starts its own; it takes
+  down earlier runs' projects, and untags their images, where the run's
+  process is gone (a `go test` timeout skips teardown), brings the
+  project up (`tt-<run>`, the pid and a nonce) and down at the end, and
+  untags its image. Containers, network and image carry the label
+  `tower-test`, and `tower-test.owner`: the machine, user and pid
+  namespace of the run. A sweep judges only its owner's runs, and
+  another user's process (`EPERM`) runs: a daemon can serve other users,
+  and a devcontainer has pids of its own.
 - The run's `TOWER_TEST_DIR`, `TMUX_TMPDIR` and `TMPDIR` are bind-mounted
   at their own paths and the container user `tt` has the test user's
   uid, so a container host's `TOWER_HOME`, timing marks and tmux and
@@ -326,9 +332,11 @@ Login nor an account: the harness runs every sshd as the test user.
 - On macOS lo0's rules are pf's: one anchor per run under `com.apple`
   (`com.apple/tt-<pid>`, which macOS's main ruleset evaluates) holds
   every world's dummynet and filter rules, loaded whole on each change;
-  pipes are numbered from 7001. `TestMain` takes a reference on pf
-  (`pfctl -E`), flushes the anchors of earlier runs whose process is
-  gone, checks a 50ms pipe each way gives a 90–200ms round trip, and at
+  a run's pipes are a block of 1000 numbers no pipe is in yet (from one
+  of its pid's), and a pipe given back is used again. `TestMain` takes a
+  reference on pf (`pfctl -E`), flushes the anchors of earlier runs whose
+  process is gone (another user's stay), checks a 50ms pipe each way
+  gives a 90–200ms round trip, and at
   the end flushes the anchor, deletes its pipes and gives the reference
   back (the empty anchor stays listed). All through `sudo -n`, which
   GitHub's macOS runners have. Elsewhere (Linux, for working on the
