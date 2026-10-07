@@ -322,11 +322,15 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   `; select-pane` in the same tmux call), then quit.
 - **Hand-off** (another server, popup): `act switch` with a nonce and the
   client, as in protocol.md. On `ended` the popup waits for its client's
-  pid to go (at most 3s); without it, it writes the frame hold to its
-  client's tty (`#{client_tty}`, read as the popup opens) unless
-  `TOWER_SYNC=0`, `TOWER_TEST_NOTTY`, or the tty cannot be written, and
-  runs `detach-client -t <client> -E 'exit 42'`. A detach that fails while
-  the client is still there releases the hold and shows the error. A
+  pid to go (at most 3s); without it, it ends its client (`EndClient`,
+  which `tower last` shares): only the pressing client itself, which tmux
+  still lists by its name with its pid (`ClientListed`: a new client can
+  take the tty as soon as it is gone; one no longer listed is left
+  alone), gets the frame hold on its tty (`#{client_tty}`, read as the
+  popup opens) unless `TOWER_SYNC=0`, `TOWER_TEST_NOTTY`, or the tty
+  cannot be written, and `detach-client -t <client> -E 'exit 42'`. A
+  detach that fails while the client is still there releases the hold
+  and shows the error. A
   client no loop owns gets `⏎ on another host needs the attach loop (run
   tower outside tmux)`. Test hooks: `TOWER_TEST_GEN`,
   `TOWER_TEST_CRASH=after-switch`.

@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/client"
@@ -38,8 +35,7 @@ func cmdLast(args []string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		out, lerr := srv.Run(ctx, "list-clients", "-F", "#{client_pid} #{client_name}")
-		if lerr == nil && !slices.Contains(strings.Split(out, "\n"), strconv.Itoa(id.Pid)+" "+name) {
+		if listed, lerr := ui.ClientListed(ctx, srv, id); lerr == nil && !listed {
 			return nil
 		}
 		return err

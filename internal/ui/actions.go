@@ -179,8 +179,7 @@ func (c *Conn) EndClient(ctx context.Context) error {
 	// A client is named by its tty, which a new client can take as soon
 	// as this one is gone: only the pressing client itself is ended, and
 	// one tmux no longer lists is gone (exiting, perhaps still alive).
-	if out, err := c.Tmux.Run(ctx, "list-clients", "-F", "#{client_pid} #{client_name}"); err == nil &&
-		!slices.Contains(strings.Split(out, "\n"), strconv.Itoa(cl.Pid)+" "+cl.Name) {
+	if listed, err := ClientListed(ctx, c.Tmux, cl); err == nil && !listed {
 		return nil
 	}
 	tty := c.hold(ctx)
@@ -195,6 +194,16 @@ func (c *Conn) EndClient(ctx context.Context) error {
 	// A client already gone (the loop ended it after all) is no failure,
 	// and the hold is the next client's to release.
 	return nil
+}
+
+// ClientListed reports whether tmux still lists client cl: its name (a
+// tty, which a new client can take as soon as cl is gone) with its pid.
+func ClientListed(ctx context.Context, t Tmux, cl proto.ClientID) (bool, error) {
+	out, err := t.Run(ctx, "list-clients", "-F", "#{client_pid} #{client_name}")
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(strings.Split(out, "\n"), strconv.Itoa(cl.Pid)+" "+cl.Name), nil
 }
 
 // hold writes the frame hold to the pressing client's terminal and
