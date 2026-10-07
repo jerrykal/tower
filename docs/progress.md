@@ -369,10 +369,13 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         relay.
       - The last bytes of a burst are sometimes lost when the command
         writing it exits: 2–10 of LS08's 22.8 MB build log, on both
-        backends, plain (no tower in the way) and relayed. Where (the
-        writer's pty, ssh's own) is not pinned down; tower's relay
-        reads ssh through a pty of its own and may lose a session's
-        last output the same way.
+        backends, plain (no tower in the way) and relayed. Where is
+        not pinned down: on GitHub's macOS runners a 1 MB burst lost
+        nothing in 200 runs each of five pty set-ups (the writer a
+        session leader or not, its terminal's other end held or not,
+        draining or pausing before it exits) nor in 100 runs through a
+        local sshd. Tower's relay reads ssh's output through a pipe,
+        not a pty, so its own side cannot lose it this way.
       - LV01 ("no client on c-one") failed three times in the sshd
         shard, and passes alone.
       - pf keeps an emptied anchor listed (`com.apple/tt-<pid>`) after

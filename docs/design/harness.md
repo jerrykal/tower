@@ -346,7 +346,9 @@ Login nor an account: the harness runs every sshd as the test user.
   wrote them exits, through sshd or as the session leader of ssh's own
   terminal: twice LS08's 22.8 MB build log arrived short, by 4 bytes
   plain (ssh given the terminal, no tower in the way) and by 10 relayed.
-  LS08's reader gives up after 10s without a byte.
+  A bare pty or sshd does not lose a 1 MB burst this way, so the cause is
+  in LS08's set-up or its load. LS08's reader gives up after 10s without
+  a byte.
 - Teardown stops the world's sshds first, killing their connections'
   processes (found under the sshd), then takes the world's rules and
   pipes off lo0.
