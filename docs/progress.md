@@ -407,6 +407,28 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       | the rest | 84 passed, 4 skipped, 1 failed in 360s: LS03 (b), "a new standby to B" not within 15s of a network change, 3 of 3 alone | 85 passed, 4 skipped, 0 failed in 410s |
 - [ ] **Phase 6, CI.** Linux container shards on every pull request,
       across tmux 3.2a to 3.7; the macOS shards nightly on `macos-latest`.
+
+      First, the unit tests: `main`'s `test` workflow failed 22 of its
+      last 42 runs, on six tests. Two had been fixed already
+      (`TestLastFollowsTheClientThatMoved`, `TestMasterCostAndExit`);
+      the other four were the tests', each reproduced before its fix:
+      - `TestRefresherSessionsAndDirs` (11 failures): it looked for the
+        change's `OnChange` as soon as the change showed, but one told
+        within 200ms before holds it until the refresh ends (e89be2a).
+      - `TestPrepareCarriesTheNote` (4): it named the home's own session
+        before the home's first look; fails 5 of 40 on a busy CPU
+        (3112c6b).
+      - `TestLS08BuildLog` (3, macOS): the build-log helper's short
+        writes (22cab0f), as in the scenario suite's LS08.
+      - `TestLS06FrameWrites` (1, macOS): a helper stalled inside a
+        sequence for over `PlaceWait`, so the queued writes went in
+        there, forced, as designed; the test now allows inside only the
+        forced ones (0b7b546). Stopping the helper for 80ms during the
+        writes failed it 13 of 20 before, none after.
+
+      Then four rounds of `mise run test` on each of GitHub's Linux and
+      macOS runners passed, and both shards on Linux (fake ssh): 8/8 in
+      315s, the rest in 366s.
 - [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
       update [design/harness.md](design/harness.md),
       [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
