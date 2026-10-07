@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/jerrykal/tower/internal/transport"
@@ -101,6 +100,10 @@ func containerSetup() error {
 	b.known = filepath.Join(dir, "known_hosts")
 	b.knownBad = filepath.Join(dir, "known_hosts_bad")
 	for _, k := range []string{b.key, b.other} {
+		// ssh-keygen asks before overwriting a key an earlier run left
+		// (the same TOWER_TEST_DIR), and with no terminal says no.
+		os.Remove(k)
+		os.Remove(k + ".pub")
 		if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", k).CombinedOutput(); err != nil {
 			return fmt.Errorf("ssh-keygen: %v: %s", err, out)
 		}
@@ -301,8 +304,11 @@ func (w *World) freeSlot(d time.Duration) *ctrSlot {
 	}
 }
 
-// ctrSlots are the containers w has taken.
+// ctrSlots are the containers w has taken. Which world a slot is with
+// is read under ctrMu: the worlds running alongside take and free slots.
 func (w *World) ctrSlots() []*ctrSlot {
+	ctrMu.Lock()
+	defer ctrMu.Unlock()
 	var out []*ctrSlot
 	for _, h := range w.hosts {
 		if h.ctr != nil && h.ctr.w == w && !slices.Contains(out, h.ctr) {
@@ -316,13 +322,20 @@ func (w *World) ctrSlots() []*ctrSlot {
 // w: the host its ssh name stands for.
 func (s *ctrSlot) envDir(w *World) string { return filepath.Join(w.Dir, "ctr-"+s.name) }
 
-// release resets h's container after the world and frees it.
-func (w *World) release(h *Host) {
-	if _, err := h.ctr.call(agentReq{Op: "reset"}); err != nil {
-		w.T.Errorf("reset %s: %v", h.ctr.ctr, err)
+// release resets container s after the world and frees it. One that
+// will not reset stays out of the pool: the next world would inherit its
+// processes, shape and faults.
+func (w *World) release(s *ctrSlot) {
+	_, err := s.call(agentReq{Op: "reset"})
+	if err != nil {
+		_, err = s.call(agentReq{Op: "reset"})
+	}
+	if err != nil {
+		w.T.Errorf("reset %s: %v (kept out of the pool)", s.ctr, err)
+		return
 	}
 	ctrMu.Lock()
-	h.ctr.w = nil
+	s.w = nil
 	ctrMu.Unlock()
 }
 
@@ -392,26 +405,41 @@ var ctrPorts = []int{22, 2201, 2202, 2203, 2204, 2205, 2206, 2207, 2208, 2209, 2
 // with.
 func (w *World) ctrName(alias string, target *Host) {
 	w.T.Helper()
-	used := 0
-	for _, s := range w.links {
-		if s.target.ctr == target.ctr && s.port != 0 {
-			used++
+	// The first port no other name of the container holds: a name
+	// registered again, or moved to another host, gives its port back.
+	taken := map[int]bool{}
+	for a, s := range w.links {
+		if a != alias && s.target.ctr == target.ctr && s.port != 0 {
+			taken[s.port] = true
 		}
 	}
-	if used == len(ctrPorts) {
+	i := slices.IndexFunc(ctrPorts, func(p int) bool { return !taken[p] })
+	if i < 0 {
 		w.T.Fatalf("%s: more than %d ssh names for one container", alias, len(ctrPorts))
 	}
-	w.links[alias].port = ctrPorts[used]
+	port := ctrPorts[i]
+	w.links[alias].port = port
 	var b strings.Builder
 	env := target.EnvMap()
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		b.WriteString("export " + k + "=" + transport.ShellQuote(env[k]) + "\n")
 	}
-	p := filepath.Join(target.ctr.envDir(w), strconv.Itoa(ctrPorts[used])+".env")
-	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
+	p := filepath.Join(target.ctr.envDir(w), strconv.Itoa(port)+".env")
+	if err := writeAtomic(p, []byte(b.String()), 0o644); err != nil {
 		w.T.Fatal(err)
 	}
 	w.writeSSHConfig()
+}
+
+// writeAtomic replaces path with data in one step (a rename): an ssh or
+// tt-run reading it meanwhile sees the old file or the new, never a
+// partial one.
+func writeAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // sshConfig is the world's ssh config: each ssh name to its container
@@ -467,7 +495,8 @@ func (w *World) writeSSHConfig() {
 	if alias != "" {
 		fmt.Fprintf(&b, "  HostKeyAlias %s\n", alias)
 	}
-	if err := os.WriteFile(w.sshConfig(), []byte(b.String()), 0o644); err != nil {
+	// Live ssh calls read it while a Down or Heal rewrites it.
+	if err := writeAtomic(w.sshConfig(), []byte(b.String()), 0o644); err != nil {
 		w.T.Fatal(err)
 	}
 }
@@ -518,7 +547,7 @@ func (w *World) masterPid(home *Host, alias string) int {
 	for start := time.Now(); time.Since(start) < 3*time.Second; time.Sleep(100 * time.Millisecond) {
 		cmd := exec.Command("/usr/bin/ssh", "-F", w.sshConfig(), "-o", "ControlPath="+filepath.Join(home.Paths().CMDir(), "%C"), "-O", "check", alias)
 		out, _ = cmd.CombinedOutput()
-		if m := regexp.MustCompile(`\(pid=(\d+)\)`).FindSubmatch(out); m != nil {
+		if m := masterPidRE.FindSubmatch(out); m != nil {
 			pid, _ := strconv.Atoi(string(m[1]))
 			return home.HostPid(pid)
 		}
@@ -527,11 +556,13 @@ func (w *World) masterPid(home *Host, alias string) int {
 	return 0
 }
 
+// masterPidRE is the pid in ssh -O check's answer.
+var masterPidRE = regexp.MustCompile(`\(pid=(\d+)\)`)
+
 // ctrProc is a process of a host container, as this machine sees it.
 type ctrProc struct {
-	pid, ppid, uid int
-	argv0          string
-	nspid          int // its pid in the container
+	pid   int // this machine's
+	nspid int // its pid in the container
 }
 
 // ctrProcs lists the container's processes: those in its cgroup, with
@@ -545,21 +576,7 @@ func ctrProcs(c *ctrSlot) []ctrProc {
 			continue
 		}
 		pid, _ := strconv.Atoi(filepath.Base(d))
-		st, err1 := os.ReadFile(filepath.Join(d, "stat"))
-		cmd, err2 := os.ReadFile(filepath.Join(d, "cmdline"))
-		var fi syscall.Stat_t
-		if err1 != nil || err2 != nil || syscall.Stat(d, &fi) != nil {
-			continue
-		}
-		// pid (comm) state ppid …: comm may hold spaces, so after the last ')'.
-		rest := st[bytes.LastIndexByte(st, ')')+1:]
-		f := strings.Fields(string(rest))
-		if len(f) < 2 {
-			continue
-		}
-		ppid, _ := strconv.Atoi(f[1])
-		argv0, _, _ := strings.Cut(string(cmd), "\x00")
-		p := ctrProc{pid: pid, ppid: ppid, uid: int(fi.Uid), argv0: argv0}
+		p := ctrProc{pid: pid}
 		// NSpid: this machine's pid, then the container's.
 		status, _ := os.ReadFile(filepath.Join(d, "status"))
 		for _, l := range strings.Split(string(status), "\n") {

@@ -281,14 +281,17 @@ func (h *Host) getenv(k string) string {
 // TmuxArgs select the host's server.
 func (h *Host) TmuxArgs() []string { return []string{"-L", h.Sock} }
 
-// Tmux runs a tmux command on the host's server. A container host's
-// server starts in its container (-f); other commands reach it through
-// its socket, which the container shares.
-func (h *Host) Tmux(args ...string) (string, error) {
+// Tmux runs a tmux command on the host's server, through its socket: a
+// container host's too, which the container shares.
+func (h *Host) Tmux(args ...string) (string, error) { return h.tmux(false, args...) }
+
+// tmux runs a tmux command on the host's server; start says it starts
+// the server, which on a container host starts in its container.
+func (h *Host) tmux(start bool, args ...string) (string, error) {
 	argv := append(h.TmuxArgs(), args...)
 	var out string
 	var err error
-	if h.ctr != nil && slices.Contains(args, "-f") {
+	if start && h.ctr != nil {
 		out, err = h.ctrRun(h.EnvMap(), 10*time.Second, append([]string{ctrTmux}, argv...)...)
 	} else {
 		out, err = runLocal(h.EnvMap(), 10*time.Second, append([]string{tmux.Bin()}, argv...)...)
@@ -314,13 +317,14 @@ func (h *Host) MustTmux(args ...string) string {
 func (h *Host) NewSession(name string) {
 	h.w.T.Helper()
 	args := []string{"new-session", "-d", "-s", name}
-	if !h.HasServer() {
+	start := !h.HasServer()
+	if start {
 		args = append([]string{"-f", h.confPath()}, "new-session", "-d", "-s", name, "-x", "100", "-y", "30")
 	}
 	var err error
 	for range 10 {
 		var out string
-		out, err = h.Tmux(args...)
+		out, err = h.tmux(start, args...)
 		if err == nil || !strings.Contains(out, "exited unexpectedly") {
 			break
 		}
@@ -687,13 +691,18 @@ func (w *World) WaitLoop(home *Host, re string, d time.Duration) proto.LoopStatu
 	return proto.LoopStatus{}
 }
 
-// Eventually polls cond every 20ms until it holds or d passes.
+// Eventually polls cond every 20ms until it holds or d passes; it asks
+// at least once, so a d already used up (a deadline computed from an
+// earlier step) still passes a cond that holds.
 func (w *World) Eventually(d time.Duration, what string, cond func() bool) {
 	w.T.Helper()
 	start := time.Now()
-	for time.Since(start) < d {
+	for {
 		if cond() {
 			return
+		}
+		if time.Since(start) >= d {
+			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

@@ -98,10 +98,8 @@ func (w *World) teardown() {
 
 	// Each container: none of its test user's processes, its link and
 	// faults reset, free for the next world.
-	for _, h := range w.hosts {
-		if h.ctr != nil && h.ctr.w == w {
-			w.release(h)
-		}
+	for _, s := range w.ctrSlots() {
+		w.release(s)
 	}
 
 	if len(wedged) > 0 {

@@ -92,6 +92,7 @@ func sshdSetup() error {
 		run: filepath.Join(dir, "sshd-run")}
 	for _, k := range []string{b.hostKey, b.key, b.other} {
 		os.Remove(k)
+		os.Remove(k + ".pub")
 		if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", k).CombinedOutput(); err != nil {
 			return fmt.Errorf("ssh-keygen: %v: %s", err, out)
 		}

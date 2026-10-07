@@ -47,11 +47,15 @@ type linkState struct {
 // container or the sshd backend.
 func overRealSSH() bool { return ctrs != nil || sshds != nil }
 
-// SSH registers ssh name alias for target, with an unshaped link.
+// SSH registers ssh name alias for target, with an unshaped link. A
+// name registered again replaces what it had: its sshd, its port.
 func (w *World) SSH(alias string, target *Host) {
 	w.T.Helper()
 	if w.links == nil {
 		w.links = map[string]*linkState{}
+	}
+	if old := w.links[alias]; old != nil && old.sshd != nil {
+		old.sshd.stop()
 	}
 	s := &linkState{target: target}
 	if target.ctr == nil {
