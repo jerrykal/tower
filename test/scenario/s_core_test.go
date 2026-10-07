@@ -138,29 +138,35 @@ func TestS03(t *testing.T) {
 }
 
 // S05: three servers on one machine: one towerd each, three ids, three
-// sockets in one run dir.
+// sockets in one run dir. The machine is the home's, so two remotes share
+// it with the home's own server; on the container backend, where only a
+// container is reached over ssh, it is B's.
 func TestS05(t *testing.T) {
 	parallel(t)
 	w := NewWorld(t, "s05")
 	a := w.Host("A", []string{"alpha"})
-	b := w.Host("B", []string{"bravo"}, SSHHost())
-	wk := w.Host("W", []string{"work1"}, Machine("B"), SSHHost())
-	p := w.Host("P", []string{"play1"}, Machine("B"), BaseIndex(0), SSHHost())
-	w.Home(a, b.Remote(), wk.Remote(), p.Remote())
-	w.WaitUp(a, "B", "W", "P")
-	ids := map[string]bool{w.Link(a, "B").ID: true, w.Link(a, "W").ID: true, w.Link(a, "P").ID: true}
+	m, remotes := a, []config.Host{}
+	if ctrs != nil {
+		m = w.Host("B", []string{"bravo"}, SSHHost())
+		remotes = append(remotes, m.Remote())
+	}
+	wk := w.Host("W", []string{"work1"}, Machine(m.Machine), SSHHost())
+	p := w.Host("P", []string{"play1"}, Machine(m.Machine), BaseIndex(0), SSHHost())
+	w.Home(a, append(remotes, wk.Remote(), p.Remote())...)
+	w.WaitUp(a, m.Name, "W", "P")
+	ids := map[string]bool{w.Link(a, m.Name).ID: true, w.Link(a, "W").ID: true, w.Link(a, "P").ID: true}
 	if len(ids) != 3 {
 		t.Fatalf("ids: %v", ids)
 	}
-	if wk.Paths().RunDir != p.Paths().RunDir || wk.Paths().RunDir != b.Paths().RunDir {
-		t.Fatalf("run dirs differ: %s %s %s", b.Paths().RunDir, wk.Paths().RunDir, p.Paths().RunDir)
+	if wk.Paths().RunDir != p.Paths().RunDir || wk.Paths().RunDir != m.Paths().RunDir {
+		t.Fatalf("run dirs differ: %s %s %s", m.Paths().RunDir, wk.Paths().RunDir, p.Paths().RunDir)
 	}
-	if wk.Paths().Socket() == p.Paths().Socket() || wk.Paths().Socket() == b.Paths().Socket() {
+	if wk.Paths().Socket() == p.Paths().Socket() || wk.Paths().Socket() == m.Paths().Socket() || p.Paths().Socket() == m.Paths().Socket() {
 		t.Fatal("one socket for two servers")
 	}
 	v := a.View("")
-	if len(v.View.Hosts) != 4 {
-		t.Fatalf("%d hosts in the view", len(v.View.Hosts))
+	if want := 3 + len(remotes); len(v.View.Hosts) != want {
+		t.Fatalf("%d hosts in the view, want %d", len(v.View.Hosts), want)
 	}
 	for _, h := range v.View.Hosts {
 		for _, s := range h.Sessions {

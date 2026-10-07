@@ -208,7 +208,8 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         Tailscale check (S15) are fake-only steps; LH05's wedged master
         is the home's real one stopped; `WindowKB` gave way to `Stall`
         alone (LH, LS09). No scenario relied on `Pty` or `Mux` off.
-        S05's three servers moved to a remote machine.
+        S05's three servers are the home's machine's, as before, but on
+        the container backend, where they are a remote machine's.
       - Real ssh as it is, now checked: a network change strands a
         standby's far side, which exits after its 30s silence window
         (LS03 checks it); ssh -t prints "Connection to … closed." (LS08
