@@ -112,7 +112,7 @@ type snapshot struct {
   moves (S22); write `ctl.pid`; read tmux's version; install keys and
   hooks; re-read.
 - **Re-reads**: every notification but pane output (`%message
-  tower-alert` from the alert hooks included, or on tmux 3.2 their
+  tower-alert` from the alert hooks included, or before tmux 3.4 their
   `%window-renamed`) kicks the pacer (two at
   once, then one per 50ms in a burst); a re-read takes every kick that
   arrived before it started. A re-read is one `DoMany` batch: `display -p
@@ -239,9 +239,10 @@ key is put back only if its line is still exactly towerd's (a user's own
 binding that also runs tower is never touched). Alert hooks (unless
 `TOWER_ALERTS=0`): `set-hook -g alert-bell[7193] 'display-message -c
 <control client> tower-alert'`, and the same for activity and silence,
-unless that index holds something else; removed on stop. tmux before 3.3
-(by `#{version}`) takes `display-message`'s `-c` for a flag, and tells no
-control client what a hook's own commands do: there the hook is
+unless that index holds something else; removed on stop. tmux before 3.4
+(by `#{version}`) shows a control client no message (3.2 takes
+`display-message`'s `-c` for a flag), and tells it nothing a hook's own
+commands do: there the hook is
 `run-shell -b "<tmux> -S #{q:socket_path} rename-window -t =_tower:
 tower-alert"`, a client of its own whose rename of `_tower`'s window the
 control client, attached there, hears of.

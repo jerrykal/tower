@@ -147,13 +147,14 @@ func (k *keys) install(ctl *tmux.Control) {
 	if config.Flag("TOWER_ALERTS", true) {
 		cmd := "display-message -c " + tmux.Quote(ctl.Name()) + " tower-alert"
 		d.mu.Lock()
-		old := tmuxBefore(d.tmuxVer, 3, 3)
+		old := tmuxBefore(d.tmuxVer, 3, 4)
 		d.mu.Unlock()
 		if old {
-			// tmux 3.2 takes display-message's -c for a flag, so no client
-			// can be named, and tells no control client what a hook's own
-			// commands do: a tmux client the hook starts renames _tower's
-			// window, which the control client, attached there, hears of.
+			// tmux 3.3 shows a control client no message (3.2 takes
+			// display-message's -c for a flag, so none can be named), and
+			// tells it nothing a hook's own commands do: a tmux client the
+			// hook starts renames _tower's window, which the control
+			// client, attached there, hears of.
 			cmd = "run-shell -b " + tmux.Quote(tmux.Literal(transport.ShellQuote(tmux.Bin()))+
 				" -S #{q:socket_path} rename-window -t ="+towerSession+": tower-alert")
 		}

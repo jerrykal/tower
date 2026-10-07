@@ -557,10 +557,10 @@ own:
 without telling control clients. towerd adds global hooks `alert-bell`,
 `alert-activity` and `alert-silence` at index 7193, each `display-message -c
 <its control client> tower-alert`, and re-reads when that message arrives
-(LV01). On tmux 3.2, which takes `-c` there for a flag and tells control
-clients nothing a hook's own commands do, each hook starts a tmux client
-that renames `_tower`'s window instead, and the re-read follows its
-`%window-renamed`. One the user set at that index is left alone; towerd removes only
+(LV01). Before tmux 3.4, which shows a control client no message (3.2
+takes `-c` there for a flag) and tells it nothing a hook's own commands
+do, each hook starts a tmux client that renames `_tower`'s window
+instead, and the re-read follows its `%window-renamed`. One the user set at that index is left alone; towerd removes only
 its own on stop; `TOWER_ALERTS=0` turns them off.
 
 ## Live dashboards

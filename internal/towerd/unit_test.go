@@ -486,5 +486,8 @@ func TestTmuxBefore(t *testing.T) {
 		if got := tmuxBefore(v, 3, 3); got != want {
 			t.Errorf("tmuxBefore(%q, 3, 3) = %v, want %v", v, got, want)
 		}
+		if got := tmuxBefore(v, 3, 4); got != (want || v == "3.3" || v == "3.3a" || v == "next-3.3") {
+			t.Errorf("tmuxBefore(%q, 3, 4) = %v", v, got)
+		}
 	}
 }
