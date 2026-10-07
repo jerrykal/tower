@@ -128,7 +128,7 @@ func realHost(t *testing.T, w *World, h, bin string, sync bool, sessions ...stri
 // to a host being cleaned.
 func (w *World) stopHomes() {
 	for _, term := range w.terms {
-		killSessions(term.Sock)
+		killSessions(localTmux(term.Sock))
 	}
 	for _, c := range w.spawned {
 		if c.Process != nil {

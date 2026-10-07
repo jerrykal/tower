@@ -291,17 +291,18 @@ func (h *Host) TmuxServer() tmux.Server {
 	return tmux.Server{Bin: tmux.Bin(), Args: h.TmuxArgs()}
 }
 
-// Tmux runs a tmux command on the host's server, through its socket: a
-// container host's too, which the container shares.
-func (h *Host) Tmux(args ...string) (string, error) { return h.tmux(false, args...) }
+// Tmux runs a tmux command on the host's server: a container host's
+// with the container's tmux (through its agent, about 0.3ms more), as
+// this machine's may not reach a server of another version (3.4 to 3.6b).
+func (h *Host) Tmux(args ...string) (string, error) { return h.tmux(args...) }
 
-// tmux runs a tmux command on the host's server; start says it starts
-// the server, which on a container host starts in its container.
-func (h *Host) tmux(start bool, args ...string) (string, error) {
+// tmux runs a tmux command on the host's server; one that starts a
+// container host's server starts it in the container.
+func (h *Host) tmux(args ...string) (string, error) {
 	argv := append(h.TmuxArgs(), args...)
 	var out string
 	var err error
-	if start && h.ctr != nil {
+	if h.ctr != nil {
 		out, err = h.ctrRun(h.EnvMap(), 10*time.Second, append([]string{ctrTmux}, argv...)...)
 	} else {
 		out, err = runLocal(h.EnvMap(), 10*time.Second, append([]string{tmux.Bin()}, argv...)...)
@@ -334,7 +335,7 @@ func (h *Host) NewSession(name string) {
 	var err error
 	for range 10 {
 		var out string
-		out, err = h.tmux(start, args...)
+		out, err = h.tmux(args...)
 		if err == nil || !strings.Contains(out, "exited unexpectedly") {
 			break
 		}

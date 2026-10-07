@@ -141,6 +141,9 @@ func TestU02(t *testing.T) {
 	term.OpenDash()
 	term.Pick("s50")
 	w.WaitLoop(a, "^B:s50(:|$)", 6*time.Second)
+	// The home has the loop there once the switch is stored: a key typed
+	// before B's client attaches is lost.
+	w.Eventually(5*time.Second, "a client on B:s50", func() bool { return onSession(b, "s50") })
 	term.OpenDash()
 	term.Pick("B:train-llm:2")
 	w.WaitLoop(a, "^B:train-llm", 6*time.Second)

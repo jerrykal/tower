@@ -158,8 +158,8 @@ func (h *Host) ClientWindow() string {
 // and starts it again with session.
 func (w *World) RestartServer(h *Host, session string) {
 	w.T.Helper()
-	killSessions(h.Sock)
-	if !waitNoServer(h.Sock, 5*time.Second) {
+	killSessions(w.tmuxAt(h.Sock))
+	if !waitNoServer(w.tmuxAt(h.Sock), 5*time.Second) {
 		w.T.Fatalf("%s's server did not exit", h.Name)
 	}
 	h.NewSession(session)

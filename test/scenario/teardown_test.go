@@ -18,7 +18,7 @@ import (
 func (w *World) teardown() {
 	t := w.T
 	for _, term := range w.terms {
-		killSessions(term.Sock)
+		killSessions(localTmux(term.Sock))
 	}
 	time.Sleep(300 * time.Millisecond)
 	// The sshds first: their connections' processes are found under them,
@@ -70,10 +70,10 @@ func (w *World) teardown() {
 
 	var wedged []string
 	for _, sock := range w.sockets {
-		killSessions(sock)
+		killSessions(w.tmuxAt(sock))
 	}
 	for _, sock := range w.sockets {
-		if !waitNoServer(sock, 10*time.Second) {
+		if !waitNoServer(w.tmuxAt(sock), 10*time.Second) {
 			wedged = append(wedged, sock)
 			exec.Command("pkill", "-9", "-f", "tmux -L "+sock+" ").Run()
 			exec.Command("pkill", "-9", "-f", "tmux -L "+sock+"$").Run()
@@ -128,23 +128,45 @@ func (w *World) homeOf(path string) *Host {
 	return nil
 }
 
-// killSessions ends every session of a test server, which ends the server
-// (exit-empty). A server is never killed outright: the user's tooling
-// forbids kill-server, and a server that does not exit is a finding.
-func killSessions(sock string) {
-	out, err := exec.Command(tmux.Bin(), "-L", sock, "list-sessions", "-F", "#{session_id}").Output()
-	if err != nil {
-		return
-	}
-	for _, id := range strings.Fields(string(out)) {
-		exec.Command(tmux.Bin(), "-L", sock, "kill-session", "-t", id).Run()
+// tmuxRun runs a tmux command on one test server.
+type tmuxRun func(args ...string) (string, error)
+
+// localTmux runs this machine's tmux on the server at sock.
+func localTmux(sock string) tmuxRun {
+	return func(args ...string) (string, error) {
+		out, err := exec.Command(tmux.Bin(), append([]string{"-L", sock}, args...)...).Output()
+		return string(out), err
 	}
 }
 
-func waitNoServer(sock string, d time.Duration) bool {
+// tmuxAt runs tmux on the world's server at sock: a container host's
+// with the container's tmux (Host.Tmux), another with this machine's.
+func (w *World) tmuxAt(sock string) tmuxRun {
+	for _, h := range w.hosts {
+		if h.Sock == sock && h.ctr != nil {
+			return h.Tmux
+		}
+	}
+	return localTmux(sock)
+}
+
+// killSessions ends every session of a test server, which ends the server
+// (exit-empty). A server is never killed outright: the user's tooling
+// forbids kill-server, and a server that does not exit is a finding.
+func killSessions(tm tmuxRun) {
+	out, err := tm("list-sessions", "-F", "#{session_id}")
+	if err != nil {
+		return
+	}
+	for _, id := range strings.Fields(out) {
+		tm("kill-session", "-t", id)
+	}
+}
+
+func waitNoServer(tm tmuxRun, d time.Duration) bool {
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
-		if exec.Command(tmux.Bin(), "-L", sock, "list-sessions").Run() != nil {
+		if _, err := tm("list-sessions"); err != nil {
 			return true
 		}
 		time.Sleep(50 * time.Millisecond)

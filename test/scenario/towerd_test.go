@@ -283,7 +283,7 @@ func (l *FakeLoop) Attach(target proto.Ref, on *Host) *Term {
 		l.w.T.Fatalf("prepare %s: %v", target.String(), err)
 	}
 	if l.Term != nil && !l.KeepOld {
-		killSessions(l.Term.Sock)
+		killSessions(localTmux(l.Term.Sock))
 	}
 	l.n++
 	t := l.w.Term(fmt.Sprintf("%s-%d", l.ID[:4], l.n), l.Home, nil, p.Argv...)
