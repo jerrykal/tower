@@ -472,6 +472,15 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
       | --- | --- | --- |
       | `^TestLC` | 8/8 in 313s | 8/8 in 373s |
       | the rest | passed in 364s | passed in 408s |
+
+      On a macOS runner (f9046ba): `mise run test` three rounds and
+      LS06 30 of 30 passed; both backends' LC shards 8/8 (sshd at R400:
+      LC03 12.4s against 15.2s, LC04 6.3s against 13s, LC06 11.3s
+      against 15.2s); the rest 84 passed and 4 skipped on each, LS08
+      alone failing below its throughput floor, as before (decision
+      124). The stall check saw 5.7 lines a second before the stall and
+      through it; S05 passed on sshd with its servers on the home's
+      machine; no process, pipe or rule was left.
 - [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
       update [design/harness.md](design/harness.md),
       [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
