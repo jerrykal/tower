@@ -537,6 +537,20 @@ func TestHandoff(t *testing.T) {
 		t.Fatalf("failed detach: tty %q quit %v note %q", b, m2.quitted, m2.note.text)
 	}
 
+	// The detach fails on a client another asker (or the loop) is ending:
+	// tmux no longer lists it, though it lives. The hold stays, the next
+	// client's to release.
+	os.WriteFile(tty, nil, 0o600)
+	m5, _, x5 := newTestModel(t, testDash(), false)
+	x5.out["display-message"] = tty + "\t$0\t@0\n"
+	x5.err["detach-client"] = errTest
+	m5.c.Client = itoa(os.Getpid()) + ":1:/dev/ttys042"
+	x5.next = map[string][]string{"list-clients": {itoa(os.Getpid()) + " /dev/ttys042\n", ""}}
+	press(t, m5, "b", "a", "n", "enter")
+	if b, _ := os.ReadFile(tty); string(b) != relay.SyncBegin || !m5.quitted {
+		t.Fatalf("a detach that lost to another: tty %q quit %v note %q", b, m5.quitted, m5.note.text)
+	}
+
 	// TOWER_TEST_NOTTY: no hold, the detach all the same.
 	os.WriteFile(tty, nil, 0o600)
 	t.Setenv("TOWER_TEST_NOTTY", "1")

@@ -185,6 +185,11 @@ func (c *Conn) EndClient(ctx context.Context) error {
 	tty := c.hold(ctx)
 	_, err = c.Tmux.Run(ctx, "detach-client", "-t", cl.Name, "-E", "exit 42")
 	if err != nil && alive(cl.Pid) {
+		// One tmux no longer lists is being ended by another (a second
+		// asker, or the loop): its hold is the next client's to release.
+		if listed, lerr := ClientListed(ctx, c.Tmux, cl); lerr == nil && !listed {
+			return nil
+		}
 		// The client stays: let its terminal draw again.
 		if tty != "" {
 			writeTTY(tty, relay.SyncEnd)

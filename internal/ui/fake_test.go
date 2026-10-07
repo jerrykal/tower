@@ -182,7 +182,8 @@ func (f *fakeTowerd) setAnswer(fn func(proto.Request) proto.Ack) {
 type fakeTmux struct {
 	mu    sync.Mutex
 	calls [][]string
-	out   map[string]string // first argument → stdout
+	out   map[string]string   // first argument → stdout
+	next  map[string][]string // first argument → stdouts in turn, before out
 	err   map[string]error
 }
 
@@ -190,6 +191,10 @@ func (x *fakeTmux) Run(ctx context.Context, args ...string) (string, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	x.calls = append(x.calls, append([]string(nil), args...))
+	if q := x.next[args[0]]; len(q) > 0 {
+		x.next[args[0]] = q[1:]
+		return q[0], x.err[args[0]]
+	}
 	return x.out[args[0]], x.err[args[0]]
 }
 

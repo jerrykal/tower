@@ -329,8 +329,10 @@ moving focus. Prompts, confirm, the picker and help ignore it.
   alone), gets the frame hold on its tty (`#{client_tty}`, read as the
   popup opens) unless `TOWER_SYNC=0`, `TOWER_TEST_NOTTY`, or the tty
   cannot be written, and `detach-client -t <client> -E 'exit 42'`. A
-  detach that fails while the client is still there releases the hold
-  and shows the error. A
+  detach that fails while the client is still there, and still listed,
+  releases the hold and shows the error; one no longer listed is being
+  ended by another (a second `tower last`, or the loop), and its hold
+  is the next client's. A
   client no loop owns gets `⏎ on another host needs the attach loop (run
   tower outside tmux)`. Test hooks: `TOWER_TEST_GEN`,
   `TOWER_TEST_CRASH=after-switch`.
