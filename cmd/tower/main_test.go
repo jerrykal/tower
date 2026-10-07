@@ -76,3 +76,12 @@ func TestHostAddRefusesATakenName(t *testing.T) {
 		t.Fatalf("rm: %+v", hs)
 	}
 }
+
+// A refused hand-off's note is shown as text: a #(…) from a host's ssh
+// error is not run.
+func TestLastRefusalIsLiteral(t *testing.T) {
+	got := refusal("/dev/pts/3", "alpha is down: boom #(touch x) #S")
+	if want := "tower: alpha is down: boom ##(touch x) ##S"; got[len(got)-1] != want {
+		t.Fatalf("refusal %q, want %q", got[len(got)-1], want)
+	}
+}

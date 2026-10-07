@@ -81,8 +81,15 @@ func cmdLast(args []string) error {
 		// Refused: an earlier attach's client (its loop moved on since
 		// the key), or a host not up.
 		tmux.UseBin(srv.Bin)
-		srv.Run(ctx, "display-message", "-c", name, "tower: "+res.Note)
+		srv.Run(ctx, refusal(name, res.Note)...)
 		return nil
 	}
 	return fallback()
+}
+
+// refusal is the display-message that says on client name why the home
+// refused a hand-off. display-message expands formats, and the note can
+// hold a host's ssh error: its #s are doubled, so a #(…) in it stays text.
+func refusal(name, note string) []string {
+	return []string{"display-message", "-c", name, tmux.Literal("tower: " + note)}
 }
