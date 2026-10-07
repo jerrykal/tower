@@ -141,7 +141,7 @@ type Host struct {
 	Dirs     []Dir     `json:"dirs,omitempty"` // zoxide directories, most frecent first
 	Seen     int64     `json:"seen,omitempty"` // ms since last heard, for a host not up
 	RTT      int64     `json:"rtt,omitempty"`  // ms, the link's slow recent round trip
-	Link     int       `json:"link,omitempty"` // link generation: connects so far
+	Link     int       `json:"link,omitempty"` // link generation: grows with each connect, on any link to the host (ms)
 }
 
 // Reachable reports whether requests and hand-offs to h can go ahead.

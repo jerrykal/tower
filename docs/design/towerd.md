@@ -332,7 +332,9 @@ followed the stable period; at once after a give-up or a network change
 (a down host); a failed host waits the cap. A wake (wall clock ahead of
 the monotonic clock by more than 2s, checked every second; or the `wake`
 call) closes every stream and exits every master in parallel. The link
-generation counts connects that came up. Interface addresses are compared
+generation grows with each connect that came up: the time in ms, past the
+last, so a new link to the host (its entry changed, or the home
+restarted) has a later generation than any old one's. Interface addresses are compared
 every second (`netchange` simulates a change).
 
 **Merged view**: the local host (status `local`) and every link in

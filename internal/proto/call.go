@@ -104,7 +104,7 @@ type LinkStatus struct {
 	OS       string `json:"os,omitempty"`
 	Proto    int    `json:"proto,omitempty"`
 	Attempts int    `json:"attempts"` // connects tried so far
-	Link     int    `json:"link"`     // connects that came up
+	Link     int    `json:"link"`     // the link's generation (Host.Link)
 	States   int    `json:"states"`   // state messages received
 	RTT      int64  `json:"rtt_ms"`
 	Offset   int64  `json:"offset_ms"`

@@ -462,3 +462,16 @@ func TestRouteHearsALinkDropBeforeItsFirstPong(t *testing.T) {
 		t.Fatalf("after %v: %+v, want B: connection lost at once", el.Round(time.Millisecond), ack)
 	}
 }
+
+// A link's generation grows with each connect, and a new link's (the
+// host's entry changed, or the home restarted) is past an old one's.
+func TestLinkGenGrows(t *testing.T) {
+	a := nextLinkGen(0)
+	if b := nextLinkGen(a); b <= a {
+		t.Fatalf("next %d after %d", b, a)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if c := nextLinkGen(0); c <= a {
+		t.Fatalf("a new link's %d is not past an earlier one's %d", c, a)
+	}
+}

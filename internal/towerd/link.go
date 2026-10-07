@@ -572,7 +572,7 @@ func (l *link) connect() outcome {
 	l.status, l.reason = proto.StatusUp, ""
 	l.upAt = time.Now()
 	l.installs = 0
-	l.gen++
+	l.gen = nextLinkGen(l.gen)
 	l.heard = time.Now()
 	// A first state that came in before the hello was taken: its clients
 	// apply now that the host's id is known.
@@ -930,3 +930,9 @@ func (t *tailBuf) String() string {
 	defer t.mu.Unlock()
 	return strings.Join(t.lines, "\n")
 }
+
+// nextLinkGen is the generation of a link that came up after one of gen
+// prev: the time in ms, and past prev. It grows from one link to the next
+// too (hosts.toml changed) and across a home restart, so a loop that
+// prepared an attach on one link knows a view of any later one.
+func nextLinkGen(prev int) int { return max(prev+1, int(time.Now().UnixMilli())) }
