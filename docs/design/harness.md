@@ -342,13 +342,12 @@ Login nor an account: the harness runs every sshd as the test user.
 - On macOS a stopped process whose terminal hangs up stays stopped
   (Linux continues it): a far side stalled when its connection ends goes
   only once the stall does (LS03).
-- On macOS the last bytes of a burst can be lost when the command that
-  wrote them exits, through sshd or as the session leader of ssh's own
-  terminal: twice LS08's 22.8 MB build log arrived short, by 4 bytes
-  plain (ssh given the terminal, no tower in the way) and by 10 relayed.
-  A bare pty or sshd does not lose a 1 MB burst this way, so the cause is
-  in LS08's set-up or its load. LS08's reader gives up after 10s without
-  a byte.
+- On macOS a blocking write to a pty can come back short, part of it
+  taken. LS08's build-log helper, a write a line, once dropped the rest,
+  so its 22.8 MB arrived a few bytes short, plain and relayed; it now
+  writes on, as `cat` and Go's own writes do. LS08's reader gives up
+  after 10s without a byte, so bytes lost on the way fail the run
+  instead of hanging it.
 - Teardown stops the world's sshds first, killing their connections'
   processes (found under the sshd), then takes the world's rules and
   pipes off lo0.

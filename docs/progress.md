@@ -349,9 +349,9 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         count fell short. It now wants a line every second instead of
         a total, which also checks they keep coming. A check of the
         harness made looser, not a timing of tower's.
-      - LS08's reader gives up after 10s without a byte: on macOS a
-        burst's last bytes can be lost (below) and the run hung for
-        40 minutes.
+      - LS08's reader gives up after 10s without a byte: on macOS the
+        build log arrived a few bytes short (below) and the run hung
+        for 40 minutes.
       - A stall stopped a daemon a session had started: F's towerd, when
         the stalled name's bridge was the one to start it, so both
         homes' views of F stalled (LH04 on the runner, whichever home
@@ -384,15 +384,16 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         empty, or reading before polling, nothing. Left there: the
         relay's 0.8 of plain behind a fast ssh, real or fake, is not
         pinned down further.
-      - The last bytes of a burst are sometimes lost when the command
-        writing it exits: 2–10 of LS08's 22.8 MB build log, on both
-        backends, plain (no tower in the way) and relayed. Where is
-        not pinned down: on GitHub's macOS runners a 1 MB burst lost
-        nothing in 200 runs each of five pty set-ups (the writer a
-        session leader or not, its terminal's other end held or not,
-        draining or pausing before it exits) nor in 100 runs through a
-        local sshd. Tower's relay reads ssh's output through a pipe,
-        not a pty, so its own side cannot lose it this way.
+      - Since closed: LS08's 22.8 MB build log arrived 2–10 bytes
+        short now and then, on both backends, plain (no tower in the
+        way) and relayed. Its helper wrote a line a write and ignored a
+        write that came back short, which a macOS pty does: on the
+        runner 3 of 80 runs lost 2 bytes each, one short write each,
+        and none of 80 once the helper writes the rest (22cab0f, the
+        relay package's helper too). Neither the pty, ssh nor the relay
+        loses bytes: a 1 MB burst lost none in 2,000 runs through a
+        pty and 400 through a local sshd, and tower's relay reads
+        ssh's output through a pipe.
       - LV01 ("no client on c-one") failed three times in the sshd
         shard, and passes alone.
       - pf keeps an emptied anchor listed (`com.apple/tt-<pid>`) after
