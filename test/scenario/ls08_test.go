@@ -344,7 +344,6 @@ func TestLS08(t *testing.T) {
 	w := NewWorld(t, "ls08")
 	home := w.Host("A", nil)
 	w.Host("B", nil, SSHHost())
-	w.Shape("B", func(l *Link) { l.Pty = true })
 
 	t.Run("cat", func(t *testing.T) {
 		if testing.Short() {

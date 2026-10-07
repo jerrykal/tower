@@ -31,11 +31,11 @@ to scan).
 
 ## Next: the scenario suite over real ssh
 
-The fake ssh (`test/scenario/fakessh`, `fakenet`) is a simulator, and it
-has drifted from ssh where it mattered (decisions 41 and 112). It is to
-be replaced: on Linux each simulated host is a container running sshd
-and tmux, reached over real ssh, its link shaped with `tc` and
-`iptables`; on macOS, where CI runners have no Docker, hosts are reached
+The fake ssh (`test/scenario/fakessh`, `fakenet`) was a simulator, and it
+had drifted from ssh where it mattered (decisions 41 and 112). It is
+replaced (decision 138): on Linux each simulated host is a container
+running sshd and tmux, reached over real ssh, its link shaped with `tc`
+and `iptables`; on macOS, where CI runners have no Docker, hosts are reached
 over localhost sshd. Each phase ends with both shards run and reported.
 
 **Phase 0, development on Linux: done.** The repo is developed on a Linux
@@ -559,11 +559,20 @@ same-second recency tie. LC08 on Linux is the new latency baseline.
         1.06s), before its deadline, so the home ran it on thawing;
         alone it was answered "no answer in time", at the deadline. A
         request the asker aborted at a stall can still run.
-- [ ] **Phase 7, remove the fake ssh.** Delete `fakessh` and `fakenet`;
-      update [design/harness.md](design/harness.md),
-      [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section,
-      and a decision superseding 3, 32 and the fake ssh's parts of 41
-      and 112. The real-host scenarios (R) stay as they are.
+- [x] **Phase 7, remove the fake ssh.** `fakessh` and `fakenet` are
+      out of the suite: the harness builds and uses neither, and every
+      scenario runs on containers (Linux's default) or sshds (macOS's)
+      (decision 138). [design/harness.md](design/harness.md),
+      [scenarios.md](scenarios.md), CLAUDE.md's scenario-suite section
+      and the workflow say so. The fake's own steps went: ssh itself
+      exiting 42 (S06 (c)) and 43 (LS09 takes the host's client
+      detached with `exit 43`, which ssh passes on), the Tailscale
+      check (S15; transport's tests), the knobs only it had (`WindowKB`,
+      `Pty`, `Mux`, `ExitWith`, `SlowControl`) and the fake-only
+      branches in LH, LS and V. The real-host scenarios (R) are as they
+      were. Both shards on Linux containers: 8/8 in 368s, the rest 85
+      passed and 4 skipped in 414s. The two directories themselves
+      wait for removal.
 
 Two quirks of the current harness on Linux are left for the
 replacement:
@@ -602,7 +611,7 @@ quirk, a timing constant). About 22,000 lines of Go and 17,000 of tests,
 | `dirs` | git state and zoxide dirs, refreshed in the background |
 | `hosts` | the host list's edits, naming rules and checks |
 | `ui` | the Atlas dashboard (Bubble Tea, no Lip Gloss) |
-| `test/scenario` | the acceptance harness, the fake ssh, 92 scenarios |
+| `test/scenario` | the acceptance harness, its host containers and sshds, 92 scenarios |
 
 Docs: [overview.md](overview.md) (product), [protocol.md](protocol.md),
 [scenarios.md](scenarios.md), [decisions.md](decisions.md) (101

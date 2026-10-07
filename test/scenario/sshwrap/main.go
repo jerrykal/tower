@@ -1,7 +1,6 @@
-// Command sshwrap is the scenario suite's ssh for hosts reached over
-// real ssh: it logs the call as the fake ssh does, then runs ssh with
-// the world's config ($TOWER_TEST_SSH_CONFIG) and neither the user's nor
-// the system's.
+// Command sshwrap is the scenario suite's ssh: it logs the call
+// ($TOWER_TEST_SSH_LOG), then runs ssh with the world's config
+// ($TOWER_TEST_SSH_CONFIG) and neither the user's nor the system's.
 package main
 
 import (

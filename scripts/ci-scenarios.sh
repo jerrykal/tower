@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Runs one shard of the scenario suite in CI, as `mise run scenarios` does:
-# SHARD is lc or rest, HOSTS fake, container or sshd. The run's
+# SHARD is lc or rest, HOSTS container or sshd. The run's
 # directories are kept for the workflow's upload; each scenario that
 # failed is run again alone, for a note, and the shard's own exit status
 # is the step's. LS08's shortfalls reported (TT_LS08_REPORT) become
 # warnings.
 set -uo pipefail
-case $HOSTS in container | sshd) export TOWER_HOSTS=$HOSTS ;; esac
+export TOWER_HOSTS=$HOSTS
 if [ "$SHARD" = lc ]; then sel=(-run '^TestLC'); else sel=(-skip '^TestLC'); fi
 base=/tmp/tsc-ci
 mkdir -p "$base/tmux" "$base/tmp"

@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       set:
-        description: "full: containers at every tmux from 3.2a to 3.7c, the fake ssh on Linux and macOS, macOS sshd; push: what a push runs; macos-sshd: macOS sshd alone"
+        description: "full: containers at every tmux from 3.2a to 3.7c, and macOS sshd; push: what a push runs; macos-sshd: macOS sshd alone"
         type: choice
         options: [full, push, macos-sshd]
         default: full
@@ -30,30 +30,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        hosts: [container]
         tmux: ${{ fromJSON(inputs.set == 'full' && '["3.2a","3.3a","3.4","3.5a","3.6b","3.7c"]' || '["3.2a","3.7c"]') }}
         shard: [lc, rest]
-        include: ${{ fromJSON(inputs.set == 'full' && '[{"hosts":"fake","shard":"lc"},{"hosts":"fake","shard":"rest"}]' || '[]') }}
-    name: linux ${{ matrix.hosts }} ${{ matrix.tmux }} ${{ matrix.shard }}
+    name: linux ${{ matrix.tmux }} ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
       - name: tmux, and the kernel's shaping for the containers
-        env:
-          HOSTS: ${{ matrix.hosts }}
         run: |
           sudo apt-get update -q && sudo apt-get install -yq tmux
           tmux -V && nproc
-          if [ "$HOSTS" = container ]; then
-            mods=(ifb sch_netem sch_ingress cls_matchall act_mirred)
-            sudo modprobe -a "${mods[@]}" || { sudo apt-get install -yq "linux-modules-extra-$(uname -r)" && sudo modprobe -a "${mods[@]}"; }
-            docker version --format 'docker {{.Server.Version}}' && docker compose version
-          fi
+          mods=(ifb sch_netem sch_ingress cls_matchall act_mirred)
+          sudo modprobe -a "${mods[@]}" || { sudo apt-get install -yq "linux-modules-extra-$(uname -r)" && sudo modprobe -a "${mods[@]}"; }
+          docker version --format 'docker {{.Server.Version}}' && docker compose version
       - name: scenarios
         env:
-          HOSTS: ${{ matrix.hosts }}
+          HOSTS: container
           SHARD: ${{ matrix.shard }}
           TT_TMUX_VERSION: ${{ matrix.tmux }}
           # A shared runner can be too slow for LS08's throughput floor
@@ -63,7 +57,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: worlds-linux-${{ matrix.hosts }}-${{ matrix.tmux }}-${{ matrix.shard }}
+          name: worlds-linux-${{ matrix.tmux }}-${{ matrix.shard }}
           path: |
             worlds.tgz
             scenarios.log
@@ -74,9 +68,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        hosts: ${{ fromJSON(inputs.set == 'macos-sshd' && '["sshd"]' || '["sshd","fake"]') }}
         shard: [lc, rest]
-    name: macos ${{ matrix.hosts }} ${{ matrix.shard }}
+    name: macos sshd ${{ matrix.shard }}
     runs-on: macos-15
     timeout-minutes: 50
     steps:
@@ -85,7 +78,7 @@ jobs:
       - run: brew install tmux && tmux -V && sysctl -n hw.ncpu hw.memsize
       - name: scenarios
         env:
-          HOSTS: ${{ matrix.hosts }}
+          HOSTS: sshd
           SHARD: ${{ matrix.shard }}
           # A macOS runner is too slow for LS08's throughput floor
           # (decision 135): reported, not failed.
@@ -94,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: worlds-macos-${{ matrix.hosts }}-${{ matrix.shard }}
+          name: worlds-macos-sshd-${{ matrix.shard }}
           path: |
             worlds.tgz
             scenarios.log

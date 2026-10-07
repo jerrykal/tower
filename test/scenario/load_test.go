@@ -13,7 +13,7 @@ import (
 )
 
 // The suite's binary doubles as the load programs the relay scenarios run
-// on a simulated host (through the fake ssh) and beside a terminal: with
+// on a simulated host (over ssh) and beside a terminal: with
 // helperVar set it runs that program instead of the tests.
 const helperVar = "SCENARIO_HELPER"
 

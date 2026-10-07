@@ -1,14 +1,13 @@
 // Package sshcall reads an ssh command line as ssh does, and logs each
-// call as a JSON line in $TOWER_FAKE_DIR/ssh.log, for the scenarios that
-// count or inspect the calls tower makes. Both ssh stand-ins of the suite
-// use it: the fake ssh and the wrapper around real ssh.
+// call as a JSON line in $TOWER_TEST_SSH_LOG, for the scenarios that
+// count or inspect the calls tower makes. The suite's wrapper around
+// real ssh (sshwrap) uses it.
 package sshcall
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -89,7 +88,7 @@ func (a *Args) ConnectTimeout() time.Duration {
 	return time.Duration(s) * time.Second
 }
 
-// Log appends the call to $TOWER_FAKE_DIR/ssh.log.
+// Log appends the call to $TOWER_TEST_SSH_LOG.
 func Log(a *Args) {
 	rec := map[string]any{
 		"ts": time.Now().UnixMilli(), "host": a.Host, "tty": a.TTY, "op": a.Op,
@@ -97,7 +96,7 @@ func Log(a *Args) {
 		"cm": a.Opt("ControlMaster"), "cmd": a.Remote,
 	}
 	b, _ := json.Marshal(rec)
-	f, err := os.OpenFile(filepath.Join(os.Getenv("TOWER_FAKE_DIR"), "ssh.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(os.Getenv("TOWER_TEST_SSH_LOG"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}

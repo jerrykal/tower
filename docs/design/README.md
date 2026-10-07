@@ -21,7 +21,7 @@ internal/relay       terminal modes, ptys, the relay, frame writes between seque
 internal/loop        the attach loop, the attach shim, standbys
 internal/hosts       the host list's edits, naming rules, ssh aliases and checks
 internal/ui          the dashboard
-test/scenario        the acceptance harness and the fake ssh
+test/scenario        the acceptance harness, its host containers and sshds
 ```
 
 Dependencies point down the list: `proto` and `config` depend on nothing

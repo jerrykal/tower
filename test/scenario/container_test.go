@@ -22,9 +22,9 @@ import (
 	"github.com/jerrykal/tower/internal/transport"
 )
 
-// The container backend (TOWER_HOSTS=container): a host made with
-// SSHHost is a container running sshd and tmux (hosts/), reached over
-// real ssh. The run's directories are bind-mounted at their own paths,
+// The container backend (Linux's, or TOWER_HOSTS=container): a host made
+// with SSHHost is a container running sshd and tmux (hosts/), reached
+// over real ssh. The run's directories are bind-mounted at their own paths,
 // so a host's files and its tmux and towerd sockets are where the
 // harness looks for them; only ssh crosses the network. Each container
 // is one machine: hosts on it (Machine) share it, each reached through
@@ -32,8 +32,7 @@ import (
 // (hostagent) shapes its link, sets its faults, runs the host's commands
 // there and resets it between worlds.
 
-// ctrs is the running backend; nil: every host is reached through the
-// fake ssh.
+// ctrs is the running backend; nil: the sshd backend runs.
 var ctrs *ctrBackend
 
 // ctrPerWorld is the most host containers a world takes (S18's four).
@@ -552,14 +551,6 @@ func (w *World) writeSSHConfig() {
 func (w *World) ctrApply(alias string, prev linkState, s *linkState) {
 	w.T.Helper()
 	c := s.target.ctr
-	switch {
-	case s.WindowKB != 0:
-		w.T.Fatalf("%s: WindowKB has no mechanism over real ssh (see docs/progress.md, Phase 2)", alias)
-	case s.exit != nil:
-		w.T.Fatalf("%s: ExitWith has no mechanism over real ssh (see docs/progress.md, Phase 2)", alias)
-	case s.oDelayMs != 0:
-		w.T.Fatalf("%s: SlowControl has no mechanism over real ssh (see docs/progress.md, Phase 2)", alias)
-	}
 	if s.down != prev.down {
 		w.writeSSHConfig()
 	}
@@ -651,7 +642,7 @@ func (h *Host) HostPid(pid int) int {
 
 // SplitFar splits pids into those of the machine the test runs on and
 // those on h: in its container, or under its sshds (none for a host of
-// the fake ssh).
+// this machine).
 func (h *Host) SplitFar(pids []int) (near, far []int) {
 	var in map[int]bool
 	switch {

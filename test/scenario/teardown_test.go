@@ -60,14 +60,6 @@ func (w *World) teardown() {
 		}
 	}
 
-	if b, err := os.ReadFile(filepath.Join(w.Fake, "holders")); err == nil {
-		for _, f := range strings.Fields(string(b)) {
-			if pid, err := strconv.Atoi(f); err == nil {
-				syscall.Kill(pid, syscall.SIGKILL)
-			}
-		}
-	}
-
 	var wedged []string
 	for _, sock := range w.sockets {
 		killSessions(w.tmuxAt(sock))
@@ -85,14 +77,12 @@ func (w *World) teardown() {
 	for _, pid := range pidsWithEnvPrefix("TOWER_HOME", w.Dir+"/") {
 		syscall.Kill(pid, syscall.SIGKILL)
 	}
-	// Real ssh's control masters: their process title overwrites their
+	// ssh's control masters: their process title overwrites their
 	// environment, so they are found by their control path.
-	if w.real {
-		for _, h := range w.hosts {
-			cm := "ssh: " + h.Paths().CMDir() + "/"
-			for _, pid := range procsWhere(func(p proc) bool { return len(p.argv) > 0 && strings.HasPrefix(p.argv[0], cm) }) {
-				syscall.Kill(pid, syscall.SIGKILL)
-			}
+	for _, h := range w.hosts {
+		cm := "ssh: " + h.Paths().CMDir() + "/"
+		for _, pid := range procsWhere(func(p proc) bool { return len(p.argv) > 0 && strings.HasPrefix(p.argv[0], cm) }) {
+			syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}
 

@@ -2,8 +2,6 @@ package scenario
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -23,16 +21,6 @@ var lhTiming = map[string]string{"TOWER_SILENCE": "15000", "TOWER_TEST_PAD": "30
 
 // slowLink is a 500ms round trip with jitter and 512 KB/s.
 func slowLink(l *Link) { l.DelayMs, l.JitterMs, l.BwKBps = 250, 80, 512 }
-
-// lhWindow is a link that stalls: on the fake a 32 KB window, so a stall
-// fills the pipe at once. Real ssh's channel window is its own (2 MB):
-// there the stall alone holds the link, the stream's writer never blocks
-// its caller either way (internal/stream's tests block it).
-func lhWindow(l *Link) {
-	if !overRealSSH() {
-		l.WindowKB = 32
-	}
-}
 
 // lhWorld is A, F, S and Z with the home on A, every host up, and a loop
 // on F:fox.
@@ -186,7 +174,7 @@ func TestLH01(t *testing.T) {
 // LH02: S slow, Z stalled each round: a change elsewhere still reaches
 // every dashboard fast.
 func TestLH02(t *testing.T) {
-	x := newLH(t, "lh02", slowLink, lhWindow)
+	x := newLH(t, "lh02", slowLink, nil)
 	for n := range 3 {
 		x.w.Heal("Z")
 		x.w.WaitLink(x.a, "Z", "up", 20*time.Second)
@@ -227,7 +215,7 @@ func bottomLines(screen string, n int) string {
 // given up fast when it stalls as it is switched to; the terminal back
 // where it was, told why; the host usable again once it recovers.
 func TestLH03(t *testing.T) {
-	x := newLH(t, "lh03", nil, lhWindow)
+	x := newLH(t, "lh03", nil, nil)
 	w, a, f, z := x.w, x.a, x.f, x.z
 	zed := w.Ref(a, "Z", "zed")
 	for _, after := range []time.Duration{4 * time.Second, 4 * time.Second, 300 * time.Millisecond, 300 * time.Millisecond} {
@@ -303,7 +291,6 @@ func TestLH04(t *testing.T) {
 	b := w.Host("B", []string{"bravo"}, SSHHost())
 	f := w.Host("F", []string{"fox"}, SSHHost())
 	w.SSH("Fb", f)
-	w.Shape("Fb", lhWindow)
 	// B first: its bridge starts F's towerd, which the stall of B's name
 	// must not stop, as a stalled network would not.
 	fb := f.Remote()
@@ -351,23 +338,18 @@ func TestLH05(t *testing.T) {
 	w.Home(a, wh.Remote(), f.Remote())
 	w.WaitLink(a, "W", "up", 10*time.Second)
 	w.WaitLink(a, "F", "up", 10*time.Second)
-	// Every ssh -O to W takes 2.5s: the fake's knob, or the home's real
-	// master to W stopped for 2.5s from each wake.
-	if !w.real {
-		w.SlowControl("W", 2500)
-	}
+	// Every ssh -O to W takes 2.5s: the home's master to W stopped for
+	// 2.5s from each wake.
 	var took []time.Duration
 	for range 3 {
 		before := w.Link(a, "F")
-		if w.real {
-			pid := w.masterPid(a, "W")
-			if pid == 0 {
-				t.Fatal("no master to W")
-			}
-			Signal(pid, syscall.SIGSTOP)
-			t.Cleanup(func() { Signal(pid, syscall.SIGCONT) })
-			time.AfterFunc(2500*time.Millisecond, func() { Signal(pid, syscall.SIGCONT) })
+		pid := w.masterPid(a, "W")
+		if pid == 0 {
+			t.Fatal("no master to W")
 		}
+		Signal(pid, syscall.SIGSTOP)
+		t.Cleanup(func() { Signal(pid, syscall.SIGCONT) })
+		time.AfterFunc(2500*time.Millisecond, func() { Signal(pid, syscall.SIGCONT) })
 		start := time.Now()
 		go a.Call(proto.CallWake, nil, nil)
 		w.Eventually(20*time.Second, "F reconnected", func() bool {
@@ -393,7 +375,7 @@ func TestLH06(t *testing.T) {
 	w.Timing(ProductionTimings)
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
-	w.Shape("B", func(l *Link) { l.Mux, l.DelayMs = true, 25 })
+	w.Shape("B", func(l *Link) { l.DelayMs = 25 })
 	w.Home(a, b.Remote())
 	w.WaitLink(a, "B", "up", 15*time.Second)
 	// A real loop: nothing it does while B's towerd is wedged may cut its
@@ -406,14 +388,8 @@ func TestLH06(t *testing.T) {
 		t.Fatal("B's towerd is not running")
 	}
 	t.Cleanup(func() { Signal(old, syscall.SIGCONT); Kill9(old) })
-	// The master: the fake's record of it, or the real one's pid.
-	masterOf := func() string {
-		if w.real {
-			return strconv.Itoa(w.masterPid(a, "B"))
-		}
-		m, _ := os.ReadFile(filepath.Join(w.Fake, "masters", "B"))
-		return string(m)
-	}
+	// The master: its pid.
+	masterOf := func() string { return strconv.Itoa(w.masterPid(a, "B")) }
 	master := masterOf()
 	exits := func() int {
 		n := 0

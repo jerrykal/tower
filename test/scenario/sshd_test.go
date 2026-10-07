@@ -22,8 +22,8 @@ import (
 	"github.com/jerrykal/tower/internal/transport"
 )
 
-// The sshd backend (TOWER_HOSTS=sshd): a host made with SSHHost is a tmux
-// server of this machine, as with the fake ssh, reached over real ssh.
+// The sshd backend (macOS's, or TOWER_HOSTS=sshd): a host made with
+// SSHHost is a tmux server of this machine reached over real ssh.
 // Each of its ssh names has an sshd of its own on 127.0.0.1, run by the
 // harness as this user (no account or sshd of the machine's), whose
 // sessions start with the host's environment. Drop and Stall act on the
@@ -376,14 +376,6 @@ func (d *sshd) stop() {
 // Drop and Stall are the name's.
 func (w *World) sshdApply(alias string, prev linkState, s *linkState) {
 	w.T.Helper()
-	switch {
-	case s.WindowKB != 0:
-		w.T.Fatalf("%s: WindowKB has no mechanism over real ssh (see docs/progress.md, Phase 2)", alias)
-	case s.exit != nil:
-		w.T.Fatalf("%s: ExitWith has no mechanism over real ssh (see docs/progress.md, Phase 2)", alias)
-	case s.oDelayMs != 0:
-		w.T.Fatalf("%s: SlowControl has no mechanism over real ssh (see docs/progress.md, Phase 2)", alias)
-	}
 	d, m := s.sshd, s.target.Machine
 	if s.down != prev.down {
 		if s.down == "timeout" || prev.down == "timeout" {

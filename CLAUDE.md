@@ -44,7 +44,8 @@ server. Read [docs/overview.md](docs/overview.md) for the product,
 ## The scenario suite
 
 `test/scenario` is the acceptance suite: simulated hosts are tmux servers
-with their own `TOWER_HOME` and machine id, reached through the fake ssh.
+with their own `TOWER_HOME` and machine id, remotes reached over real ssh:
+host containers on Linux, sshds of their own on macOS (`TOWER_HOSTS`).
 
 - **Run it through `mise run scenarios`**, which isolates each run. A
   direct `go test ./test/scenario` needs the same: a short `TMUX_TMPDIR`

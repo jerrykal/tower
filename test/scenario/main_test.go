@@ -1,9 +1,9 @@
 // Package scenario is tower's acceptance suite. Each simulated host is a
-// tmux server of its own with its own TOWER_HOME and machine id, reached
-// through the fake ssh or over real ssh: with TOWER_HOSTS=container a
-// host container, with TOWER_HOSTS=sshd a server of this machine behind
-// sshds of its own; each terminal is a pane of yet another tmux
-// server, running the attach loop, driven with send-keys and read with
+// tmux server of its own with its own TOWER_HOME and machine id; a remote
+// is reached over real ssh: on Linux a host container (TOWER_HOSTS=
+// container), on macOS a server of this machine behind sshds of its own
+// (TOWER_HOSTS=sshd). Each terminal is a pane of yet another tmux server,
+// running the attach loop, driven with send-keys and read with
 // capture-pane. Nothing touches the user's tmux servers.
 package scenario
 
@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -36,8 +37,7 @@ var (
 	tower2   string
 	towerRe  string
 	towerDev string
-	fakeSSH  string
-	sshWrap  string // ssh for hosts reached over real ssh
+	sshWrap  string // tower's ssh: real ssh with the world's config
 	agentBin string // the agent in each host container
 )
 
@@ -83,7 +83,6 @@ func setup() error {
 	tower2 = filepath.Join(bin, "tower-v2")
 	towerRe = filepath.Join(bin, "tower-rebuilt")
 	towerDev = filepath.Join(bin, "tower-dev")
-	fakeSSH = filepath.Join(bin, "ssh")
 	sshWrap = filepath.Join(bin, "sshwrap")
 	agentBin = filepath.Join(bin, "hostagent")
 	builds := []struct{ out, pkg, version string }{
@@ -91,7 +90,6 @@ func setup() error {
 		{tower2, "../../cmd/tower", Version2},
 		{towerRe, "../../cmd/tower", VersionRebuilt},
 		{towerDev, "../../cmd/tower", VersionDev},
-		{fakeSSH, "./fakessh", ""},
 		{sshWrap, "./sshwrap", ""},
 		{agentBin, "./hostagent", ""},
 	}
@@ -113,11 +111,12 @@ func setup() error {
 			return fmt.Errorf("build %s: %v\n%s", b.pkg, err, out)
 		}
 	}
-	switch os.Getenv("TOWER_HOSTS") {
-	case "container":
+	switch hosts := os.Getenv("TOWER_HOSTS"); {
+	case hosts == "container", hosts == "" && runtime.GOOS == "linux":
 		return containerSetup()
-	case "sshd":
+	case hosts == "sshd", hosts == "" && runtime.GOOS == "darwin":
 		return sshdSetup()
+	default:
+		return fmt.Errorf("TOWER_HOSTS=%q on %s: container (Linux) or sshd (macOS)", hosts, runtime.GOOS)
 	}
-	return nil
 }

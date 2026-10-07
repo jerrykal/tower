@@ -50,7 +50,6 @@ type World struct {
 	T        *testing.T
 	ID       string
 	Dir      string
-	Fake     string
 	UserHome string
 	Marks    string // TOWER_TEST_TIMING file
 
@@ -63,11 +62,6 @@ type World struct {
 
 	links map[string]*linkState // by ssh name
 
-	// real: on the container or sshd backend, every host's ssh is real
-	// ssh with the world's config, from the first host on (a tmux server
-	// keeps the environment it started with).
-	real bool
-
 	sshdShapes map[string]Link // the sshd backend's shaped machines
 	halfOpen   string          // its connections a network change left half-open (pf rules)
 }
@@ -76,13 +70,12 @@ type World struct {
 // goes into tmux socket names.
 func NewWorld(t *testing.T, id string) *World {
 	t.Helper()
-	w := &World{T: t, ID: strings.ToLower(id), hosts: map[string]*Host{}, timings: maps.Clone(testTimings), real: overRealSSH()}
+	w := &World{T: t, ID: strings.ToLower(id), hosts: map[string]*Host{}, timings: maps.Clone(testTimings)}
 	w.Dir = filepath.Join(root, w.ID)
 	os.RemoveAll(w.Dir)
-	w.Fake = filepath.Join(w.Dir, "fake")
 	w.UserHome = filepath.Join(w.Dir, "userhome")
 	w.Marks = filepath.Join(w.Dir, "marks")
-	for _, d := range []string{w.Fake, filepath.Join(w.Fake, "hosts"), w.UserHome, filepath.Join(w.Dir, "race")} {
+	for _, d := range []string{w.UserHome, filepath.Join(w.Dir, "race")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -144,8 +137,9 @@ func Env(k, v string) HostOpt { return func(h *Host) { h.extra[k] = v } }
 // -s, -m) answer from a shim first on the host's PATH ("Linux x86_64").
 func Platform(uname string) HostOpt { return func(h *Host) { h.uname = uname } }
 
-// Host makes a host with the given sessions (none: no tmux server). It is
-// also registered as an ssh name: with the fake ssh, or for a container.
+// Host makes a host with the given sessions (none: no tmux server): a
+// tmux server of this machine, or with SSHHost a remote, also registered
+// as an ssh name.
 func (w *World) Host(name string, sessions []string, opts ...HostOpt) *Host {
 	w.T.Helper()
 	h := &Host{w: w, Name: name, Machine: name, BaseIndex: 1, extra: map[string]string{},
@@ -163,7 +157,9 @@ func (w *World) Host(name string, sessions []string, opts ...HostOpt) *Host {
 	w.order = append(w.order, name)
 	w.sockets = append(w.sockets, h.Sock)
 	h.writeConf()
-	w.SSH(name, h)
+	if h.ctr != nil || h.overSSH {
+		w.SSH(name, h)
+	}
 	for _, s := range sessions {
 		h.NewSession(s)
 	}
@@ -224,12 +220,9 @@ func (h *Host) EnvMap() map[string]string {
 	m["TOWER_HOME"] = h.HomeDir
 	m["TOWER_MACHINE_ID"] = h.Machine
 	m["TOWER_TMUX"] = "-L " + h.Sock
-	m["TOWER_SSH"] = fakeSSH
-	if h.w.real {
-		m["TOWER_SSH"] = sshWrap
-		m["TOWER_TEST_SSH_CONFIG"] = h.w.sshConfig()
-	}
-	m["TOWER_FAKE_DIR"] = h.w.Fake
+	m["TOWER_SSH"] = sshWrap
+	m["TOWER_TEST_SSH_CONFIG"] = h.w.sshConfig()
+	m["TOWER_TEST_SSH_LOG"] = h.w.sshLog()
 	m["TOWER_TEST_TIMING"] = h.w.Marks
 	m["TOWER_TEST_NAME"] = h.Name
 	// Every machine installs tower under its own root in the world.
@@ -493,10 +486,11 @@ func runLocal(env map[string]string, d time.Duration, argv ...string) (string, e
 	return string(out), err
 }
 
-// SSHLog is every ssh call of the world (the fake ssh and the real-ssh
-// wrapper log alike).
+func (w *World) sshLog() string { return filepath.Join(w.Dir, "ssh.log") }
+
+// SSHLog is every ssh call of the world, as sshwrap logs them.
 func (w *World) SSHLog() []map[string]any {
-	b, _ := os.ReadFile(filepath.Join(w.Fake, "ssh.log"))
+	b, _ := os.ReadFile(w.sshLog())
 	var out []map[string]any
 	for _, l := range strings.Split(string(b), "\n") {
 		if l == "" {

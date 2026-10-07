@@ -46,8 +46,8 @@ func TestS04(t *testing.T) {
 	}
 }
 
-// S06: exit 42 is never trusted alone: from a program in the pane, from a
-// dashboard of an earlier attach, from ssh itself.
+// S06: exit 42 is never trusted alone: from a program in the pane (ssh
+// exits with it), from a dashboard of an earlier attach.
 func TestS06(t *testing.T) {
 	parallel(t)
 	w := NewWorld(t, "s06")
@@ -95,23 +95,6 @@ func TestS06(t *testing.T) {
 	term.Wait(`earlier attach`, 6*time.Second)
 	if st := a.Status(); len(st.Detail.Pending) != 0 {
 		t.Fatalf("pending %+v", st.Detail.Pending)
-	}
-
-	// (c) ssh itself exits 42: the fake's only (real ssh exits 255 or
-	// with its command; towerd's tests read a bare 42).
-	if w.real {
-		return
-	}
-	term.Pick("bravo")
-	w.WaitLoop(a, "^B:bravo", 5*time.Second)
-	time.Sleep(300 * time.Millisecond)
-	w.ExitWith("B", 42)
-	time.Sleep(200 * time.Millisecond)
-	term.Keys("C-b", "d")
-	term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
-	w.Reset("B")
-	if c := a.Clients(); len(c) != 0 {
-		t.Fatalf("A has clients %v", c)
 	}
 }
 

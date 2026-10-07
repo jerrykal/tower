@@ -85,8 +85,7 @@ func (c *sshCall) reason(alias string) string {
 }
 
 // TestHarnessLinks: each link setting and fault does what the World says
-// it does, through the fake ssh or over real ssh alike (run it with
-// TOWER_HOSTS=container too): a delay costs round trips, a bandwidth
+// it does, on either backend: a delay costs round trips, a bandwidth
 // limits a transfer, each Down fails as tower expects, Drop ends a
 // session, Freeze leaves it to give up after its alive window with the
 // far side still running, a network change leaves the old master dead
@@ -96,7 +95,6 @@ func TestHarnessLinks(t *testing.T) {
 	w := NewWorld(t, "links")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
-	w.Shape("B", ptyLink)
 
 	if c := w.ssh(a, "B", "echo $TOWER_MACHINE_ID"); c.code != 0 || c.stdout.String() != "B\n" {
 		t.Fatalf("ssh to B: exit %d, %q %q", c.code, c.stdout.String(), c.stderr.String())
@@ -182,10 +180,6 @@ func TestHarnessLinks(t *testing.T) {
 
 	t.Run("freeze", func(t *testing.T) {
 		needLo0(t)
-		// The fake's sessions on a master ride out a freeze (a network
-		// change is what ends them); over real ssh every connection does.
-		w.Shape("B", func(l *Link) { l.Mux = false })
-		defer w.Shape("B", ptyLink)
 		defer w.Freeze("B", false)
 		pidFile := filepath.Join(w.Dir, "frozen.pid")
 		w.ssh(a, "B", "true")
@@ -238,7 +232,6 @@ func TestHarnessLinks(t *testing.T) {
 	t.Run("stall", func(t *testing.T) {
 		// Another name for B, its sessions not stalled.
 		w.SSH("B2", b)
-		w.Shape("B2", ptyLink)
 		loop := "while :; do echo x; sleep 0.1; done"
 		c, c2 := w.startSSH(a, "B", loop), w.startSSH(a, "B2", loop)
 		lines := func(c *sshCall) int { return strings.Count(c.stdout.String(), "\n") }

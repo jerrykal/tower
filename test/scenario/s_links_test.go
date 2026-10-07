@@ -14,7 +14,7 @@ import (
 	"github.com/jerrykal/tower/internal/proto"
 )
 
-// sessionCalls counts the fake ssh's session calls (no -O) to host.
+// sessionCalls counts the session calls (no -O) to host in the ssh log.
 func (w *World) sessionCalls(host string) int {
 	n := 0
 	for _, c := range w.SSHLog() {
@@ -69,11 +69,6 @@ func TestS15(t *testing.T) {
 		"to": "timed out", "rs": "resolve",
 	}
 	adds := map[string]string{"pw2": "ssh-add"}
-	if !w.real {
-		downs["ts"], downs["ts2"] = "tscheck", "tscheck"
-		want["ts"] = "Tailscale SSH wants a check: run `ssh ts` once"
-		adds["ts2"] = "Tailscale SSH wants a check"
-	}
 	for name, how := range downs {
 		w.SSH(name, x)
 		w.Down(name, how)

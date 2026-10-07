@@ -54,14 +54,12 @@ func TestLS01(t *testing.T) {
 	parallel(t)
 	w := NewWorld(t, "ls01")
 	a := w.Host("A", []string{"alpha"})
-	// A killed loop's standbys ride the master, which outlives the loop,
-	// and the fake keeps their sessions (decision 112): they hear no
+	// A killed loop's standbys ride the master, which outlives the loop:
+	// should their sessions outlive their ssh (decision 112), they hear no
 	// hang-up and go once their heartbeats stop.
 	silence := Env("TOWER_STANDBY_SILENCE", "5s")
 	b := w.Host("B", []string{"bravo"}, silence, SSHHost())
 	c := w.Host("C", []string{"charlie"}, silence, SSHHost())
-	w.Shape("B", ptyLink)
-	w.Shape("C", ptyLink)
 	stdSetup(w, a, b, c)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.WaitMark("standby: ready B", 5*time.Second)
@@ -132,7 +130,7 @@ func TestLS02(t *testing.T) {
 	w := NewWorld(t, "ls02")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
-	w.Shape("B", func(l *Link) { ptyLink(l); l.DelayMs = 25 })
+	w.Shape("B", func(l *Link) { l.DelayMs = 25 })
 	stdSetup(w, a, b)
 	term := w.Loop("t", a, nil)
 	term.Record()
@@ -217,7 +215,6 @@ func TestLS03(t *testing.T) {
 	w := NewWorld(t, "ls03")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
-	w.Shape("B", ptyLink)
 	stdSetup(w, a, b)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.WaitMark("standby: ready B", 5*time.Second)
@@ -300,9 +297,6 @@ func TestLS04(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
 	c := w.Host("C", []string{"charlie"}, SSHHost())
-	for _, n := range []string{"B", "C"} {
-		w.Shape(n, func(l *Link) { l.Mux = true })
-	}
 	link := filepath.Join(w.Dir, "tower-B")
 	if err := os.Symlink(towerBin, link); err != nil {
 		t.Fatal(err)
@@ -377,7 +371,6 @@ func TestLS05(t *testing.T) {
 	w := NewWorld(t, "ls05")
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
-	w.Shape("B", ptyLink)
 	stdSetup(w, a, b)
 	modes := []struct {
 		name string
@@ -451,7 +444,6 @@ func TestLS09(t *testing.T) {
 	w.Timing(lhTiming)
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
-	w.Shape("B", func(l *Link) { l.Pty = true; lhWindow(l) })
 	stdSetup(w, a, b)
 	restore := func() { w.Heal("B") }
 	modes := []struct {
@@ -505,24 +497,14 @@ func TestLS09(t *testing.T) {
 		readyNow()
 		pick()
 		onB("1", true)
-		// 2. ssh exits 255: reconnect at once. Over real ssh the
-		// connection drops, as it does when ssh exits 255.
-		if w.real {
-			w.Drop("B")
-		} else {
-			w.ExitWith("B", 255)
-			time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
-			term.Keys("C-b", "d")
-		}
+		// 2. ssh exits 255: reconnect at once. The connection drops, as
+		// it does when ssh exits 255.
+		w.Drop("B")
 		w.WaitMark("after reconnect", 6*time.Second)
 		restore()
 		onB("2", false)
-		// 3 and 4 are tower's own exits from ssh itself, the fake's only:
-		// real ssh exits 255 or with its command (towerd's tests read 42
-		// and 43 alone).
-		if !w.real {
-			ls09Exits(w, term, restore, readyNow, onB)
-		}
+		// 3 and 4: the attach exits 43, then a bare 42.
+		ls09Exits(w, b, term, readyNow, onB)
 		// 5. A hand-off away.
 		term.DashTo("alpha")
 		w.WaitLoop(a, "^A:alpha", 8*time.Second)
@@ -569,33 +551,36 @@ func TestLS09(t *testing.T) {
 	}
 }
 
-// ls09Exits are LS09's steps 3 and 4: ssh itself exits 43, then a bare
-// 42, each back at the picker saying why.
-func ls09Exits(w *World, term *Term, restore, readyNow func(), onB func(string, bool)) {
+// ls09Exits are LS09's steps 3 and 4: B's client detached with exit 43,
+// as the attach detaches on a server restarted since it was listed, then
+// with a bare 42; ssh exits with its command, and the loop is back at the
+// picker saying why.
+func ls09Exits(w *World, b *Host, term *Term, readyNow func(), onB func(string, bool)) {
 	w.T.Helper()
+	exit := func(code int) {
+		ids := b.ClientIDs("bravo")
+		if len(ids) != 1 {
+			w.T.Fatalf("B's clients: %v", b.Clients())
+		}
+		b.MustTmux("detach-client", "-t", ClientName(ids[0]), "-E", fmt.Sprintf("exit %d", code))
+	}
 	// 3. exit 43: the picker, saying why.
-	w.ExitWith("B", 43)
-	time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
-	term.Keys("C-b", "d")
+	exit(43)
 	term.Wait(`B restarted since it was listed; pick again`, 6*time.Second)
-	restore()
 	readyNow()
 	term.Pick("bravo")
 	onB("3", true)
 	// 4. A bare exit 42: the picker, saying why.
-	w.ExitWith("B", 42)
-	time.Sleep(200 * time.Millisecond) // live connections read knobs every 20ms
-	term.Keys("C-b", "d")
+	exit(42)
 	term.Wait(`exit 42 without a valid hand-off \(no request\)`, 6*time.Second)
-	restore()
 	readyNow()
 	term.Pick("bravo")
 	onB("4", true)
 }
 
 // LS10: a remote attach over a shared master leaves no client behind,
-// even where its session there outlives its ssh (as the fake's does, and
-// as in real use; decision 112): hand-offs back and forth
+// even where its session there outlives its ssh (as in real use;
+// decision 112): hand-offs back and forth
 // leave each host only the client the terminal is on, and a killed
 // loop's client goes once the home calls the loop gone.
 func TestLS10(t *testing.T) {
@@ -604,8 +589,6 @@ func TestLS10(t *testing.T) {
 	a := w.Host("A", []string{"alpha"})
 	b := w.Host("B", []string{"bravo"}, SSHHost())
 	c := w.Host("C", []string{"charlie"}, SSHHost())
-	w.Shape("B", ptyLink)
-	w.Shape("C", ptyLink)
 	stdSetup(w, a, b, c)
 	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
 	w.WaitMark("standby: ready B", 5*time.Second)
@@ -635,11 +618,8 @@ func TestLS10(t *testing.T) {
 	Kill9(pids[0])
 	term.Wait(`LOOP-EXIT=137`, 5*time.Second)
 	time.Sleep(2 * time.Second)
-	// Over real ssh (OpenSSH 9.6 at both ends, in the host containers)
-	// the session ends with its ssh, and with it the client.
-	if got := c.Clients(); !w.real && !slices.Equal(got, []string{"charlie"}) {
-		t.Fatalf("C's clients 2s after the loop died: %v; want the session still there", got)
-	}
+	// Here (OpenSSH 9.6 at both ends, in the host containers) the session
+	// ends with its ssh, and with it the client.
 	start := time.Now()
 	w.clientsAre(c, 40*time.Second)
 	t.Logf("the killed loop's client gone %v later", (2*time.Second + time.Since(start)).Round(100*time.Millisecond))

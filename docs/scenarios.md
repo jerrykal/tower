@@ -9,10 +9,11 @@ Timings in the suite are shortened (keepalive 1s, the home gives up a
 silent stream after 2s, backoff 200ms → 3s, stable period 3s) except where
 a scenario measures what a user would see.
 
-Every scenario runs on either backend: remote hosts through the fake ssh,
-or as host containers over real ssh (`TOWER_HOSTS=container`). The steps
-real ssh cannot be made to take run on the fake only: ssh itself exiting
-42 or 43 (S06, LS09) and the Tailscale check (S15). A recovery's limit
+Every remote host is reached over real ssh: a host container on Linux,
+a tmux server of this machine behind sshds of its own on macOS. ssh
+exits with its command's status, so an exit 42 or 43 is the host's
+client detached so (S06, LS09); the Tailscale check (S15), which no
+sshd here makes, is transport's unit tests'. A recovery's limit
 (LC03, LC04, LC06) holds tower's part of it; the connection and the
 client's return have limits of their own, as
 [design/harness.md](design/harness.md) says.
@@ -27,7 +28,7 @@ client's return have limits of their own, as
 | S03 | Two aliases of one server and another user on the machine: one linked, the other `dup: same towerd as …`; one control client and one stream on B | towerd | pass |
 | S04 | A server restarts and reuses `$0`: prepare refuses ("restarted since it was listed"); an attach in flight exits 43; no client on the impostor | towerd, loop | pass |
 | S05 | Three `-L` servers on one machine: one towerd each (three ids, three sockets in one run dir); hand-off between two | towerd | pass |
-| S06 | Exit 42 from elsewhere: a bare exit 42, a stale dashboard (its switch refused before anything detaches), a planted switch for another generation, ssh exiting 42: each ignored with its reason | towerd, loop | pass |
+| S06 | Exit 42 from elsewhere: a bare exit 42 (ssh exits with it), a stale dashboard (its switch refused before anything detaches), a planted switch for another generation: each ignored with its reason | towerd, loop | pass |
 | S07 | The dashboard dies after its switch was stored: the switch completes (committed once stored); with `TOWER_EAGER=0` a normal detach discards it and says so; a later exit 42 finds it too old | towerd, loop | pass |
 | S08 | Three terminals on one session (two homes); one hands off: only the pressing terminal moves | towerd, loop | pass |
 | S09 | Target killed or renamed between listing and ⏎: "selection is gone"; attach by id fails visibly; a renamed session is still reached | towerd, ui | pass |
@@ -36,7 +37,7 @@ client's return have limits of their own, as
 | S12 | base-index 0 and 1: windows reached by id | loop | pass |
 | S13 | Sleep (every connection half-open), then back: detected within seconds; back fast; B replaces the stale stream (never two); B's control client unaffected; the loop is restored | towerd, loop | pass |
 | S14 | A tunnel flapping 0.6s/0.6s for 12s: few ssh calls (backoff), up once steady, the local link untouched | towerd | pass |
-| S15 | ssh would prompt (host key, password, locked key, unresolvable, Tailscale check, timeout): each down with its reason and fix, fast; every call `BatchMode=yes`; `tower host add` reports the same | transport, towerd | pass |
+| S15 | ssh would prompt (host key, password, locked key, unresolvable, timeout): each down with its reason and fix, fast; every call `BatchMode=yes`; `tower host add` reports the same | transport, towerd | pass |
 | S16 | 104-byte socket paths: the run dir falls back to a short one; one control path value in every call; a stale control socket removed, a busy one kept; no `ssh -O check` | config, transport | pass |
 | S17 | No server: towerd polls and never starts one; `^n` starts one, waiting for a slow config with "starting tmux on N…"; `_tower` never keeps a server alive; towerd outlives its server | towerd, ui | pass |
 | S18 | No binary (`tower is not installed on M`), protocol 0 only (`incompatible protocol … 0-0 … 1-1`), newer peers (1–2) and one sending unknown messages: the right outcome each; hand-off to the newer peer works | towerd | pass |
@@ -160,7 +161,7 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 | LS07 | The relay adds microseconds to a keystroke's echo | relay | pass |
 | LS08 | The relay under load: throughput, keys into a flood, backpressure, flat memory | relay | pass |
 | LS09 | Every remote attach relayed: exits 255, 43, 42, hand-offs, a stall, `prefix d` the same as with ssh given the terminal | loop, relay | pass |
-| LS10 | A remote attach over a shared master leaves no client behind, even where its session outlives its ssh (the fake's): hand-offs back and forth leave each host only the terminal's client; a killed loop's client goes once the home calls the loop gone | towerd, loop | pass |
+| LS10 | A remote attach over a shared master leaves no client behind, even where its session outlives its ssh: hand-offs back and forth leave each host only the terminal's client; a killed loop's client goes once the home calls the loop gone | towerd, loop | pass |
 
 LS06 and LS07 are tests of `internal/relay` (`go test ./internal/relay`):
 they need no host. LS08 is there too against a command given the terminal

@@ -46,7 +46,7 @@ func lc08(t *testing.T, rtt int) map[lc08Key][]time.Duration {
 	b := w.Host("B", []string{"bravo"}, SSHHost())
 	c := w.Host("C", []string{"charlie"}, SSHHost())
 	for _, n := range []string{"B", "C"} {
-		w.Shape(n, func(l *Link) { l.Mux, l.Pty, l.DelayMs = true, true, rtt/2 })
+		w.Shape(n, func(l *Link) { l.DelayMs = rtt / 2 })
 	}
 	stdSetup(w, a, b, c)
 	modes := []struct {

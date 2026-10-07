@@ -173,8 +173,9 @@ pty read by another process), in the package's tests:
 | key echo under a 40 MB/s flood, median | – | 55µs (unpaced: 0.4ms, behind the buffered output) |
 | a terminal not reading for 2.5s | – | the host's writes stop; relay heap flat (±2 KiB), 4ms CPU per 0.5s |
 
-Through the fake ssh to a host with a pty (the LS08 scenario), relayed
-against the fake ssh given the terminal: the 200 MiB cats at 142–154 MB/s
+Through the suite's fake ssh as it was then (decision 138) to a host with
+a pty (the LS08 scenario), relayed against the fake ssh given the
+terminal: the 200 MiB cats at 142–154 MB/s
 relayed and 125–165 plain, set by the fake ssh, which spends 2.6–3.4s of
 CPU on them against the relay's 0.7–0.8s; the build log 53 MB/s relayed,
 41 plain; keys reach the host in 31–37µs relayed, 22–25µs plain; echo at

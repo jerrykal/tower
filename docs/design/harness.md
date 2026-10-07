@@ -2,10 +2,10 @@
 
 `test/scenario` is the acceptance suite. It runs only on request
 (`TOWER_SCENARIOS=1`, which `mise run scenarios` sets with an isolated
-`TMUX_TMPDIR`, `TOWER_TEST_DIR` and `TMPDIR`), on any backend: the
-fake ssh; host containers over real ssh (`TOWER_HOSTS=container`); or,
-macOS's, hosts of this machine behind sshds of their own over real ssh
-(`TOWER_HOSTS=sshd`).
+`TMUX_TMPDIR`, `TOWER_TEST_DIR` and `TMPDIR`). Its remote hosts are
+reached over real ssh: on Linux host containers (`TOWER_HOSTS=container`,
+the default there), on macOS hosts of this machine behind sshds of their
+own (`TOWER_HOSTS=sshd`, the default there).
 
 ## Tiers
 
@@ -24,21 +24,19 @@ trailing `/`, so `i04` does not reach `i04-dev`.
 
 | File | Holds |
 | --- | --- |
-| `main_test.go` | builds `tower` at `0.0.1-test`, `tower-v2` at `0.0.2-test`, `tower-dev` at `0.0.3-dev+test` (a development build, no release) and the fake ssh into `$TOWER_TEST_DIR/bin`; with `TOWER_RACE=1` tower is built with the race detector, every process writes its reports under the world's `race/`, and a report fails the scenario at teardown |
+| `main_test.go` | builds `tower` at `0.0.1-test`, `tower-v2` at `0.0.2-test`, `tower-dev` at `0.0.3-dev+test` (a development build, no release), `sshwrap` and the container agent into `$TOWER_TEST_DIR/bin`; with `TOWER_RACE=1` tower is built with the race detector, every process writes its reports under the world's `race/`, and a report fails the scenario at teardown |
 | `world_test.go` | `World` (one scenario), `Host` (one simulated machine and tmux server), homes, waits on links and loops, timing marks |
 | `term_test.go` | `Term`: a terminal running the attach loop, driven with `send-keys`, read with `capture-pane` |
 | `teardown_test.go` | ends everything and fails the test if a tmux server outlives its sessions |
 | `towerd_test.go` | towerd-side helpers (pids, live homes, registrations, `view` and `act` calls, other binaries) and `FakeLoop` |
-| `fakenet/` | the knobs contract between the harness and the fake ssh |
-| `fakessh/` | the fake ssh |
-| `link_test.go` | links and faults: the World's calls, put in place as the fake's knobs or by the container backend |
+| `link_test.go` | links and faults: the World's calls, put in place by the backend |
 | `links_check_test.go` | `TestHarnessLinks`: each link setting and fault checked on either backend |
 | `tiers_test.go` | the serial and parallel tiers |
 | `container_test.go`, `hosts/`, `hostagent/` | the container backend: host containers reached over real ssh (`TOWER_HOSTS=container`), and the agent in each |
 | `sshd_test.go` | the sshd backend: hosts of this machine behind sshds of their own (`TOWER_HOSTS=sshd`), lo0's rules through pf on macOS |
 | `procs_*_test.go` | this user's processes, per platform: argv and environment, and the process tree |
-| `sshcall/` | an ssh command line read as ssh does, and the call log (`fake/ssh.log`) both ssh stand-ins write |
-| `sshwrap/` | ssh for hosts over real ssh: logs the call, then runs real ssh with the world's config |
+| `sshcall/` | an ssh command line read as ssh does, and the call log (`ssh.log`) |
+| `sshwrap/` | tower's ssh in a world: logs the call, then runs real ssh with the world's config |
 | `load_test.go` | load programs run on a host or beside a terminal (flood, build log, terminal reader): the suite's binary with `SCENARIO_HELPER` set |
 | `s*_test.go` … | the scenarios, one file per family (`s_core`, `s_links`, `s_data`, `s_handoff`, `s_loop`, `dash`, `e_extras`, `v_towerd`, `i_install`, `lh`, `lv`, `lc`, `ld`, `ls`, `a_atlas`, `u_dash`, `r`, …) |
 
@@ -47,16 +45,17 @@ trailing `/`, so `i04` does not reach `i04-dev`.
 `w.Host(name, sessions, opts…)` makes a tmux server `-L tt-<id>-<name>`
 with a generated config (`exit-empty on`, `/bin/sh`, `base-index`,
 `detach-on-destroy no-detached`, `M-o` running the dashboard in a full-size
-popup, `M-l` running `tower last`) and registers the ssh name `name` for
-it (`w.SSH`, below). A host's processes run with:
+popup, `M-l` running `tower last`): a server of this machine, as a home
+is, or with `SSHHost()` a remote, for which it registers the ssh name
+`name` (`w.SSH`, below). A host's processes run with:
 
 - `HOME` and `XDG_CONFIG_HOME` in an empty directory, so tmux servers tower
   starts read no user config;
 - `TOWER_HOME=<dir>/home-<machine>`, `TOWER_MACHINE_ID=<machine>` (a
   container's own `/etc/machine-id` for a container host),
   `TOWER_TMUX=-L <sock>`;
-- `TOWER_SSH=<the fake ssh>` (`sshwrap` over real ssh),
-  `TOWER_FAKE_DIR=<dir>/fake`;
+- `TOWER_SSH=sshwrap`, `TOWER_TEST_SSH_CONFIG=<dir>/ssh_config`,
+  `TOWER_TEST_SSH_LOG=<dir>/ssh.log`;
 - `TOWER_TEST_TIMING=<dir>/marks` (timing marks, `config.Mark`),
   `TOWER_TEST_NAME=<host>`;
 - the test timings below, then the host's own extras.
@@ -82,7 +81,7 @@ Every machine has its own install root, `TOWER_INSTALL_DIR=<dir>/install-<machin
 `w.Home(h, remotes…)` writes `h`'s `hosts.toml` and starts `tower towerd`
 there (or sends `reload` to a towerd a bridge already started, which
 activates the home role). `h.Remote()` is the `hosts.toml` entry for a
-simulated host: its fake ssh name, its tmux socket, the built binary.
+simulated host: its ssh name, its tmux socket, the built binary.
 `w.WaitLink`, `w.WaitUp` and `w.WaitLoop` poll the home's full status.
 
 ## Driving towerd directly
@@ -94,8 +93,8 @@ attach loop or the dashboard call towerd as those would:
   and `act` calls on `h`'s towerd, as the client `pid:created:name`
   (`h.ClientIDs(session)`), with a deadline `ms` from now;
 - `w.FakeLoop(home)` beats every 2s like a loop and makes its attaches
-  with `Prepare`, running the prepared argv (the real attach shim, over the
-  fake ssh for a remote) in a terminal of its own; `Attach` ends the
+  with `Prepare`, running the prepared argv (the real attach shim, over
+  ssh for a remote) in a terminal of its own; `Attach` ends the
   previous attach's terminal first, as a loop ends its old client.
   `WaitSwitch`, `Held` and `After` are the loop's other calls;
 - `h.TowerdPid()` (0 when none runs; `Kill9` and `Signal` leave 0
@@ -113,16 +112,16 @@ pipe fills); the connection family (LC) and LH06 with `ProductionTimings`.
 Recoveries (LC03, LC04, LC06: a fault, the network's return or a pick,
 until the client is back) are checked whole and in three parts
 (`checkRecoveries`), since a new connection costs what the ssh at the
-other end makes it cost: the fake's about 6.5 round trips, real ssh's
-13. The whole recovery is within the scenario's limit on the fake, and
-over real ssh within it plus 7.5 round trips (14 for the connection in
-place of 6.5) and R0's connection; this bounds too a connection under
-way as the network came back, which the parts do not. The connection,
+other end makes it cost: real ssh's 13 round trips, where the fake ssh
+the limits were set with took about 6.5 (decision 120). The whole
+recovery is within the scenario's limit plus 7.5 round trips (14 for the
+connection in place of 6.5) and R0's connection; this bounds too a
+connection under way as the network came back, which the parts do not. The connection,
 from the link's last attempt to the link up (ssh, tower started there,
 the hello, the first state), is at most 14 round trips past R0's in the
 same world, counted at RTT 150 and 400 and only for a connection begun
 within the recovery. Tower's part, the rest, is within the scenario's
-limit less 6.5 round trips: the time the limit left tower on the fake.
+limit less 6.5 round trips: the time the limit left tower when it was set.
 The client is back within 1s and 4 round trips of its link (of the last
 pick, in LC06). The tracker gives each part (`lastattempt`).
 
@@ -172,24 +171,26 @@ answered` (LD01: a row goes before its answer), `standby: start <host>`,
 
 ## Links and faults
 
-Scenarios shape links and set faults per ssh name through the World,
-never the fake's knobs; `w.SSH(alias, host)` registers another name for
-a host. Each host's backend puts them in place: the fake ssh's knobs for
-a host on this machine, real mechanisms for a container or for a host
-behind sshds of its own.
+Scenarios shape links and set faults per ssh name through the World;
+`w.SSH(alias, host)` registers another name for an `SSHHost()` host.
+Each host's backend puts them in place, with the mechanisms of a real
+network and sshd: a container's, or a host's behind sshds of its own.
 
-| Call | The fake ssh | A host container | A host behind sshds |
-| --- | --- | --- | --- |
-| `w.Shape(alias, f)`: `DelayMs`, `JitterMs`, `BwKBps` | delayed, paced chunks | `tc netem` delay, jitter and rate on `eth0` and, through `ifb0`, its ingress | dummynet pipes on lo0 for the ports of the machine's names, one each way; with jitter, five each way (below) |
-| `Shape`: `WindowKB` | bytes in flight per direction | none: ssh's channel window is 2 MB, so a stalled pipe needs `Stall` alone (`lhWindow`: LH, LS09); any other use fails the scenario | none, as on a container |
-| `Shape`: `Pty`, `Mux` | a pty for `ssh -t`; a shared master | always: ssh's own | always |
-| `w.Freeze(alias, on)` | new connections hang; sessions off a master give up after the alive window (those on a master ride it out) | `iptables` DROP of the name's port, both ways (`TT-FREEZE-IN` by destination port, `TT-FREEZE-OUT` by source port): every connection gives up, the far side never hears | pf `block drop` of the name's port, both ways |
-| `w.NetworkChange(alias, at)` | masters made before `at` dead from `at` | DROP, both ways and for good, of each connection established now (`TT-HALFOPEN`); `at` not in the future | pf `block drop`, both ways and for good, of each connection to the machine's ports established now (`netstat`) |
-| `w.Stall(alias, on)` | no byte moves; ssh never gives up | the processes the name's sessions run there (their `SSH_CONNECTION` names its port) stopped by the agent, and new ones as they come, every 20ms; sshd still answers, other names' sessions run on; a daemon a session started (a towerd, below) runs on | the processes under the name's sshd's connections, not sshd's own nor a daemon's, stopped by the harness, and new ones as they come, every 20ms |
-| `w.Drop(alias)` | live connections closed | the sshd processes holding the name's port's connections (`ss -p`) killed | the name's sshd's connection processes killed |
-| `w.Down(alias, how)` | ssh's message for `how` | per name in the world's ssh config: `refused` port 1, `timeout` port 2222 (SYNs dropped), `password` port 2223 (an sshd with key auth off), `resolve` an `.invalid` name, `hostkey` a known_hosts with another key, `auth` a key no host authorizes; `tscheck` none | as on a container, `timeout` a port of the name's whose SYNs pf drops, `password` the name's sshd's second port, key auth off there |
-| `w.ExitWith(alias, code)`, `w.SlowControl(alias, ms)` | forced exit status; a slow `ssh -O` | none (fails the scenario): exit 255 is a `Drop`; 42 and 43 from ssh itself are fake-only steps (S06 (c), LS09 3–4), towerd's reading of them unit-tested; a wedged master is the home's real one stopped (`w.masterPid`, LH05) | none, as on a container |
-| `w.Heal(alias)`, `w.Reset(alias)` | faults off (and the link unshaped) | the same; a network change's connections stay dead | the same |
+| Call | A host container | A host behind sshds |
+| --- | --- | --- |
+| `w.Shape(alias, f)`: `DelayMs`, `JitterMs`, `BwKBps` | `tc netem` delay, jitter and rate on `eth0` and, through `ifb0`, its ingress | dummynet pipes on lo0 for the ports of the machine's names, one each way; with jitter, five each way (below) |
+| `w.Freeze(alias, on)` | `iptables` DROP of the name's port, both ways (`TT-FREEZE-IN` by destination port, `TT-FREEZE-OUT` by source port): every connection gives up, the far side never hears | pf `block drop` of the name's port, both ways |
+| `w.NetworkChange(alias, at)` | DROP, both ways and for good, of each connection established now (`TT-HALFOPEN`); `at` not in the future | pf `block drop`, both ways and for good, of each connection to the machine's ports established now (`netstat`) |
+| `w.Stall(alias, on)` | the processes the name's sessions run there (their `SSH_CONNECTION` names its port) stopped by the agent, and new ones as they come, every 20ms; sshd still answers, other names' sessions run on; a daemon a session started (a towerd, below) runs on | the processes under the name's sshd's connections, not sshd's own nor a daemon's, stopped by the harness, and new ones as they come, every 20ms |
+| `w.Drop(alias)` | the sshd processes holding the name's port's connections (`ss -p`) killed | the name's sshd's connection processes killed |
+| `w.Down(alias, how)` | per name in the world's ssh config: `refused` port 1, `timeout` port 2222 (SYNs dropped), `password` port 2223 (an sshd with key auth off), `resolve` an `.invalid` name, `hostkey` a known_hosts with another key, `auth` a key no host authorizes | as on a container, `timeout` a port of the name's whose SYNs pf drops, `password` the name's sshd's second port, key auth off there |
+| `w.Heal(alias)`, `w.Reset(alias)` | faults off (and the link unshaped); a network change's connections stay dead | the same |
+
+ssh exiting 255 is a `Drop`; an attach exiting 42 or 43 is the host's
+client detached so (`detach-client -E 'exit 43'`, LS09), which ssh
+passes on; a wedged master is the home's own stopped (`w.masterPid`,
+LH05). ssh's channel window is 2 MB, so a stalled pipe needs `Stall`
+alone (LH, LS09).
 
 On a container the shape and a network change belong to the container,
 whichever of its names sets them, as a machine's network does; a
@@ -201,44 +202,24 @@ the towerd a bridge starts when it finds none. It serves every name, as
 on a machine of its own, and a stalled network never stops it; LH04 has
 the stalled name's bridge start it.
 `TestHarnessLinks` checks each row on every backend: a session on a
-master at RTT 100ms takes 205–208ms (221ms on the fake on a macOS
-runner, 265ms behind sshds there), 512 KiB at 256 KB/s 1.9–2.2s, each
+master at RTT 100ms takes 205–208ms (265ms behind sshds on a macOS
+runner), 512 KiB at 256 KB/s 1.9–2.2s, each
 `Down` reads as tower expects, a drop or a freeze ends a session (the
-frozen one after the alive window, 15s on the fake, 18–20s over real
-ssh, its far side still running), a network change leaves the old
+frozen one after the alive window, 18–20s, its far side still
+running), a network change leaves the old
 master to give up and a new one working, a stall stops output for the
 alive window and more without ssh giving up, the other name's lines
 coming every second.
 
-Over real ssh a session riding a master that dies hears nothing: its
-ssh exits 255 with stderr empty, so tower reads "ssh exited 255"; off a
-master (or from the fake) it reads "connection lost" or "connection
-timed out".
-
-## The fake ssh
-
-Parses options like ssh (the first `-o` value wins), logs every call as a
-JSON line in `fake/ssh.log`, and runs the remote command with the target
-host's environment. Knobs per ssh name (`fakenet.Knobs`): `down`
-(refused, hostkey, auth, password, resolve, timeout, tscheck, with ssh's
-messages), `latency_ms`, `exit`, `freeze` (half-open; gives up after
-ServerAliveInterval × ServerAliveCountMax, the remote side kept alive by a
-holder process), `drop`, `o_delay_ms`, `delay_ms`, `jitter_ms`, `bw_kbps`,
-`window_kb`, `stall` (no byte moves, never given up), `pty` (`ssh -t` gets
-a pty on the host and the link's delays), `mux` (a shared control master:
-6 round trips for a new one, 2 for a session on it; a session rides an
-existing master whatever its `ControlMaster`, `no` only declines to make
-one, as with ssh; `-O exit` ends its sessions) and `halfopen_at` (a network change: masters made before it are
-dead and give up after the alive window).
+A session riding a master that dies hears nothing: its ssh exits 255
+with stderr empty, so tower reads "ssh exited 255"; off a master it
+reads "connection lost" or "connection timed out".
 
 ## Host containers
 
-With `TOWER_HOSTS=container` a host made with `SSHHost()` is a container
-running sshd and tmux, reached over real ssh; on the fake backend, or for a host
-made without `SSHHost()`, the fake ssh as before. Every scenario's
-remote hosts are `SSHHost()`; homes stay on this machine. What only the
-fake can do stays in fake-only steps (`if !w.real`): tower's own exit
-codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
+On the container backend (Linux's) a host made with `SSHHost()` is a
+container running sshd and tmux, reached over real ssh. Every
+scenario's remote hosts are `SSHHost()`; homes stay on this machine.
 
 - `hosts/` holds the image (Ubuntu 24.04, OpenSSH, tmux built from
   source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
@@ -297,11 +278,9 @@ codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
   server port in `SSH_CONNECTION`, in the directory `assign` wrote to
   `/etc/tt-env-dir`; then `sh -c` the command, as sshd runs it.
   Everything else is sshd's default, `MaxSessions` included.
-- On the container backend every host of every world has
-  `TOWER_SSH=sshwrap` from the world's start (`w.real`), so a tmux
-  server started before the first container host has it too. It logs
-  the call to `fake/ssh.log` as the fake
-  does (`w.SSHLog` reads both) and runs `ssh -F $TOWER_TEST_SSH_CONFIG`:
+- Every host of every world has `TOWER_SSH=sshwrap`. It logs the call
+  to the world's `ssh.log` (`w.SSHLog`) and runs `ssh -F
+  $TOWER_TEST_SSH_CONFIG`:
   the world's names to the containers' addresses, the run's keys and
   known hosts, neither the user's nor the system's config. One key per
   run serves every world (each world's names, config and control
@@ -317,9 +296,9 @@ codes from ssh itself, the Tailscale check (S15 `ts`, `ts2`).
 
 ## Hosts behind sshds
 
-With `TOWER_HOSTS=sshd` a host made with `SSHHost()` is a tmux server of
-this machine, as with the fake ssh, reached over real ssh: the backend
-for macOS, which runs no containers of its own. It needs neither Remote
+On the sshd backend (macOS's) a host made with `SSHHost()` is a tmux
+server of this machine reached over real ssh: macOS runs no containers
+of its own. It needs neither Remote
 Login nor an account: the harness runs every sshd as the test user.
 
 - Each ssh name of such a host has an sshd of its own (`/usr/sbin/sshd
@@ -385,17 +364,16 @@ warning; the job stays red. A push that changes code, to any branch but
 `ubuntu-24.04`, after loading the kernel modules the containers shape
 with (`ifb`, `sch_netem`, `sch_ingress`, `cls_matchall`, `act_mirred`);
 the home's tmux is the runner's. By hand (`workflow_dispatch`), `full`
-adds 3.3a, 3.4, 3.5a and 3.6b, the fake ssh on Linux, and the fake ssh
-and sshd on `macos-15`; `macos-sshd` runs that alone. A pull request
+adds 3.3a, 3.4, 3.5a and 3.6b, and sshd on `macos-15`; `macos-sshd`
+runs that alone. A pull request
 from a branch here has its push's run; one from a fork runs its own.
 
 ## Teardown
 
 Terminals first (a live loop would restart a towerd), then every towerd
-(SIGCONT, SIGTERM, SIGKILL after 5s), the holders, every session of every
-server; each server must exit within 10s, or the test fails. Leftover
+(SIGCONT, SIGTERM, SIGKILL after 5s), every session of every server; each server must exit within 10s, or the test fails. Leftover
 processes with the world's `TOWER_HOME`, or naming the world's directory
 (`pkill -f <dir>/`), are killed. The world's directory
-is removed when the test passed. Over real ssh, the home's control
-masters are ended by their control path: ssh's `[mux]` process title
+is removed when the test passed. The home's control masters are ended
+by their control path: ssh's `[mux]` process title
 overwrites their environment.
