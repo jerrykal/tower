@@ -1,7 +1,9 @@
 package towerd
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/dirs"
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/stream"
 	"github.com/jerrykal/tower/internal/tmux"
 )
 
@@ -428,5 +431,26 @@ func TestLocalName(t *testing.T) {
 	t.Setenv("TOWER_TEST_NAME", "A")
 	if name, label := localName(); name != "A" || label != "A" {
 		t.Fatalf("with TOWER_TEST_NAME: %q, %q", name, label)
+	}
+}
+
+// A link that drops while a request waits for its first pong: the
+// request hears at once that the connection was lost, not, near its
+// deadline, that too little time was left.
+func TestRouteHearsALinkDropBeforeItsFirstPong(t *testing.T) {
+	d := &Daemon{id: "home0001", name: "A", changed: make(chan struct{}), env: &config.Env{StateDir: t.TempDir()}}
+	h := &homeRole{d: d, loops: map[string]*loopRec{}, clientsB: map[string][]proto.Client{}, savedAt: time.Now(), links: map[string]*link{}}
+	d.home = h
+	r, w := io.Pipe() // a peer that never answers
+	defer w.Close()
+	conn := stream.New(r, io.Discard, stream.Options{})
+	conn.SetHelloRTT(5 * time.Second) // the connect's: a 3s request waits for a pong
+	h.links["B"] = &link{h: h, cfg: config.Host{Name: "B"}, id: "host0002", status: proto.StatusUp, conn: conn}
+	h.order = []string{"B"}
+	time.AfterFunc(50*time.Millisecond, func() { conn.Close(nil) })
+	start := time.Now()
+	ack := h.route(context.Background(), &proto.Request{ID: "r", Op: proto.OpKill, Target: proto.Ref{Host: "host0002", Session: "$1"}, Deadline: stream.Now() + 3000})
+	if el := time.Since(start); el > time.Second || ack.Err != "B: connection lost" {
+		t.Fatalf("after %v: %+v, want B: connection lost at once", el.Round(time.Millisecond), ack)
 	}
 }

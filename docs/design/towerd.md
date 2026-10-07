@@ -425,7 +425,8 @@ but only on a measured round trip: before the link's first pong the
 margin is the hello's time, which counts the connect, so a request
 within two of it (the margin kept back and the trip there) waits for
 that pong first (a stale client's detach at link-up), until only the
-least margin (`stream.MinMargin`) is left. Errors:
+least margin (`stream.MinMargin`) is left, or the link goes (then the
+request hears "X: connection lost" at once). Errors:
 "X is not responding", "X did not answer in time", "X is down: reason". A `relay`
 from a remote: the switch path or `route`, then the asking host gets the
 merged view (`SendNow`), then the `ack`.

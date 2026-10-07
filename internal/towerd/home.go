@@ -905,14 +905,20 @@ func (h *homeRole) route(ctx context.Context, req *proto.Request) *proto.Ack {
 		t := time.NewTimer(time.Duration(req.Deadline-stream.Now())*time.Millisecond - stream.MinMargin)
 		select {
 		case <-conn.Measured():
+		case <-conn.Done():
 		case <-ctx.Done():
 		case <-t.C:
 		}
 		t.Stop()
 	}
-	if short(1) {
-		// The host would get it with its time already up.
-		return &proto.Ack{ID: req.ID, Err: "too little time left to reach " + hs.name}
+	select {
+	case <-conn.Done():
+		// The link went while it waited: the request says so below.
+	default:
+		if short(1) {
+			// The host would get it with its time already up.
+			return &proto.Ack{ID: req.ID, Err: "too little time left to reach " + hs.name}
+		}
 	}
 	ack, err := conn.Request(ctx, proto.TExec, req)
 	if err != nil {
