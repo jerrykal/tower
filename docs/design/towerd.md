@@ -318,7 +318,8 @@ the install root (`towerCommand`, also used for attaches and standbys); a
 127 from an unpinned host installs the build (`internal/install`, status
 `installing`) and connects again at once,
 with stderr read line by line (a Tailscale check banner ends ssh at once),
-a stream with the home's timings, the hello (15s), then the first state:
+a stream with the home's timings, the hello, then the first state (30s
+for both, ssh's connect included: 14s on LC05's slowest link):
 the link is `up` only once a state is in, so a host never shows up empty
 (LC01). Status: `connecting`, `up`, `stalled`, `down`, `failed`, `dup`,
 `off` (status reports `nosrv` for a host up with no server). A second

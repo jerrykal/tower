@@ -564,7 +564,7 @@ func (l *link) connect() outcome {
 		return finish("", "")
 	case <-l.stopC:
 		return finish(transport.Down, "link stopped")
-	case <-time.After(15*time.Second - time.Since(sent)):
+	case <-time.After(helloWait - time.Since(sent)):
 		l.logf("no state after the hello")
 		return finish(transport.Down, "the host sent no state")
 	}
@@ -658,9 +658,14 @@ func (r hostRunner) Run(ctx context.Context, remote string, stdin io.Reader) (st
 	return r.tr.Run(ctx, r.h, remote, stdin)
 }
 
-// awaitHello waits for the remote's hello, at most 15s.
+// helloWait is how long a link waits for the remote's hello and first
+// state, ssh's connect included: its 13 round trips take 14s on a link of
+// 500ms ±300ms each way (LC05), 22s with that jitter on a macOS runner.
+const helloWait = 30 * time.Second
+
+// awaitHello waits for the remote's hello, at most helloWait.
 func (l *link) awaitHello(conn *stream.Conn, helloC chan *proto.Hello, ts chan struct{}) (*proto.Hello, bool) {
-	t := time.NewTimer(15 * time.Second)
+	t := time.NewTimer(helloWait)
 	defer t.Stop()
 	select {
 	case h := <-helloC:
@@ -668,7 +673,7 @@ func (l *link) awaitHello(conn *stream.Conn, helloC chan *proto.Hello, ts chan s
 	case <-conn.Done():
 	case <-ts:
 	case <-t.C:
-		l.logf("no hello within 15s")
+		l.logf("no hello within %v", helloWait)
 	case <-l.stopC:
 	}
 	return nil, false
