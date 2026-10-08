@@ -223,6 +223,7 @@ type Reply struct {
 | `wait-switch` | `{Loop, Gen}` → `{Switch}` | the loop, while attached |
 | `held` | `{Loop, Gen}` → `{End}` | the loop |
 | `standby` | `{Loop}` → `[]Offer{Host, Key, Argv}` | the loop |
+| `end-client` | `{Name}` → `{}`: `detach-client -t Name -E 'exit 42'` through the control client | the loop, ending its local client for a hand-off |
 | `last` | `{Client}` → `LastResult{Local, Stored, Ended, Asker, Target, Note}` | `tower last` |
 | `wake`, `netchange`, `reload` | – → `{}` (`reload` also activates the home role) | tests, `tower netchange`, `tower host` |
 | `plant` | `Request{Loop, Gen, Nonce, Target}` → `{}`: a stored switch, only with `TOWER_TEST_HOOKS` | the scenario suite |

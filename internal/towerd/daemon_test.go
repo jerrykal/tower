@@ -617,6 +617,39 @@ func TestLastPickedByTheHome(t *testing.T) {
 	}
 }
 
+// TestEndClient: end-client detaches the loop's local client through the
+// control client, which exits 42 printing nothing of its own.
+func TestEndClient(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	a.start(false)
+	w.eventually(3*time.Second, "A's control client", func() bool { return a.d.w.control() != nil })
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") })
+	sess, err := relay.Start(append([]string{a.srv.Bin}, append(slices.Clone(a.env.Tmux), "attach-session", "-t", "alpha")...), env, relay.Modes{}, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	w.eventually(3*time.Second, "the client attached", func() bool {
+		return strings.Contains(a.tmux("list-clients", "-F", "#{client_name}"), sess.PtyName())
+	})
+	if err := a.d.endClient(sess.PtyName()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sess.Done():
+	case <-time.After(3 * time.Second):
+		sess.Kill()
+		t.Fatal("the client outlived end-client")
+	}
+	if c := sess.ExitCode(); c != 42 {
+		t.Fatalf("the client exited %d, not 42", c)
+	}
+	if err := a.d.endClient("/dev/no-such-tty"); err == nil {
+		t.Fatal("end-client of no client succeeded")
+	}
+}
+
 func TestKeysTakenAndPutBack(t *testing.T) {
 	w := newWorld(t)
 	free := w.node("K", "", "k1")

@@ -231,6 +231,24 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 	return ack
 }
 
+// endClient is end-client: the loop's local client detached for a
+// hand-off through the control client, with -E so it prints nothing as it
+// goes and exits 42: no tmux process on the hand-off's path.
+func (d *Daemon) endClient(name string) error {
+	if name == "" {
+		return errBad("end-client: no client named")
+	}
+	ctl := d.w.control()
+	if ctl == nil {
+		return errors.New("no control client")
+	}
+	r, err := ctl.DoTimeout("detach-client -t "+tmux.Quote(name)+" -E "+tmux.Quote("exit 42"), time.Second)
+	if err == nil && r.Err {
+		err = errors.New(strings.TrimSpace(r.Text()))
+	}
+	return err
+}
+
 // detachStale detaches a client the asking home says is left over: an
 // attach its loop has moved on from, or one of a loop that is gone. Its
 // ssh was ended, but its session can outlive an ssh that rode a control

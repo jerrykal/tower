@@ -38,6 +38,7 @@ const (
 	CallHeld       = "held"
 	CallStandby    = "standby"
 	CallLast       = "last"
+	CallEndClient  = "end-client" // EndClientArgs: the loop's local client, ended for a hand-off
 	CallWake       = "wake"
 	CallNetChange  = "netchange"
 	CallReload     = "reload"
@@ -306,6 +307,12 @@ type RetryArgs struct {
 // LastArgs asks where tower last goes for Client.
 type LastArgs struct {
 	Client string `json:"client"`
+}
+
+// EndClientArgs names the loop's local tmux client by its name (the
+// loop's tty).
+type EndClientArgs struct {
+	Name string `json:"name"`
 }
 
 // LastResult: Local means a plain switch-client to Target on the client's

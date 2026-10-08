@@ -82,8 +82,9 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
 - **Local**: run the prepared argv (`tower attach …`, which execs tmux)
   with the terminal as its stdio, its modes restored first. Ending it for
   a switch: `detach-client -t <its client> -E 'exit 42'` on the local
-  server (the client named by the loop's own tty, one tmux run), so tmux restores the terminal and
-  prints nothing.
+  server (the client named by the loop's own tty) through towerd's
+  control client (`end-client`), so tmux restores the terminal and prints
+  nothing; a towerd that cannot leaves it to one tmux run.
 - **Remote**: the host's standby if prepare's key matches and it is ready
   and made for this terminal; its pty sized, the go line sent, the go
   marker awaited `300ms + 2 × RTT` (`TOWER_STANDBY_TIMEOUT`), else
