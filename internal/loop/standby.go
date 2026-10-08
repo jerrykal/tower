@@ -84,8 +84,7 @@ func (s *standbys) run(ctx context.Context) {
 }
 
 // refresh drops the standbys whose key the home no longer offers (their
-// host gone, down, stalled, reconnected or now the current one) and
-// starts those missing.
+// host gone, down, stalled or reconnected) and starts those missing.
 func (s *standbys) refresh(ctx context.Context) {
 	var offers []proto.Offer
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)

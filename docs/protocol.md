@@ -424,9 +424,9 @@ hold off.
 ## Standby sessions
 
 Each attach loop keeps one ssh session open ahead of time to every
-connected remote host it is not attached to, so a switch there sends one
-line instead of opening a session (a round trip and the remote shell's
-start-up less).
+connected remote host, the one it is attached to included, so a switch
+there sends one line instead of opening a session (a round trip and the
+remote shell's start-up less).
 
 1. **Offer.** The loop asks the home for `standby`: per host, the command
    `ssh -t <opts> <host> -- '<tower> attach --standby --mkey K --tmux …'`
@@ -452,10 +452,11 @@ start-up less).
    the link's slow round trips is killed outright (a stopped process loses
    a SIGTERM), and the loop opens a new session under the same held frame
    (LS02). `TOWER_STANDBY_TIMEOUT` (ms) overrides the wait.
-5. **Refill.** The host left gets a new standby.
+5. **Refill.** The host entered gets a new standby, so a switch straight
+   back after leaving it finds one ready.
 
 The loop drops a standby whose key the home no longer offers, whose host is
-gone, down or stalled, or whose host it is now attached to, and makes the
+gone, down or stalled, and makes the
 ones missing. It asks again on every change of the home's view, every 2s,
 and when a standby is used or dies (LS03, LS04). A standby that dies before
 it is ready backs its host off (1s, doubling to a minute); one not ready in

@@ -423,7 +423,7 @@ type loopRec struct {
   generation than its loop's, not yet reaped) is nobody, unless its
   host's towerd told the reap it cannot detach (it then stays).
 - `standby`: offers for up, unstalled hosts up for 1s, standby allowed,
-  not the loop's current host; key `link gen | towerd id | version | tmux
+  the loop's current host included; key `link gen | towerd id | version | tmux
   args | tower path`.
 - Loops expire 15s after their last beat; the last target is saved in
   `last.json`.

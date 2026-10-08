@@ -152,7 +152,7 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
-| LS01 | Hand-offs through standbys; the host left gets a new one; resize reaches the client; standbys are no clients; nothing outlives the loop (a killed loop's standbys once they miss their heartbeats) | loop | pass |
+| LS01 | Hand-offs through standbys; the host entered gets a new one, so the host left has one ready; resize reaches the client; standbys are no clients; nothing outlives the loop (a killed loop's standbys once they miss their heartbeats) | loop | pass |
 | LS02 | A stuck standby is given up after its wait and a new session lands, the frame held throughout | loop | pass |
 | LS03 | Wake, network change, towerd killed, stall: each replaces the standby; one made for an earlier link is never used | loop, towerd | pass |
 | LS04 | `TOWER_STANDBY=0`, `standby = false`, a remote upgrade, a reload: standbys follow | loop, towerd | pass |

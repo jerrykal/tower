@@ -47,8 +47,8 @@ func (h *Host) clientSize() string {
 	return ""
 }
 
-// LS01: hand-offs through standbys; the host left gets a new one; the
-// terminal's size reaches the client; standbys are neither clients nor
+// LS01: hand-offs through standbys; the host entered gets a new one, so
+// the host left has one ready; the terminal's size reaches the client; standbys are neither clients nor
 // registrations; prefix d and a killed loop leave none behind.
 func TestLS01(t *testing.T) {
 	parallel(t)
@@ -86,11 +86,15 @@ func TestLS01(t *testing.T) {
 	term.Keys("Enter")
 	term.Wait(`ls42`, 5*time.Second)
 	w.Eventually(3*time.Second, "one registration on B", func() bool { return len(b.Regs()) == 1 })
+	w.WaitMark("standby: ready B", 5*time.Second)
 	w.ClearMarks()
 	term.DashTo("charlie")
 	w.WaitLoop(a, "^C:charlie", 8*time.Second)
 	w.WaitMark("standby: taken", 3*time.Second)
-	w.WaitMark("standby: ready B", 5*time.Second)
+	w.WaitMark("standby: ready C", 5*time.Second)
+	if n := w.CountMarks("standby: start B"); n != 0 {
+		t.Fatalf("B, left with a standby ready, started %d more", n)
+	}
 	term.Wait(statusBar("charlie"), 5*time.Second)
 	term.Keys("C-b", "d")
 	term.Wait(`LOOP-EXIT=0`, 5*time.Second)

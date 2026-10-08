@@ -161,7 +161,7 @@ type standby struct {
 
 - **Refresh** on every change of the view, every 2s, and when one is used
   or dies: ask `standby`; drop those whose key is no longer offered (host
-  gone, down, stalled, reconnected, now the current one), except the host
+  gone, down, stalled, reconnected), except the host
   being prepared; start those missing, once the view names their host,
   not while backed off. Marks: `standby: start|ready|drop <host>`,
   `standby: not used <host>: <why>`.
@@ -170,8 +170,8 @@ type standby struct {
   terminal is dropped.
 - A standby that dies (or is not ready in 20s) before it is ready backs
   its host off, 1s doubling to a minute; one that dies ready is replaced.
-- The home offers none for the host the loop is attached to; at the
-  picker the loop is attached nowhere, so every host gets one.
+- The home offers one for the host the loop is attached to as well: the
+  host a hand-off leaves has one ready for a switch straight back.
 
 ## Concurrency
 

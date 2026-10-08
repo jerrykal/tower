@@ -64,7 +64,6 @@ type loopRec struct {
 	waiters   []chan struct{} // wait-switch calls of the current attach
 	woke      *switchWait     // the current attach's wake, once a switch woke the loop
 	seen      bool            // the home has seen this attach's client
-	picking   bool            // at the picker: attached nowhere
 	beat      time.Time
 }
 
@@ -534,7 +533,7 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	if !l.cur.IsZero() && !l.cur.SameSession(t) {
 		l.prev = l.cur
 	}
-	l.cur, l.sw, l.woke, l.seen, l.picking = t, nil, nil, false, false
+	l.cur, l.sw, l.woke, l.seen = t, nil, nil, false
 	for _, w := range l.waiters {
 		close(w)
 	}
@@ -762,13 +761,6 @@ func (h *homeRole) after(ctx context.Context, a proto.AfterArgs) *proto.Next {
 	h.d.bump()
 	h.d.mu.Unlock()
 	next := h.decide(ctx, a, gen, cur, sw)
-	if next.Do == proto.NextPicker {
-		h.d.mu.Lock()
-		if l := h.loops[a.Loop]; l != nil && l.gen == gen {
-			l.picking = true
-		}
-		h.d.mu.Unlock()
-	}
 	config.Mark("after " + next.Do)
 	h.d.logf("home: loop %s gen %d exited %d (ended %v): %s %s %s", a.Loop, a.Gen, a.Code, a.Ended, next.Do, next.Target.String(), next.Note)
 	return next
@@ -886,18 +878,16 @@ func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 	return best, bestAgo >= 0
 }
 
-// standby offers a loop one standby session per host it may switch to.
-func (h *homeRole) standby(loop string) []proto.Offer {
+// standby offers a loop one standby session per host, the one it is
+// attached to included: the host a hand-off leaves then has one ready for
+// a switch straight back, not one that starts only once it is left.
+func (h *homeRole) standby() []proto.Offer {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
-	cur := ""
-	if l := h.loops[loop]; l != nil && !l.picking {
-		cur = l.cur.Host
-	}
 	out := []proto.Offer{}
 	for _, name := range h.order {
 		l := h.links[name]
-		if l == nil || l.status != proto.StatusUp || l.id == "" || l.id == cur || !l.cfg.StandbyOn() || time.Since(l.upAt) < standbyUpFor {
+		if l == nil || l.status != proto.StatusUp || l.id == "" || !l.cfg.StandbyOn() || time.Since(l.upAt) < standbyUpFor {
 			continue
 		}
 		args := []string{"attach", "--standby", "--mkey", l.mkey, "--tmux", l.cfg.Tmux}
