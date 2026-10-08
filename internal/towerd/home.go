@@ -654,6 +654,40 @@ func (h *homeRole) storeSwitch(ctx context.Context, req *proto.Request) *proto.A
 	return ack
 }
 
+// storeLast is tower last, here or relayed: the loop's previous target,
+// read where the loop's attaches are decided, so a press right after a
+// hand-off goes back where the terminal was, whatever view the asker's
+// towerd holds. A target on the asker's own server is answered Local, for
+// its switch-client; any other is stored as a switch to it. Every answer
+// that has a target names it (Ref).
+func (h *homeRole) storeLast(ctx context.Context, req *proto.Request) *proto.Ack {
+	h.d.mu.Lock()
+	l := h.loops[req.Loop]
+	if l == nil || l.prev.IsZero() {
+		h.d.mu.Unlock()
+		return &proto.Ack{ID: req.ID, Err: "no previous session"}
+	}
+	prev := l.prev
+	if req.Gen != l.gen {
+		h.d.mu.Unlock()
+		return &proto.Ack{ID: req.ID, Err: fmt.Sprintf("request from an earlier attach (gen %d, now %d)", req.Gen, l.gen), Ref: &prev}
+	}
+	local := false
+	if prev.Host == req.From {
+		hs := h.hostOf(prev.Host)
+		local = prev.Inst == "" || hs == nil || hs.inst == "" || prev.Inst == hs.inst
+	}
+	h.d.mu.Unlock()
+	if local {
+		return &proto.Ack{ID: req.ID, OK: true, Local: true, Ref: &prev}
+	}
+	sw := *req
+	sw.Op, sw.Target = proto.OpSwitch, prev
+	ack := h.storeSwitch(ctx, &sw)
+	ack.Ref = &prev
+	return ack
+}
+
 // plant stores a switch as if a dashboard had asked (a test hook).
 func (h *homeRole) plant(r *proto.Request) (any, error) {
 	h.d.mu.Lock()
@@ -951,6 +985,8 @@ func (h *homeRole) serveRelay(l *link, req *proto.Request) {
 	switch {
 	case req.Op == proto.OpSwitch:
 		ack = h.storeSwitch(ctx, req)
+	case req.Op == proto.OpLast:
+		ack = h.storeLast(ctx, req)
 	default:
 		ack = h.route(ctx, req)
 	}

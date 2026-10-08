@@ -289,11 +289,23 @@ entry reads as the local server, and a view held from a home gone leaves
 it local while the home's own entry reads `down`, "home not connected",
 last seen when that view came.
 
-`last` (the call): the client's loop's previous target, from the home's
-view; on the client's own server it answers `Local` (the CLI runs
-`switch-client`), else it stores a switch through the switch path and
-passes on the ack's `Ended`: without it the CLI ends the client as a
-dashboard does (hold, `detach-client -E 'exit 42'`).
+`last` (the call): a switch between two sessions on the client's own
+server is decided there with no round trip (`lastHere`), when the loop as
+this towerd holds it (the home's record, or a remote's view) is the
+client's own attach and its previous target is on this server; a client
+that moved on this server since (`list-clients` says where it is now)
+came from that record's current target, which is then the previous one.
+Anything else is a `last` request through the switch path, which the
+home answers from its own record of the loop (`storeLast`), not from the
+view a remote holds: pushes to a remote are paced, so right after a
+hand-off its view can still have the attach before, whose previous
+target is where the terminal is now. The home refuses an earlier
+attach's client, answers a previous target on the asker's own server
+`Local` (the CLI runs `switch-client`), and stores a switch to any other,
+passing on the ack's `Ended`: without it the CLI ends the client as a
+dashboard does (hold, `detach-client -E 'exit 42'`). With the home not
+connected, or a home that does not know the request, the towerd answers
+from its own view as before.
 
 ## Home role (home.go, link.go)
 

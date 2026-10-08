@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
 	"github.com/jerrykal/tower/internal/stream"
+	"github.com/jerrykal/tower/internal/tmux"
 )
 
 // keptView is how long a remote keeps a disconnected home's last view,
@@ -400,12 +402,96 @@ func copyView(v *proto.View, shift int64) proto.View {
 // loop, as a local switch-client when it is on the client's own server,
 // else as a stored switch, whose client the loop ends (Ended) or the
 // asker does (Asker). A refusal names the target and why; with neither
-// the caller falls back to tmux's own switch-client -l.
+// the caller falls back to tmux's own switch-client -l. The home picks
+// the target: a remote's view of the loop can lag a hand-off just made.
 func (d *Daemon) last(ctx context.Context, client string) *proto.LastResult {
 	g := d.clientReg(client)
 	if g == nil {
 		return &proto.LastResult{Note: "not a tower terminal"}
 	}
+	if r := d.lastHere(client, g); r != nil {
+		return r
+	}
+	if g.Home != d.id && d.homeFor(g.Home) == nil {
+		return d.lastFromView(ctx, client, g)
+	}
+	ack := d.act(ctx, &proto.Request{Op: proto.OpLast, Client: client, Nonce: config.NewID()})
+	if strings.HasPrefix(ack.Err, "unknown request") {
+		// A home from before the last request.
+		return d.lastFromView(ctx, client, g)
+	}
+	switch {
+	case ack.Ref == nil:
+		return &proto.LastResult{Note: ack.Err}
+	case !ack.OK:
+		return &proto.LastResult{Note: ack.Err, Target: *ack.Ref}
+	case ack.Local:
+		return &proto.LastResult{Local: true, Target: *ack.Ref}
+	}
+	return &proto.LastResult{Stored: true, Ended: ack.Ended, Asker: !ack.Ended, Target: *ack.Ref}
+}
+
+// lastHere is last decided on this server, with no round trip, so a
+// switch between two sessions here stays instant: when the loop as this
+// towerd holds it is the client's own attach and its previous target is
+// on this server. A client that moved on this server since that record
+// (the move not yet reported back) came from the record's current
+// target, which is then the previous one. nil: ask the home.
+func (d *Daemon) lastHere(client string, g *reg) *proto.LastResult {
+	id, err := proto.ParseClient(client)
+	if err != nil {
+		return nil
+	}
+	d.mu.Lock()
+	var lp *proto.Loop
+	if g.Home == d.id && d.home != nil {
+		if l := d.home.loops[g.Loop]; l != nil {
+			lp = &proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev}
+		}
+	} else if r := d.keptHome(g.Home); r != nil && r.view != nil {
+		lp = r.view.LoopByID(g.Loop)
+	}
+	inst := ""
+	if d.snap != nil {
+		inst = d.snap.Inst
+	}
+	d.mu.Unlock()
+	if lp == nil || lp.Gen != g.Gen || lp.Cur.Host != d.id {
+		return nil
+	}
+	// Where the client is now, from tmux itself: the snapshot can lag a
+	// move just made.
+	ctl := d.w.control()
+	if ctl == nil {
+		return nil
+	}
+	r, err := ctl.DoTimeout("list-clients -F "+tmux.Quote("#{client_name}\t#{session_id}"), time.Second)
+	if err != nil || r.Err {
+		return nil
+	}
+	now := ""
+	for _, line := range r.Lines {
+		if name, sess, ok := strings.Cut(line, "\t"); ok && name == id.Name {
+			now = sess
+		}
+	}
+	if now == "" {
+		return nil
+	}
+	prev := lp.Prev
+	if now != lp.Cur.Session {
+		prev = lp.Cur
+	}
+	if prev.IsZero() || prev.Host != d.id || prev.Inst != "" && prev.Inst != inst || prev.Session == now {
+		return nil
+	}
+	return &proto.LastResult{Local: true, Target: prev}
+}
+
+// lastFromView is last from the loop as this towerd's view holds it: with
+// the home gone (a target on this server still works), or a home that
+// does not take the last request.
+func (d *Daemon) lastFromView(ctx context.Context, client string, g *reg) *proto.LastResult {
 	d.mu.Lock()
 	var lp *proto.Loop
 	if g.Home == d.id && d.home != nil {

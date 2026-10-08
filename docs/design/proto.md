@@ -162,14 +162,14 @@ local `act` call; one shape serves all three.
 ```go
 type Request struct {
     ID       string // unique per request; repeats are answered from memory
-    Op       string // kill, rename, new, capture, panes, has, switch, dup
+    Op       string // kill, rename, new, capture, panes, has, switch, dup, detach, last
     Deadline int64  // unix ms in the clock of whoever holds the request now
     Target   Ref
     Kind     string // "session" or "window" (kill, rename, new, panes)
     Name     string // rename, new, dup
     Dir      string // new: start directory (~ is the target host's home)
-    Client   string // switch: "pid:created:name" of the pressing client
-    Loop     string // switch: resolved from the client's registration
+    Client   string // switch, last: "pid:created:name" of the pressing client
+    Loop     string // switch, last: resolved from the client's registration
     Gen      int
     Nonce    string
     From     string // towerd id of the asking machine
@@ -184,7 +184,8 @@ type Ack struct {
     Gone   bool   // has: the session does not exist (or no server)
     Text   string // capture
     Panes  []Pane // capture: the target window's; panes
-    Ref    *Ref   // new, dup: what was created
+    Ref    *Ref   // new, dup: what was created; last: the previous target
+    Local  bool   // last: Ref is on the asker's own server (its switch-client)
 }
 ```
 

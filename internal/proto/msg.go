@@ -80,6 +80,7 @@ const (
 	OpDup     = "dup"
 	OpPanes   = "panes"  // a session's (or window's) panes: layout and what runs there
 	OpDetach  = "detach" // a home's client there whose attach is over (Client, Loop, Gen)
+	OpLast    = "last"   // tower last: a switch to the loop's previous target, which the home picks (Client, Loop, Gen)
 )
 
 // Kinds of things a request acts on.
@@ -116,7 +117,8 @@ type Ack struct {
 	Gone  bool   `json:"gone,omitempty"`  // has: no such session (or no server)
 	Text  string `json:"text,omitempty"`  // capture
 	Panes []Pane `json:"panes,omitempty"` // capture (the target window's), panes
-	Ref   *Ref   `json:"ref,omitempty"`   // new, dup: what was made
+	Ref   *Ref   `json:"ref,omitempty"`   // new, dup: what was made; last: the previous target
+	Local bool   `json:"local,omitempty"` // last: Ref is on the asker's own server, for its switch-client
 }
 
 // Newer reports whether tower version a is newer than b. Versions are

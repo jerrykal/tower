@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jerrykal/tower/internal/config"
 	"github.com/jerrykal/tower/internal/proto"
+	"github.com/jerrykal/tower/internal/relay"
 	"github.com/jerrykal/tower/internal/tmux"
 	"github.com/jerrykal/tower/internal/transport"
 )
@@ -489,6 +491,129 @@ func TestLoopDecisions(t *testing.T) {
 	n := h.after(ctx, proto.AfterArgs{Loop: "L", Gen: p.Gen, Code: 0})
 	if n.Do != proto.NextHandoff || n.Target.Label != "alpha" || !strings.Contains(n.Note, "ended; now on A:alpha") {
 		t.Fatalf("after the session ended: %+v", n)
+	}
+}
+
+// TestLastPickedByTheHome: tower last on a remote goes where the home
+// says the terminal was, though the remote's view of the loop still shows
+// the attach before (pushes to it are paced, so a press right after a
+// hand-off can read one): a stale view made B's own session the previous
+// one, and the press switched the client to where it already was.
+func TestLastPickedByTheHome(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	b := w.node("B", "", "bravo", "beta")
+	a.hosts(b.remote())
+	a.start(false)
+	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	h := a.d.homeRole()
+	ctx := context.Background()
+	h.beat(proto.LoopBeat{ID: "L"})
+	alpha, bravo, beta := a.ref(a, "alpha"), a.ref(b, "bravo"), a.ref(b, "beta")
+	w.eventually(3*time.Second, "B's sessions at the home", func() bool { return viewHas(a.d.view(proto.ViewArgs{}).View, "B", "beta") })
+
+	// stale makes B's held view show the loop as it was at gen.
+	stale := func(gen int, cur, prev proto.Ref) {
+		w.eventually(2*time.Second, "B holds the loop's view", func() bool {
+			b.d.mu.Lock()
+			defer b.d.mu.Unlock()
+			r := b.d.keptHome(a.d.id)
+			return r != nil && r.view != nil && r.view.LoopByID("L") != nil
+		})
+		b.d.mu.Lock()
+		r := b.d.keptHome(a.d.id)
+		v := *r.view
+		v.Loops = []proto.Loop{{ID: "L", Gen: gen, Cur: cur, Prev: prev}}
+		r.view = &v
+		b.d.mu.Unlock()
+	}
+
+	// The terminal went A:alpha → B:bravo; B's view still has it on
+	// A:alpha with B:bravo before.
+	h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: alpha})
+	p, _ := h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: bravo})
+	b.d.register(proto.RegisterArgs{Pid: 999_999, Loop: "L", Gen: p.Gen, Home: a.d.id})
+	cl := "999999:1:/dev/fake"
+	stale(p.Gen-1, alpha, bravo)
+	if r := b.d.last(ctx, cl); !r.Stored || r.Local || r.Target.Session != alpha.Session || r.Target.Host != a.d.id {
+		t.Fatalf("last on B after A → B: %+v, want a switch stored to A:alpha", r)
+	}
+	a.d.mu.Lock()
+	sw := h.loops["L"].sw
+	a.d.mu.Unlock()
+	if sw == nil || sw.target.Session != alpha.Session {
+		t.Fatalf("the switch stored: %+v", sw)
+	}
+
+	// B:bravo → B:beta: the previous is on B's own server, a local
+	// switch, though B's view has the terminal on A.
+	h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: bravo})
+	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: beta})
+	b.d.register(proto.RegisterArgs{Pid: 999_998, Loop: "L", Gen: p.Gen, Home: a.d.id})
+	stale(p.Gen-2, alpha, bravo)
+	if r := b.d.last(ctx, "999998:1:/dev/fake"); !r.Local || r.Target.Session != bravo.Session {
+		t.Fatalf("last on B after B:bravo → B:beta: %+v, want a local switch to bravo", r)
+	}
+
+	// An earlier attach's client is refused, naming the target.
+	if r := b.d.last(ctx, cl); r.Stored || r.Local || !strings.Contains(r.Note, "earlier attach") || r.Target.Session != bravo.Session {
+		t.Fatalf("last from an earlier attach's client: %+v", r)
+	}
+	// Between two sessions on B, B decides with no round trip, from its
+	// own view of the client's attach: the home's record, changed here
+	// without a push, is not asked.
+	h.beat(proto.LoopBeat{ID: "N"})
+	h.prepare(ctx, proto.PrepareArgs{Loop: "N", Target: bravo})
+	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "N", Target: beta})
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") })
+	sess, err := relay.Start(append([]string{b.srv.Bin}, append(slices.Clone(b.env.Tmux), "attach-session", "-t", "beta")...), env, relay.Modes{}, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sess.Kill()
+		sess.Close()
+	}()
+	b.d.register(proto.RegisterArgs{Pid: sess.Pid(), Loop: "N", Gen: p.Gen, Home: a.d.id})
+	var real string
+	w.eventually(3*time.Second, "the client on B:beta bound", func() bool {
+		for _, line := range strings.Split(b.tmux("list-clients", "-F", "#{client_pid}:#{client_created}:#{client_name}"), "\n") {
+			if strings.HasPrefix(line, strconv.Itoa(sess.Pid())+":") {
+				real = line
+			}
+		}
+		g := b.d.clientReg(real)
+		return real != "" && g != nil && g.bound()
+	})
+	a.d.mu.Lock()
+	h.loops["N"].prev = alpha
+	a.d.mu.Unlock()
+	view := func(cur, prev proto.Ref) {
+		b.d.mu.Lock()
+		r := b.d.keptHome(a.d.id)
+		v := *r.view
+		v.Loops = []proto.Loop{{ID: "N", Gen: p.Gen, Cur: cur, Prev: prev}}
+		r.view = &v
+		b.d.mu.Unlock()
+	}
+	view(beta, bravo)
+	if r := b.d.last(ctx, real); !r.Local || r.Target.Session != bravo.Session {
+		t.Fatalf("last between two sessions on B: %+v, want a local switch to bravo", r)
+	}
+	// The client moved to bravo, the move not reported back yet: the
+	// previous is where it came from.
+	b.tmux("switch-client", "-c", strings.SplitN(real, ":", 3)[2], "-t", "bravo")
+	view(beta, bravo)
+	if r := b.d.last(ctx, real); !r.Local || r.Target.Session != beta.Session {
+		t.Fatalf("last right after a move on B: %+v, want a local switch back to beta", r)
+	}
+
+	// A loop with no previous session: tmux's own switch-client -l.
+	h.beat(proto.LoopBeat{ID: "M"})
+	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "M", Target: bravo})
+	b.d.register(proto.RegisterArgs{Pid: 999_997, Loop: "M", Gen: p.Gen, Home: a.d.id})
+	if r := b.d.last(ctx, "999997:1:/dev/fake"); r.Stored || r.Local || !r.Target.IsZero() {
+		t.Fatalf("last with no previous session: %+v", r)
 	}
 }
 

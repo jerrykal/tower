@@ -445,7 +445,7 @@ func (d *Daemon) act(ctx context.Context, req *proto.Request) *proto.Ack {
 	if req.Op == proto.OpNew && req.Kind != proto.KindWindow && d.hostNoServer(req.Target.Host) {
 		req.Deadline = max(req.Deadline, stream.Now()+newServerWait.Milliseconds())
 	}
-	if req.Op == proto.OpSwitch {
+	if req.Op == proto.OpSwitch || req.Op == proto.OpLast {
 		return d.switchFrom(ctx, req)
 	}
 	if req.Target.Host == "" || req.Target.Host == d.id {
@@ -466,8 +466,9 @@ func (d *Daemon) act(ctx context.Context, req *proto.Request) *proto.Ack {
 	return d.relay(ctx, rec, req)
 }
 
-// switchFrom handles a dashboard's switch: the pressing client's
-// registration names the loop, the attach and the home that decides.
+// switchFrom handles a dashboard's switch, or tower last: the pressing
+// client's registration names the loop, the attach and the home that
+// decides.
 func (d *Daemon) switchFrom(ctx context.Context, req *proto.Request) *proto.Ack {
 	g := d.clientReg(req.Client)
 	if g == nil {
@@ -479,6 +480,9 @@ func (d *Daemon) switchFrom(ctx context.Context, req *proto.Request) *proto.Ack 
 	}
 	if g.Home == d.id {
 		if h := d.homeRole(); h != nil {
+			if req.Op == proto.OpLast {
+				return h.storeLast(ctx, req)
+			}
 			return h.storeSwitch(ctx, req)
 		}
 	}

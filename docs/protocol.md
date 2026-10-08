@@ -159,7 +159,7 @@ merely slow to accept is another host's healthy master and stays (S16).
 | `state` | remote → home | the remote's sessions and windows (ages against its own clock) with each session's git state, its zoxide directories with no session, its tmux instance, and the clients of **this home's** loops with where each is now |
 | `view` | home → remote | the merged view of every host, with this home's loops (current, previous), numbered |
 | `exec` | home → remote | a request to run there (kill, rename, new, capture, panes, dup, has-session, detach of the home's stale client) |
-| `relay` | remote → home | a request from a dashboard on the remote (switch, or an action elsewhere) |
+| `relay` | remote → home | a request from a dashboard on the remote (switch, `tower last`, or an action elsewhere) |
 | `ack` | answer to `exec` and `relay` | matched by request id |
 | `ping` / `pong` | both | keepalive; `pong` carries the sender's clock |
 | `look` | both | a dashboard opened: refresh git state and zoxide directories (see Git state and directories) |
@@ -543,6 +543,12 @@ own:
   stops, for each key that still has tower's binding.
 - **The binding carries towerd's `TOWER_*` environment** (a key binding
   starts from the tmux server's environment), and `TOWER_MKEY`.
+- `tower last` between two sessions on the client's own server is a
+  plain `switch-client` decided there, with no round trip, when the view
+  that towerd holds is of the client's own attach. Otherwise the target is
+  the loop's previous one as the home has it: the towerd relays a `last`
+  request (the switch path, step 2) rather than read a view that can lag
+  a hand-off just made. With the home not connected it goes by that view.
 - `tower last` falls back to `switch-client -l` when the terminal has no
   loop, the loop has no previous session, or towerd cannot be reached. A
   hand-off it stores without `ended` (the result says `asker`) it
