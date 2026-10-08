@@ -282,7 +282,12 @@ machine's home when it has hosts, else the home connected last (a home
 role with no hosts, a towerd a dashboard started on a remote, would show
 this machine alone), with "not a tower terminal: ⏎
 to another host needs the attach loop". This machine's own host entry is
-always the live one, ages moved on to now.
+always the live one, ages moved on to now, under the home's name; while
+that home is connected it reads `up` with the home's round trip to it
+(the stream is here, whatever the home last said), so only the home's
+entry reads as the local server, and a view held from a home gone leaves
+it local while the home's own entry reads `down`, "home not connected",
+last seen when that view came.
 
 `last` (the call): the client's loop's previous target, from the home's
 view; on the client's own server it answers `Local` (the CLI runs

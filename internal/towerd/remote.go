@@ -343,11 +343,26 @@ func (d *Daemon) view(a proto.ViewArgs) *proto.Dash {
 		if dash.Home == "" {
 			dash.Home = held.id
 		}
+		// A home gone is no local server from here: its entry reads
+		// unreachable, last seen when its view came.
+		if held.conn == nil {
+			if i := slices.IndexFunc(dash.View.Hosts, func(x proto.Host) bool { return x.ID == held.id }); i >= 0 {
+				hh := &dash.View.Hosts[i]
+				hh.Status, hh.Reason, hh.Seen = proto.StatusDown, "home not connected", now.Sub(held.viewAt).Milliseconds()
+			}
+		}
 	}
-	// This machine's own entry is always the live one.
+	// This machine's own entry is always the live one, under the home's
+	// name. While that home is connected the entry reads as the home's
+	// link to it (its stream is here, so up whatever the home last said),
+	// leaving the home's own entry as the only local server; a view held
+	// from a home gone leaves it local, which switch-client still reaches.
 	self := d.localHost(now)
 	if i := slices.IndexFunc(dash.View.Hosts, func(x proto.Host) bool { return x.ID == d.id }); i >= 0 {
 		self.Name = dash.View.Hosts[i].Name
+		if held != nil && held.conn != nil {
+			self.Status, self.RTT = proto.StatusUp, dash.View.Hosts[i].RTT
+		}
 		dash.View.Hosts[i] = self
 	} else {
 		dash.View.Hosts = append([]proto.Host{self}, dash.View.Hosts...)

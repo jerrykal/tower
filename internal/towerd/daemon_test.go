@@ -264,6 +264,11 @@ func TestHomeAndRemote(t *testing.T) {
 	w.eventually(2*time.Second, "B holds the home's view", func() bool {
 		return viewHas(b.d.view(proto.ViewArgs{}).View, "A", "alpha")
 	})
+	// On B, the home is the local server and B a host it is connected
+	// to, as on the home.
+	if v := b.d.view(proto.ViewArgs{}).View; len(v.Hosts) != 2 || hostIn(v, "A") == nil || hostIn(v, "A").Status != proto.StatusLocal || hostIn(v, "B") == nil || hostIn(v, "B").Status != proto.StatusUp {
+		t.Fatalf("B's view of the hosts: %+v", v.Hosts)
+	}
 
 	// A change on B reaches the home, which reaches B's held view.
 	start := time.Now()
@@ -316,6 +321,13 @@ func TestHomeAndRemote(t *testing.T) {
 	})
 	if v := b.d.view(proto.ViewArgs{Client: cl}); !viewHas(v.View, "A", "alpha") {
 		t.Fatal("B dropped the home's last view")
+	}
+	// B is then the only local server; the home reads unreachable.
+	if h := hostIn(b.d.view(proto.ViewArgs{Client: cl}).View, "B"); h == nil || h.Status != proto.StatusLocal {
+		t.Fatalf("B's own entry with the home gone: %+v, not local", h)
+	}
+	if h := hostIn(b.d.view(proto.ViewArgs{Client: cl}).View, "A"); h == nil || h.Status != proto.StatusDown || h.Reason != "home not connected" {
+		t.Fatalf("the home's entry with the home gone: %+v", h)
 	}
 	start = time.Now()
 	ack = b.d.act(context.Background(), &proto.Request{Op: proto.OpKill, Client: cl, Target: proto.Ref{Host: "elsewhere", Session: "$0"}})
