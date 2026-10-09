@@ -6,12 +6,6 @@ func getTermios(fd int) (*unix.Termios, error) { return unix.IoctlGetTermios(fd,
 
 func setTermios(fd int, t *unix.Termios) error { return unix.IoctlSetTermios(fd, ioctlSet, t) }
 
-// setTermiosFlush sets the modes and discards the input not read yet, in
-// one step.
-func setTermiosFlush(fd int, t *unix.Termios) error {
-	return unix.IoctlSetTermios(fd, ioctlSetFlush, t)
-}
-
 // rawMode turns echo, line editing and the signal keys off, keeping
 // output processing, so the go line arrives byte by byte and is not
 // echoed, and a key typed meanwhile is only a byte.

@@ -143,8 +143,9 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
    environment.
 
 As a standby (`--standby`, no target): ensure the towerd, turn the pty's
-echo, line editing and signal keys off, throwing away input not read yet
-(one `TCSETSF`/`TIOCSETAF`), and write, in one write on stdout (where an
+echo, line editing and signal keys off, then throw away input not read
+yet (`TCFLSH`/`TIOCFLUSH`, which, unlike `TCSETSF`/`TIOCSETAF` on macOS,
+does not wait for output to drain), and write, in one write on stdout (where an
 attach's output goes), the ended marker with `--ended`'s nonce if given
 (`relay.Ended`: `ESC ] 7193 ; tower-standby-ended ; <nonce> BEL`), the
 again marker if it can be detached back into (`relay.MarkerAgain`:
