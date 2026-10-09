@@ -240,7 +240,7 @@ func (h *Host) EnvMap() map[string]string {
 		m["GORACE"] = "log_path=" + filepath.Join(h.w.Dir, "race", "report")
 	}
 	maps.Copy(m, h.w.timings)
-	for _, k := range []string{"TOWER_STANDBY", "TOWER_RELAY"} {
+	for _, k := range []string{"TOWER_STANDBY", "TOWER_RELAY", "TOWER_REUSE"} {
 		if v := os.Getenv(k); v != "" {
 			m[k] = v
 		}

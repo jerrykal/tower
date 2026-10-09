@@ -97,6 +97,7 @@ type attachLoop struct {
 	sync    bool // TOWER_SYNC: frame holds
 	eager   bool // TOWER_EAGER: the loop ends the old client of a switch itself
 	relayOn bool // TOWER_RELAY: remote attaches on a pty of the loop's own
+	reuseOn bool // TOWER_REUSE: a remote attach's session kept as its host's standby
 
 	views *viewer
 	sb    *standbys // nil: no standbys
@@ -140,6 +141,7 @@ func start(ctx context.Context, o Options) (*attachLoop, error) {
 		sync:    config.Flag("TOWER_SYNC", true),
 		eager:   config.Flag("TOWER_EAGER", true),
 		relayOn: config.Flag("TOWER_RELAY", true),
+		reuseOn: config.Flag("TOWER_REUSE", true),
 		beat:    make(chan struct{}, 1),
 	}
 	var ack proto.LoopAck
@@ -513,7 +515,7 @@ func (l *attachLoop) prepare(ctx context.Context, target proto.Ref, note string)
 		l.sb.reserve(target.Host)
 	}
 	var p proto.Prepared
-	if err := l.call(cctx, proto.CallPrepare, proto.PrepareArgs{Loop: l.id, Target: target, Note: note}, &p); err != nil {
+	if err := l.call(cctx, proto.CallPrepare, proto.PrepareArgs{Loop: l.id, Target: target, Note: note, Again: l.sb != nil && l.reuseOn}, &p); err != nil {
 		if l.sb != nil {
 			l.sb.reserve("")
 		}

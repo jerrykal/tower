@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -216,7 +217,7 @@ func (d *Daemon) perform(req *proto.Request) *proto.Ack {
 	case proto.OpHas:
 		ack.Gone = !d.hasSession(ctl, t.Session, left)
 	case proto.OpDetach:
-		ack.Note, err = d.detachStale(req, snap, do)
+		ack.Note, err = d.detachStale(req, do)
 	default:
 		err = fmt.Errorf("unknown request %q", req.Op)
 	}
@@ -255,31 +256,97 @@ func (d *Daemon) endClient(name string) error {
 // master, and the client then stays until something here ends it. Only a client
 // registered for that home, loop and generation, and still the client
 // the registration was bound to, is detached.
-func (d *Daemon) detachStale(req *proto.Request, snap *snapshot, do func(string) (tmux.Reply, error)) (string, error) {
-	c, err := proto.ParseClient(req.Client)
-	if err != nil {
-		return "", errors.New("no client named")
+//
+// A request naming no client names the attach by its nonce: its loop
+// goes on to reuse the attach's session, and waits for the client to be
+// detached back into a standby. A client not bound yet is detached once
+// it is; one not registered yet, once it registers and is bound. A
+// client that can be (Resume) is always detached into a standby, so the
+// loop's session lives on whichever detach comes first.
+func (d *Daemon) detachStale(req *proto.Request, do func(string) (tmux.Reply, error)) (string, error) {
+	byAttach := req.Client == ""
+	if byAttach && req.Nonce == "" {
+		return "", errors.New("no client or attach named")
+	}
+	match := func(r *reg) bool { return r.Home == req.From && r.Again != "" && r.Again == req.Nonce }
+	if !byAttach {
+		c, err := proto.ParseClient(req.Client)
+		if err != nil {
+			return "", errors.New("no client named")
+		}
+		match = func(r *reg) bool {
+			return r.bound() && r.Pid == c.Pid && r.Name == c.Name && r.Home == req.From && r.Loop == req.Loop && r.Gen == req.Gen
+		}
 	}
 	d.mu.Lock()
-	var g reg
-	found := false
+	var bound []reg
+	waiting := false
 	for _, r := range d.regs.list {
-		if r.bound() && r.Pid == c.Pid && r.Name == c.Name && r.Home == req.From && r.Loop == req.Loop && r.Gen == req.Gen {
-			g, found = *r, true
-			break
+		switch {
+		case !match(r):
+		case r.bound():
+			bound = append(bound, *r)
+		default:
+			r.End, waiting = true, true
 		}
+	}
+	if byAttach && len(bound) == 0 && !waiting {
+		d.regs.endLater(req.Nonce)
 	}
 	d.mu.Unlock()
-	if !found || snap.client(func(t *tclient) bool { return t.Name == g.Name && t.Created == g.Created }) == nil {
+	if len(bound) == 0 {
+		if byAttach {
+			return "detached once its client is there", nil
+		}
 		return "already gone", nil
 	}
-	if _, err := do("detach-client -t " + tmux.Quote(g.Name)); err != nil {
-		if gone(err) {
-			return "already gone", nil
-		}
+	// tmux now, not the last snapshot: a reused session's clients share
+	// its tty's name, and the one a snapshot lists may have gone and a
+	// newer one taken its name.
+	r, err := do("list-clients -F " + tmux.Quote("#{client_pid} #{client_name}"))
+	if err != nil {
 		return "", err
 	}
+	done := 0
+	for _, g := range bound {
+		if !slices.Contains(r.Lines, strconv.Itoa(g.Pid)+" "+g.Name) {
+			continue
+		}
+		if _, err := do(detachLine(g)); err != nil {
+			if gone(err) {
+				continue
+			}
+			return "", err
+		}
+		done++
+	}
+	if done == 0 && !waiting {
+		return "already gone", nil
+	}
 	return "", nil
+}
+
+// detachLine detaches g's client: into a standby, when it can be.
+func detachLine(g reg) string {
+	line := "detach-client -t " + tmux.Quote(g.Name)
+	if g.Resume != "" {
+		line += " -E " + tmux.Quote(g.Resume)
+	}
+	return line
+}
+
+// detachEnded detaches a client whose home ended its attach before it was
+// bound, now that it is.
+func (d *Daemon) detachEnded(g reg) {
+	ctl := d.w.control()
+	if ctl == nil {
+		return
+	}
+	r, err := ctl.DoTimeout(detachLine(g), time.Second)
+	if err == nil && r.Err {
+		err = errors.New(strings.TrimSpace(r.Text()))
+	}
+	d.logf("detach client %s (loop %s gen %d), its attach ended before it was bound: %v", g.Name, g.Loop, g.Gen, err)
 }
 
 // fmtPanes lists a pane for the layout preview: a tab between fields,

@@ -160,7 +160,7 @@ func TestRegistryBind(t *testing.T) {
 	r.add(&reg{Pid: 10, Loop: "L", Gen: 1, Home: "H", Inst: "1:1", At: now})
 	r.add(&reg{Pid: 11, Loop: "L", Gen: 2, Home: "H", Inst: "1:1", At: now - 60_000})
 	s := &snapshot{Inst: "1:1", Clients: []tclient{{Pid: 10, Created: "77", Name: "/dev/tty1", Session: "$1", Window: "@1"}}}
-	if !r.bind(s) {
+	if changed, _ := r.bind(s); !changed {
 		t.Fatal("binding is a change")
 	}
 	if r.count() != 1 {
@@ -499,5 +499,17 @@ func TestTmuxBefore(t *testing.T) {
 		if got := tmuxBefore(v, 3, 4); got != (want || v == "3.3" || v == "3.3a" || v == "next-3.3") {
 			t.Errorf("tmuxBefore(%q, 3, 4) = %v", v, got)
 		}
+	}
+}
+
+// A client that registered a resume command is detached into it, by
+// either form of detach; any other is detached plainly.
+func TestDetachLine(t *testing.T) {
+	if got := detachLine(reg{Name: "/dev/pts/3"}); got != "detach-client -t "+tmux.Quote("/dev/pts/3") {
+		t.Fatalf("plain: %s", got)
+	}
+	got := detachLine(reg{Name: "/dev/pts/3", Again: "n1", Resume: "exec 'tower' 'attach'"})
+	if got != "detach-client -t "+tmux.Quote("/dev/pts/3")+" -E "+tmux.Quote("exec 'tower' 'attach'") {
+		t.Fatalf("resume: %s", got)
 	}
 }

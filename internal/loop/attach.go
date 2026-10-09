@@ -323,40 +323,62 @@ func (l *attachLoop) detachLocal(pid int) {
 // startRelayed runs a remote attach on a pty of the loop's own, relayed:
 // the host's standby when it is ready and made for this terminal, else a
 // new session with the attach's command.
+//
+// A standby whose shim can go again, given the nonce the home gave the
+// attach, is reused: ending the client for a switch stops relaying and
+// leaves ssh running, and once the home has detached the client back
+// into a standby, the session is the host's standby again.
 func (l *attachLoop) startRelayed(p *proto.Prepared) (*running, error) {
 	rows, cols := l.size()
 	var s *relay.Session
+	var sb *standby
 	if l.sb != nil {
-		if sb := l.sb.take(p.Target.Host, p.Key); sb != nil {
+		if sb = l.sb.take(p.Target.Host, p.Key, standbyWait(p), p.Again != ""); sb != nil {
 			config.Mark("attach: standby")
-			sb.SetSize(rows, cols)
+			sb.sess.SetSize(rows, cols)
 			config.Mark("standby: go")
-			err := sb.Send([]byte(p.Go))
+			// The newline first ends anything typed for the session's
+			// last client that came too late for it.
+			err := sb.sess.Send([]byte("\n" + p.Go))
 			if err == nil {
-				_, err = sb.ReadUntil([]byte(relay.MarkerGo), standbyWait(p))
+				_, err = sb.sess.ReadUntil([]byte(relay.MarkerGo), standbyWait(p))
 			}
 			if err == nil {
-				s = sb
+				s = sb.sess
 			} else {
 				config.Mark("standby did not answer")
-				sb.Kill()
-				go sb.Close()
+				sb.sess.Kill()
+				go sb.sess.Close()
+				l.sb.release(sb)
+				sb = nil
 			}
 			l.sb.kick()
 		}
 	}
 	if s == nil {
 		config.Mark("attach: session")
+		if l.sb != nil {
+			l.sb.opened(p.Target.Host)
+		}
 		var err error
 		s, err = relay.Start(p.Argv, os.Environ(), l.orig, rows, cols)
 		if err != nil {
 			return nil, err
 		}
 	}
+	reuse := sb != nil && sb.again && p.Again != ""
+	if reuse {
+		s.Reuse()
+	}
 	l.rawModes()
-	// Ending the client for a switch hangs ssh up and stops relaying at
-	// once: the next client need not wait for ssh to go.
+	// Ending the client for a switch stops relaying at once: the next
+	// client need not wait for ssh to go, nor for a reused session's
+	// client to end. A session not reused is hung up.
 	end := func() {
+		if reuse {
+			s.Release()
+			return
+		}
 		s.Terminate()
 		s.Abandon()
 	}
@@ -364,7 +386,11 @@ func (l *attachLoop) startRelayed(p *proto.Prepared) (*running, error) {
 	r := &running{done: make(chan int, 1), end: end, kill: s.Kill, restore: l.remoteRestore(drawn)}
 	go func() {
 		code, err := s.Relay(l.term)
+		kept := false
 		switch {
+		case reuse && errors.Is(err, relay.ErrReleased):
+			l.sb.recycle(sb, p.Again, recycleWait(p))
+			kept = true
 		case errors.Is(err, relay.ErrAbandoned):
 			go reap(s)
 		case err != nil:
@@ -375,9 +401,19 @@ func (l *attachLoop) startRelayed(p *proto.Prepared) (*running, error) {
 		default:
 			s.Close()
 		}
+		if reuse && !kept {
+			l.sb.release(sb)
+		}
 		r.done <- code
 	}()
 	return r, nil
+}
+
+// recycleWait is how long a reused session's client has to end once the
+// loop has moved on: 1s plus four of the link's slow round trips (the
+// home asks the host to end it), or TOWER_RECYCLE_WAIT.
+func recycleWait(p *proto.Prepared) time.Duration {
+	return config.Duration("TOWER_RECYCLE_WAIT", time.Second+4*time.Duration(p.RTT)*time.Millisecond)
 }
 
 // reap waits for an abandoned session's ssh to exit, a few seconds at

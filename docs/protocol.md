@@ -11,7 +11,7 @@ is in [overview.md](overview.md); the scenarios that prove each rule are in
 | **towerd** | `tower towerd` | every machine, one per user and tmux server | its own tmux through a control client; local clients over a unix socket; homes or remotes over ssh streams |
 | **bridge** | `tower towerd --stdio` | a remote, run by a home's ssh | joins ssh's stdin and stdout to the towerd there, starting it if needed |
 | **attach loop** | `tower` outside tmux | the machine you work from, one per terminal | its home towerd; runs the attach shim on the terminal (local) or over `ssh -t` on a pty it relays (remote) |
-| **attach shim** | `tower attach` | the target's machine, for one attach | registers its pid with the towerd there, then execs `tmux attach`; as a standby it first waits for the attach's arguments |
+| **attach shim** | `tower attach` | the target's machine, for one attach | registers its pid with the towerd there, then execs `tmux attach`; as a standby it first waits for the attach's arguments; a client detached for a switch can become a standby again |
 | **dashboard** | `tower` inside tmux | whichever machine the terminal is attached to | only that machine's towerd |
 
 Each towerd plays one or both roles:
@@ -293,7 +293,9 @@ tmux <args> attach-session -t '$3' \; \
   the tmux client's. The towerd binds the registration to the client it
   then sees (name and `client_created`) and drops it when the client goes
   (S10). It sees the client at once (`%client-session-changed`); re-reads
-  150ms, 600ms and 1.5s after the registration cover a missed one.
+  150ms, 600ms and 1.5s after the registration cover a missed one. A
+  standby whose go line carries a nonce registers it too, with the
+  command that makes the client a standby again (see Standby sessions).
 - **The window is selected by id**, so `base-index` never matters (S12).
 - With `--mkey` and a current towerd answering under it, the registration
   is the shim's only call to towerd: its answer carries the towerd's key and
@@ -320,14 +322,18 @@ The dashboard's `⏎` on a target on another server:
    exit 42 to `after`, whatever the client's own exit was:
    - a local client is detached through towerd's control client
      (`detach-client -t <client> -E 'exit 42'`);
-   - a remote one's ssh gets SIGTERM and its relay stops at once: nothing
-     the old host sends reaches the terminal after it. The loop writes that
-     client's terminal restore (leave the alternate screen, mouse and paste
-     modes off) itself, inside the hold, since the client's own never comes
-     back (R02). The session there can outlive its ssh, which rides a
-     control master, keeping the client attached; so the home then
-     detaches that client with an `exec detach`, off the hand-off's path
-     (LS10).
+   - a remote one's relay stops at once: nothing the old host sends
+     reaches the terminal after it. The loop writes that client's terminal
+     restore (leave the alternate screen, mouse and paste modes off)
+     itself, inside the hold, since the client's own never comes back
+     (R02). A session the loop reuses (see Standby sessions) keeps its ssh:
+     at `after` the home asks the host to detach the client back into a
+     standby, named by the attach's nonce (`exec detach` with no client),
+     and the session is the host's standby again once it has.
+     A session not reused has its ssh hung up (SIGTERM); that session can
+     outlive its ssh, which rides a control master, keeping the client
+     attached, so the home then detaches that client with an `exec
+     detach`, off the hand-off's path (LS10).
 
    The dashboard, told `ended`, only waits for its client to go, so its
    popup never closes first (tmux would redraw the pane under it, a synced
@@ -424,9 +430,15 @@ hold off.
 ## Standby sessions
 
 Each attach loop keeps one ssh session open ahead of time to every
-connected remote host, the one it is attached to included, so a switch
-there sends one line instead of opening a session (a round trip and the
-remote shell's start-up less).
+connected remote host, so a switch there sends one line instead of opening
+a session (a round trip and the remote shell's start-up less). An attach's
+session is reused: once its client has ended, it is its host's standby
+again, so hand-offs back and forth open and close no ssh session (LS11).
+The client is detached into a standby, not kept as a child, so the shim
+never stands between sshd and tmux.
+Opening one is not only slow: over Tailscale SSH it costs about 330ms
+until the standby is ready, and stalls the connection it shares with the
+stream twice for about 100ms.
 
 1. **Offer.** The loop asks the home for `standby`: per host, the command
    `ssh -t <opts> <host> -- '<tower> attach --standby --mkey K --tmux …'`
@@ -438,22 +450,56 @@ remote shell's start-up less).
 2. **Ready.** The loop runs the command on a pty of its own, with the
    terminal's modes (as they were before any client made it raw) and size.
    On the host the shim ensures its towerd, turns the pty's echo and line
-   editing off, and writes a ready marker (an OSC sequence the loop strips).
+   editing and signal keys off, throwing away input typed before, and
+   writes an again marker (its client can be detached back into a
+   standby) and a ready marker, in one write (OSC sequences the loop
+   strips).
 3. **Go.** prepare's answer for a remote host carries the go line (the
    attach's arguments as JSON) and the key a standby must have. The loop
    uses the host's standby only if it is ready, has that key, and was made
    for this terminal: the same environment (tower's own variables left out)
    and modes (raw mode and kernel state bits such as `PENDIN` left out). It
-   puts the terminal in raw mode, sizes the pty, and sends the line. The
-   shim reads it a byte at a time (nothing typed after it is taken from
-   tmux), restores the pty's modes, writes an answer marker, registers and
-   execs tmux.
+   puts the terminal in raw mode, sizes the pty, and sends a newline (it
+   ends anything typed for the session's last client that came too late)
+   and the line. The shim reads it a byte at a time (nothing typed after it
+   is taken from tmux; a line that is not a go line is ignored), restores
+   the pty's modes, writes an answer marker, registers and execs tmux. A
+   go line with a nonce (the loop asked for one in `prepare` and the shim
+   wrote the again marker) registers the nonce too, and the command that
+   makes the client a standby again: `exec <tower> attach --standby
+   --ended <nonce> --mkey K --tmux …`, every word single-quoted (a word
+   with a quote or a backslash means no again marker).
 4. **Give up.** A standby that has not answered within 300ms plus two of
    the link's slow round trips is killed outright (a stopped process loses
    a SIGTERM), and the loop opens a new session under the same held frame
    (LS02). `TOWER_STANDBY_TIMEOUT` (ms) overrides the wait.
-5. **Refill.** The host entered gets a new standby, so a switch straight
-   back after leaving it finds one ready.
+5. **Again.** The loop ends a reused session's client for a switch by
+   stopping its relay; ssh runs on. At `after` the home has the host
+   detach the client with that command: `detach-client -E <command>`, so
+   tmux restores the pty and the client's process, its pid unchanged,
+   runs the command with the session's `default-shell`. The standby it
+   becomes writes the ended marker (the go line's nonce), the again marker
+   and the ready marker in one write, after the same mode change as in
+   2. The nonce is fresh for every go line, so nothing the client showed
+   can forge it. The loop drains the session up to the marker, which
+   throws away the old client's last output, and the session is its
+   host's standby again, about a round trip after the terminal left (and
+   the shell's start-up: under 2ms for sh, bash or zsh, about 20ms for
+   fish). A switch back before that waits for it, up to the standby's
+   wait. The host's towerd detaches into a standby whichever detach
+   reaches a client that can be: this one, or the reap's (LS10).
+6. **Not again.** The loop ends a reused session as it would a standby
+   that died, and makes a new one, when no ended marker comes within 1s
+   plus four of the link's slow round trips (`TOWER_RECYCLE_WAIT`), or no
+   ready marker 1s after it, its key is no longer offered, or ssh exits
+   (LS12). A client that ends by itself (`prefix d`, exit 42 or 43, its
+   session killed) ends its ssh session as before reuse, and the host
+   gets a new standby. So does a session the loop opened itself, not a
+   standby's: it runs the attach command, which is not reused.
+
+While the terminal is on a host through a session it will reuse, the loop
+makes no other standby there; otherwise the home offers one for that host
+too, so a switch straight back after leaving finds one ready.
 
 The loop drops a standby whose key the home no longer offers, whose host is
 gone, down or stalled, and makes the
@@ -686,7 +732,9 @@ Kept per loop, by its home:
 | `TOWER_EAGER` | 1 | 0: the dashboard, not the loop, ends the old client |
 | `TOWER_SYNC` | 1 | 0: no frame hold |
 | `TOWER_STANDBY` | 1 | 0: no standby sessions |
+| `TOWER_REUSE` | 1 | 0: a switch hangs a remote attach's session up instead of keeping it as the host's standby; standbys stay. In the loop it asks for no nonce; in a standby's shim it writes no again marker, as a shim from before reuse |
 | `TOWER_STANDBY_TIMEOUT` | – | ms a switch waits for a standby's answer |
+| `TOWER_RECYCLE_WAIT` | – | how long a reused session's client has to be detached into a standby once the terminal left |
 | `TOWER_RELAY` | 1 | 0: ssh gets the terminal itself, no standbys |
 | `TOWER_LIVE` | 1 | 0: dashboards do not follow changes |
 | `TOWER_BIND` | 1 | 0: towerd binds no keys |

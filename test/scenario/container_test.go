@@ -701,7 +701,7 @@ func (h *Host) ctrStart(env map[string]string, argv ...string) error {
 // of this machine that hold there too.
 func ctrEnv() map[string]string {
 	m := map[string]string{"PATH": ctrPath}
-	for _, k := range []string{"TMUX_TMPDIR", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TOWER_STANDBY", "TOWER_RELAY"} {
+	for _, k := range []string{"TMUX_TMPDIR", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TOWER_STANDBY", "TOWER_RELAY", "TOWER_REUSE"} {
 		if v, ok := os.LookupEnv(k); ok {
 			m[k] = v
 		}

@@ -617,6 +617,106 @@ func TestLastPickedByTheHome(t *testing.T) {
 	}
 }
 
+// TestEndAttach: an attach whose loop reuses its session (prepared with
+// Again) and ends it for a switch has its client detached into what it
+// registered to resume as, by the home at after, named by the attach's
+// nonce: a client bound; one registered but not bound yet, once it is;
+// one that registers only after the home asked, once it is bound. An
+// attach prepared without Again is left to the reap.
+func TestEndAttach(t *testing.T) {
+	w := newWorld(t)
+	a := w.node("A", "", "alpha")
+	b := w.node("B", "", "bravo")
+	a.hosts(b.remote())
+	a.start(false)
+	w.eventually(5*time.Second, "B up", func() bool { return a.link("B").Status == proto.StatusUp })
+	w.eventually(3*time.Second, "B's sessions at the home", func() bool { return viewHas(a.d.view(proto.ViewArgs{}).View, "B", "bravo") })
+	h := a.d.homeRole()
+	ctx := context.Background()
+	h.beat(proto.LoopBeat{ID: "L"})
+	bravo := a.ref(b, "bravo")
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") })
+	// client attaches to bravo after delay, as a shim's client does once
+	// it has registered.
+	client := func(delay string) *relay.Session {
+		cmd := "sleep " + delay + "; exec " + transport.ShellQuote(b.srv.Bin)
+		for _, w := range append(slices.Clone(b.env.Tmux), "attach-session", "-t", "bravo") {
+			cmd += " " + transport.ShellQuote(w)
+		}
+		s, err := relay.Start([]string{"/bin/sh", "-c", cmd}, env, relay.Modes{}, 24, 80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(s.Close)
+		return s
+	}
+	register := func(s *relay.Session, p *proto.Prepared) {
+		b.d.register(proto.RegisterArgs{Pid: s.Pid(), Loop: "L", Gen: p.Gen, Home: a.d.id, Again: p.Again, Resume: "echo resumed-" + p.Again + "; exec sleep 5"})
+	}
+	resumed := func(s *relay.Session, p *proto.Prepared, what string) {
+		t.Helper()
+		if _, err := s.ReadUntil([]byte("resumed-"+p.Again), 3*time.Second); err != nil {
+			t.Fatalf("%s: the client was not detached into its resume: %v", what, err)
+		}
+		select {
+		case <-s.Done():
+			t.Fatalf("%s: the session ended with its client", what)
+		default:
+		}
+		s.Kill()
+	}
+
+	// Bound.
+	p, err := h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: bravo, Again: true})
+	if err != nil || p.Again == "" || !strings.Contains(p.Go, `"again":"`+p.Again+`"`) {
+		t.Fatalf("prepared %+v %v", p, err)
+	}
+	s := client("0")
+	register(s, p)
+	w.eventually(3*time.Second, "the client bound", func() bool {
+		b.d.mu.Lock()
+		defer b.d.mu.Unlock()
+		return slices.ContainsFunc(b.d.regs.list, func(g *reg) bool { return g.Pid == s.Pid() && g.bound() })
+	})
+	h.after(ctx, proto.AfterArgs{Loop: "L", Gen: p.Gen, Ended: true})
+	resumed(s, p, "bound")
+
+	// Registered, not bound yet.
+	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: bravo, Again: true})
+	s = client("0.5")
+	register(s, p)
+	h.after(ctx, proto.AfterArgs{Loop: "L", Gen: p.Gen, Ended: true})
+	resumed(s, p, "not bound yet")
+
+	// Registered after the home asked.
+	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: bravo, Again: true})
+	h.after(ctx, proto.AfterArgs{Loop: "L", Gen: p.Gen, Ended: true})
+	w.eventually(3*time.Second, "B told", func() bool {
+		b.d.mu.Lock()
+		defer b.d.mu.Unlock()
+		_, ok := b.d.regs.ended[p.Again]
+		return ok
+	})
+	s = client("0")
+	register(s, p)
+	resumed(s, p, "registered late")
+
+	// Not reused: left be.
+	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "L", Target: bravo})
+	if p.Again != "" || strings.Contains(p.Go, "again") {
+		t.Fatalf("prepared without Again: %+v", p)
+	}
+	s = client("0")
+	b.d.register(proto.RegisterArgs{Pid: s.Pid(), Loop: "L", Gen: p.Gen, Home: a.d.id})
+	h.after(ctx, proto.AfterArgs{Loop: "L", Gen: p.Gen, Ended: true})
+	select {
+	case <-s.Done():
+		t.Fatal("a client whose session is not reused was ended at after")
+	case <-time.After(500 * time.Millisecond):
+	}
+	s.Kill()
+}
+
 // TestEndClient: end-client detaches the loop's local client through the
 // control client, which exits 42 printing nothing of its own.
 func TestEndClient(t *testing.T) {

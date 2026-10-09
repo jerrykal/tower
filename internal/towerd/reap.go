@@ -46,6 +46,9 @@ func (h *homeRole) reapStaleLocked() {
 			}
 			key := reapKey(hostID, c)
 			listed[key] = true
+			if l := h.loops[c.Loop]; l != nil && l.ending != 0 && c.Gen == l.ending && now.Sub(l.endingAt) < reapRetry {
+				continue // endAttach has it
+			}
 			if !h.staleLocked(key, c, now) {
 				continue
 			}
@@ -95,6 +98,43 @@ func (h *homeRole) staleLocked(key string, c proto.Client, now time.Time) bool {
 
 func reapKey(hostID string, c proto.Client) string {
 	return hostID + "|" + c.Name + "|" + strconv.Itoa(c.Pid)
+}
+
+// endAttach asks the attach's host to detach its client back into a
+// standby, named by the attach's nonce: a loop that reuses the attach's
+// session waits for it. A client not detached stays to the loop, which
+// gives the session up, and to the reap, which leaves the client be
+// until this has failed.
+func (h *homeRole) endAttach(at proto.Ref, loop string, gen int, nonce string) {
+	ctx, cancel := context.WithTimeout(h.ctx, ackTimeout())
+	defer cancel()
+	req := &proto.Request{
+		ID:       config.NewID() + config.NewID(),
+		Op:       proto.OpDetach,
+		Deadline: stream.Now() + ackTimeout().Milliseconds(),
+		Target:   proto.Ref{Host: at.Host, Inst: at.Inst},
+		Loop:     loop,
+		Gen:      gen,
+		Nonce:    nonce,
+		From:     h.d.id,
+	}
+	start := time.Now()
+	ack := h.route(ctx, req)
+	end := &proto.EndStatus{Gen: gen, OK: ack.OK, Note: ack.Note, Ms: time.Since(start).Milliseconds()}
+	if !ack.OK {
+		end.Note = ack.Err
+	}
+	h.d.mu.Lock()
+	if l := h.loops[loop]; l != nil {
+		l.end, l.endAt = end, time.Now()
+		if !ack.OK && l.ending == gen {
+			l.ending = 0 // the reap's, then
+		}
+	}
+	h.d.mu.Unlock()
+	if !ack.OK {
+		h.d.logf("home: end attach (loop %s gen %d) on %s: %s", loop, gen, at.Host, ack.Err)
+	}
 }
 
 // reap asks c's host to detach it; the try'th time for this client.

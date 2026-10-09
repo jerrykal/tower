@@ -168,8 +168,8 @@ type Request struct {
     Kind     string // "session" or "window" (kill, rename, new, panes)
     Name     string // rename, new, dup
     Dir      string // new: start directory (~ is the target host's home)
-    Client   string // switch, last: "pid:created:name" of the pressing client
-    Loop     string // switch, last: resolved from the client's registration
+    Client   string // switch, last: "pid:created:name" of the pressing client; detach: the client, or none for the attach's
+    Loop     string // switch, last: resolved from the client's registration; detach: the attach's
     Gen      int
     Nonce    string
     From     string // towerd id of the asking machine
@@ -209,20 +209,20 @@ type Reply struct {
 
 | Op | Args → Result | Who calls |
 | --- | --- | --- |
-| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes (id, name, as, live), loops, pending switches, clients, the watch, the dirs refresher (binaries, counts, the last refreshes' cost) and towerd's CPU time, its finished children included) | ensure, `tower status` |
+| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes (id, name, as, live), loops (with each loop's standbys as it last reported them and the last detach of a reused attach's client), pending switches, clients (reusable, to be detached once seen), the watch, the dirs refresher (binaries, counts, the last refreshes' cost) and towerd's CPU time, its finished children included) | ensure, `tower status` |
 | `stop` | `{IfOlderThan}` → `{}` | `tower stop`, an upgrading caller |
 | `stream` | – → the connection becomes a stream | the bridge |
-| `register` | `{Pid, Loop, Gen, Home, Inst}` → `{MKey, TmuxBin}` | the attach shim |
+| `register` | `{Pid, Loop, Gen, Home, Inst, Again, Resume}` → `{MKey, TmuxBin}`; `Again` the go line's nonce, `Resume` the command a detach for a switch runs in the client's place | the attach shim |
 | `view` | `{Client}` → `Dash` (the view to show, the host it runs on, the client's loop and its home, notes) | dashboards |
 | `watch` | `{Gen}` → `{Gen}` | dashboards, loops |
 | `act` | `Request` → `Ack` | dashboards, `tower last` |
 | `loop` | `LoopBeat{ID, Gen, Cur, Prev}` → `LoopAck{Last}` (also activates the home role) | the loop, every 5s |
 | `loop-bye` | `{ID}` → `{}` | the loop on exit |
-| `prepare` | `{Loop, Target}` → `Prepared{Gen, Local, Argv, Go, Key, Host}` | the loop |
+| `prepare` | `{Loop, Target, Note, Again}` → `Prepared{Gen, Local, Argv, Go, Key, RTT, Link, Again}`; with `Again`, a remote attach's nonce for its ended marker, also in the go line | the loop |
 | `after` | `{Loop, Gen, Code, Ended}` → `Next{Do, Target, Note}` with `Do` one of `handoff`, `picker`, `reconnect`, `exit` | the loop |
 | `wait-switch` | `{Loop, Gen}` → `{Switch}` | the loop, while attached |
 | `held` | `{Loop, Gen}` → `{End}` | the loop |
-| `standby` | `{Loop}` → `[]Offer{Host, Key, Argv}` | the loop |
+| `standby` | `{ID, Standbys}` → `[]Offer{Host, Key, Argv}`; `Standbys` is the loop's set per host (state and time in it, reusable, sessions opened, reused and given up, the last give-up's reason), kept for `tower status` | the loop |
 | `end-client` | `{Name}` → `{}`: `detach-client -t Name -E 'exit 42'` through the control client | the loop, ending its local client for a hand-off |
 | `last` | `{Client}` → `LastResult{Local, Stored, Ended, Asker, Target, Note}` | `tower last` |
 | `wake`, `netchange`, `reload` | – → `{}` (`reload` also activates the home role) | tests, `tower netchange`, `tower host` |

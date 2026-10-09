@@ -77,7 +77,7 @@ func TestStandbyStartOutsideLock(t *testing.T) {
 	}()
 	<-started
 	start := time.Now()
-	s.take("h2", "k")
+	s.take("h2", "k", 0, false)
 	if d := time.Since(start); d > 50*time.Millisecond {
 		t.Fatalf("take waited %v for a standby starting", d)
 	}

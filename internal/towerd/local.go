@@ -26,7 +26,7 @@ func (d *Daemon) publish(s *snapshot, changed bool) {
 	}
 	d.mu.Lock()
 	d.snap = s
-	regsChanged := d.regs.bind(s)
+	regsChanged, ends := d.regs.bind(s)
 	if !d.looked {
 		d.looked = true
 		close(d.lookedC)
@@ -48,6 +48,9 @@ func (d *Daemon) publish(s *snapshot, changed bool) {
 	d.mu.Unlock()
 	if regsChanged {
 		d.regs.save(regs)
+	}
+	for _, g := range ends {
+		go d.detachEnded(g)
 	}
 	if !changed && !regsChanged {
 		return

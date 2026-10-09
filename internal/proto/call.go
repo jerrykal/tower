@@ -133,6 +133,9 @@ type LoopStatus struct {
 	Prev Ref    `json:"prev,omitempty"`
 	Host string `json:"host,omitempty"`
 	Seen bool   `json:"seen,omitempty"` // the home has seen this attach's client
+	// Standbys is the loop's standby set as it last reported it.
+	Standbys []StandbyStatus `json:"standbys,omitempty"`
+	End      *EndStatus      `json:"end,omitempty"`
 }
 
 // PendingSwitch is a stored switch waiting for its loop.
@@ -170,6 +173,11 @@ type RegisterArgs struct {
 	Gen  int    `json:"gen"`
 	Home string `json:"home"`
 	Inst string `json:"inst"`
+	// Again is the go line's nonce, and Resume the shell command that
+	// turns the client back into a standby, with that nonce: a detach for
+	// a switch runs it in the client's place (detach-client -E).
+	Again  string `json:"again,omitempty"`
+	Resume string `json:"resume,omitempty"`
 }
 
 // Registered answers register.
@@ -230,6 +238,32 @@ type LoopAck struct {
 // LoopArgs names a loop (loop-bye, standby).
 type LoopArgs struct {
 	ID string `json:"id"`
+	// Standbys is the loop's standby set, per host, sent with the standby
+	// call, for tower status.
+	Standbys []StandbyStatus `json:"standbys,omitempty"`
+}
+
+// StandbyStatus is a loop's standby for one host, and what its sessions
+// there have done in the loop's life.
+type StandbyStatus struct {
+	Host    string `json:"host"`            // towerd id
+	State   string `json:"state,omitempty"` // starting, draining, ready, in use; "": none now
+	Again   bool   `json:"again,omitempty"` // its client can be detached back into a standby
+	Ms      int64  `json:"ms,omitempty"`    // in that state so long
+	Opened  int    `json:"opened"`          // ssh sessions opened there
+	Reused  int    `json:"reused"`          // sessions handed back and ready again
+	GivenUp int    `json:"given_up"`        // sessions handed back and given up
+	Why     string `json:"why,omitempty"`   // the last give-up's reason
+}
+
+// EndStatus is the home's last request to a host to detach a reused
+// attach's client back into a standby.
+type EndStatus struct {
+	Gen  int    `json:"gen"`
+	OK   bool   `json:"ok"`
+	Note string `json:"note,omitempty"` // the host's note, or its error
+	Ms   int64  `json:"ms"`             // how long the answer took
+	Ago  int64  `json:"ago_ms"`
 }
 
 // PrepareArgs asks the home to make Target the loop's next attach.
@@ -237,6 +271,10 @@ type PrepareArgs struct {
 	Loop   string `json:"loop"`
 	Target Ref    `json:"target"`
 	Note   string `json:"note,omitempty"` // for the new client's status line ("now on B:spare")
+	// Again: the loop can reuse a remote attach's session once its client
+	// is detached back into a standby, so the home gives the attach a
+	// nonce.
+	Again bool `json:"again,omitempty"`
 }
 
 // Prepared is the attach to run.
@@ -249,6 +287,7 @@ type Prepared struct {
 	Key    string   `json:"key,omitempty"` // remote: the key a standby must have
 	RTT    int64    `json:"rtt,omitempty"` // ms, the host's slow recent round trip
 	Link   int      `json:"link,omitempty"`
+	Again  string   `json:"again,omitempty"` // remote, asked for: the nonce of the attach's ended marker
 }
 
 // AfterArgs reports how an attach ended.
@@ -341,6 +380,11 @@ type GoLine struct {
 	Window  string `json:"w,omitempty"`
 	Pane    string `json:"p,omitempty"`
 	Note    string `json:"note,omitempty"` // the loop's note for the new client's status line
+	// Again is the nonce of the attach's ended marker: a shim that can
+	// registers its client with it and with the command that, run in the
+	// client's place as it is detached for a switch, makes it a standby
+	// again, which writes the marker first.
+	Again string `json:"again,omitempty"`
 }
 
 // ClientID is a TOWER_CLIENT value: the tmux client that pressed a key,

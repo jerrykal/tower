@@ -79,7 +79,7 @@ const (
 	OpSwitch  = "switch"
 	OpDup     = "dup"
 	OpPanes   = "panes"  // a session's (or window's) panes: layout and what runs there
-	OpDetach  = "detach" // a home's client there whose attach is over (Client, Loop, Gen)
+	OpDetach  = "detach" // a home's client there whose attach is over (Client, Loop, Gen; no Client: the attach with the nonce Nonce, once its client is there)
 	OpLast    = "last"   // tower last: a switch to the loop's previous target, which the home picks (Client, Loop, Gen)
 )
 

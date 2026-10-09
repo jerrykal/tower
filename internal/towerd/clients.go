@@ -22,6 +22,11 @@ type reg struct {
 	Session string `json:"s,omitempty"`
 	Window  string `json:"w,omitempty"`
 	At      int64  `json:"at"` // unix ms registered
+	// Again is the attach's nonce when its client can be detached back
+	// into a standby, by running Resume in its place (detach-client -E).
+	Again  string `json:"again,omitempty"`
+	Resume string `json:"resume,omitempty"`
+	End    bool   `json:"end,omitempty"` // its home ended the attach: detach it once bound
 }
 
 func (r *reg) bound() bool { return r.Name != "" }
@@ -43,6 +48,32 @@ type registry struct {
 
 	saveMu sync.Mutex
 	saved  uint64 // seq of the newest copy written
+
+	// ended are attaches a home asked to end before they registered
+	// (nonce → unix ms asked): their client is detached once bound.
+	ended map[string]int64
+}
+
+// endLater remembers an attach, by its nonce, to end once it registers.
+func (r *registry) endLater(key string) {
+	now := time.Now().UnixMilli()
+	if r.ended == nil {
+		r.ended = map[string]int64{}
+	}
+	for k, at := range r.ended {
+		if now-at > unboundTTL.Milliseconds() {
+			delete(r.ended, k)
+		}
+	}
+	r.ended[key] = now
+}
+
+// takeEnd reports whether the attach was asked to end before it
+// registered, and forgets it.
+func (r *registry) takeEnd(key string) bool {
+	at, ok := r.ended[key]
+	delete(r.ended, key)
+	return ok && time.Now().UnixMilli()-at <= unboundTTL.Milliseconds()
 }
 
 // regCopy is the set as it was at one moment, for save.
@@ -93,9 +124,9 @@ func (r *registry) add(n *reg) {
 // the client with its pid, a bound one followed to where its client is
 // now. Registrations whose client is gone, whose server restarted, or
 // that never found their client are dropped. It reports whether anything
-// changed.
-func (r *registry) bind(s *snapshot) bool {
-	changed := false
+// changed, and the registrations just bound whose home has ended their
+// attach (End): their clients are to be detached.
+func (r *registry) bind(s *snapshot) (changed bool, end []reg) {
 	now := time.Now().UnixMilli()
 	keep := r.list[:0]
 	for _, g := range r.list {
@@ -117,6 +148,9 @@ func (r *registry) bind(s *snapshot) bool {
 			if c := s.client(func(c *tclient) bool { return c.Pid == g.Pid }); c != nil {
 				g.Name, g.Created, g.Session, g.Window = c.Name, c.Created, c.Session, c.Window
 				changed = true
+				if g.End {
+					end = append(end, *g)
+				}
 			} else if now-g.At > unboundTTL.Milliseconds() {
 				drop = true
 			}
@@ -129,7 +163,7 @@ func (r *registry) bind(s *snapshot) bool {
 	}
 	clear(r.list[len(keep):])
 	r.list = keep
-	return changed
+	return changed, end
 }
 
 func (s *snapshot) client(match func(*tclient) bool) *tclient {
@@ -180,7 +214,7 @@ func (r *registry) clients() []proto.Client {
 }
 
 func (g *reg) client() proto.Client {
-	return proto.Client{Name: g.Name, Pid: g.Pid, Session: g.Session, Window: g.Window, Loop: g.Loop, Gen: g.Gen, Home: g.Home}
+	return proto.Client{Name: g.Name, Pid: g.Pid, Session: g.Session, Window: g.Window, Loop: g.Loop, Gen: g.Gen, Home: g.Home, Reuse: g.Resume != "", End: g.End}
 }
 
 // register stores the shim's registration and schedules re-reads that
@@ -189,8 +223,15 @@ func (d *Daemon) register(a proto.RegisterArgs) (*proto.Registered, error) {
 	if a.Pid <= 0 {
 		return nil, errBad("register: no pid")
 	}
+	g := &reg{Pid: a.Pid, Loop: a.Loop, Gen: a.Gen, Home: a.Home, Inst: a.Inst, At: time.Now().UnixMilli(), Again: a.Again, Resume: a.Resume}
 	d.mu.Lock()
-	d.regs.add(&reg{Pid: a.Pid, Loop: a.Loop, Gen: a.Gen, Home: a.Home, Inst: a.Inst, At: time.Now().UnixMilli()})
+	if a.Again != "" && d.regs.takeEnd(a.Again) {
+		// Its home ended the attach before it registered: the client is
+		// detached once bound.
+		g.End = true
+		d.logf("client pid %d (loop %s gen %d) ended before it registered: detached once bound", a.Pid, a.Loop, a.Gen)
+	}
+	d.regs.add(g)
 	d.bump()
 	regs := d.regs.copyLocked()
 	d.mu.Unlock()

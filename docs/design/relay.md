@@ -44,17 +44,23 @@ func (p *Pty) Close() error  // slave first: on macOS closing a master blocks wh
 const (
     MarkerReady = "\x1b]7193;tower-standby-ready\a" // the shim waits for its go line
     MarkerGo    = "\x1b]7193;tower-standby-go\a"    // the shim read it and starts tmux
+    MarkerAgain = "\x1b]7193;tower-standby-again\a" // before ready: its client can be detached back into a standby
+    MarkerEnded = "\x1b]7193;tower-standby-ended;"  // + nonce BEL: the standby a client was detached into
 )
 
 func Start(argv, env []string, modes Modes, rows, cols int) (*Session, error)
+func Ended(nonce string) string                     // the ended marker the shim writes
 
 func (s *Session) ReadUntil(marker []byte, timeout time.Duration) (before []byte, err error)
 func (s *Session) Send(line []byte) error           // line + "\n" to the pty: the go line
 func (s *Session) Relay(t *Terminal) (exit int, err error)
+func (s *Session) Reuse()                           // arm the next relay for Release
+func (s *Session) Release()                         // that relay ends at once (ErrReleased), ssh running on
+func (s *Session) Drain(nonce string, timeout time.Duration) error // discard up to nonce's ended marker
 func (s *Session) Terminate()                       // SIGTERM to ssh; the relay stops taking input
 func (s *Session) Kill()                            // SIGKILL (a stopped ssh loses SIGTERM); same
 func (s *Session) Abandon()                         // the relay ends at once (ErrAbandoned), ssh running on
-func (s *Session) Relayed() int64                   // bytes of output relayed so far: has the far side drawn?
+func (s *Session) Relayed() int64                   // bytes of output this relay showed: has the far side drawn?
 func (s *Session) SetSize(rows, cols int) error
 func (s *Session) Done() <-chan struct{}            // ssh has exited (a standby that died)
 func (s *Session) ExitCode() int                    // exit code, or 128 + signal
@@ -77,6 +83,16 @@ client).
   early with `ErrExited` when ssh exits, else `ErrTimeout`.
 - **Exit status.** The attach's exit is ssh's: its exit code, or 128 plus
   the signal that ended it, as a shell reports it.
+- **Reuse.** A session can relay one attach after another, its ssh
+  running throughout. `Reuse` arms the next relay; `Release` ends it at
+  once, running or about to start, and does nothing once it has returned.
+  The relay never looks for a marker: the ended marker comes only after
+  the loop has released the relay and the home has had the client
+  detached. `Drain` reads up to the marker carrying the attach's nonce,
+  discarding the old client's goodbye, and keeps what follows for the
+  next `ReadUntil`. Each relay stops through a pipe of its own, so
+  `Release` touches no later relay, and `Relayed` counts each relay
+  afresh.
 
 ## The terminal
 
@@ -120,8 +136,8 @@ and wait on several descriptors and a deadline at once):
 
 1. **Input** (a goroutine): terminal → pty master. It reads only once
    `poll` says the terminal has input, and stops without reading when the
-   relay ends, `Terminate`/`Kill` is called or ssh exits, so it never takes
-   a byte meant for the next client.
+   relay ends or is released, `Terminate`/`Kill` is called or ssh exits, so
+   it never takes a byte meant for the next client.
 2. **Output** (the calling goroutine): stdout pipe and pty master (ssh's own
    messages) → terminal, with the loop's queued writes put in. It polls
    the pipe, the pty, a wake pipe (`Write` wakes it) and the exit pipe, with
@@ -191,5 +207,6 @@ relay. `Terminal.Write` queues the bytes under the terminal's mutex and
 wakes the output goroutine through a pipe (a goroutine blocked in `poll`
 cannot wait on a channel); outside a relay it writes them directly under
 the same mutex. The input goroutine is stopped through pipes `poll` also
-watches. A session's `ReadUntil`, `Relay` and `Close` are for one
-goroutine at a time; `Terminate`, `Kill`, `Done` and `SetSize` for any.
+watches. A session's `ReadUntil`, `Drain`, `Relay` and `Close` are for one
+goroutine at a time; `Reuse`, `Release`, `Terminate`, `Kill`, `Done` and
+`SetSize` for any.

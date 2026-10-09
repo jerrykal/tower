@@ -83,15 +83,20 @@ func TestLC07(t *testing.T) {
 	t.Logf("hand-offs, from the switch stored to the home seeing the new client: median %v %v",
 		median(handoffs).Round(time.Millisecond), handoffs)
 
-	attaches := 0
+	// Every attach session to B carries its machine key. A session is
+	// reused once its client is detached, so there are fewer than hand-offs.
+	attaches, keyed := 0, 0
 	for _, e := range w.SSHLog() {
 		cmd, _ := e["cmd"].(string)
-		if tty, _ := e["tty"].(bool); tty && strings.Contains(cmd, " attach ") && strings.Contains(cmd, "--mkey "+bkey) {
+		if tty, _ := e["tty"].(bool); tty && strings.Contains(cmd, " attach ") {
 			attaches++
+			if strings.Contains(cmd, "--mkey "+bkey) {
+				keyed++
+			}
 		}
 	}
-	if attaches < 4 {
-		t.Fatalf("%d attaches to B carried its machine key, want at least 4", attaches)
+	if attaches == 0 || keyed != attaches {
+		t.Fatalf("%d of %d attach sessions to B carried its machine key", keyed, attaches)
 	}
 
 	// Dashboard rows, the machine key passed down as a key binding does.
