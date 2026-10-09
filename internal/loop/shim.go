@@ -279,7 +279,11 @@ func waitGo(tty *os.File, out io.Writer, ended string, again bool) (*proto.GoLin
 	}
 	raw := *old
 	rawMode(&raw)
-	if err := setTermiosFlush(fd, &raw); err != nil {
+	if err := setTermios(fd, &raw); err != nil {
+		return nil, fmt.Errorf("standby: %w", err)
+	}
+	// After the mode change, so a key typed in the old modes is not kept.
+	if err := flushInput(fd); err != nil {
 		return nil, fmt.Errorf("standby: %w", err)
 	}
 	restore := func() { setTermios(fd, old) }
