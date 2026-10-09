@@ -470,19 +470,23 @@ func TestLS09(t *testing.T) {
 		w.ClearMarks()
 		term := w.Loop(m.name, a, m.env)
 		var out []string
-		// readyNow waits, in standby mode, for a ready standby to B that
-		// has not been used or dropped since (one not used is dropped too:
-		// "not used" alone is one not ready yet, and stays).
+		// readyNow waits, in standby mode, for a ready standby to B: B's
+		// last standby event is that one got ready, none taken, dropped,
+		// given up or started since. (B has one standby at a time; a drop
+		// can end one still starting, so counting readies against drops
+		// would come up short.)
 		readyNow := func() {
 			if m.route == "standby" {
 				w.Eventually(10*time.Second, "a standby to B ready", func() bool {
-					gone := 0
+					last := ""
 					for _, t := range w.MarkTexts() {
-						if t == "standby: taken" || t == "standby: drop B" {
-							gone++
+						switch {
+						case t == "standby: taken", t == "standby: drop B", t == "standby: ready B",
+							t == "standby: start B", t == "standby: recycle B", strings.HasPrefix(t, "standby: given up B"):
+							last = t
 						}
 					}
-					return w.CountMarks("standby: ready B") > gone
+					return last == "standby: ready B"
 				})
 			}
 		}

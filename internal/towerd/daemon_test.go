@@ -565,7 +565,7 @@ func TestLastPickedByTheHome(t *testing.T) {
 	h.beat(proto.LoopBeat{ID: "N"})
 	h.prepare(ctx, proto.PrepareArgs{Loop: "N", Target: bravo})
 	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "N", Target: beta})
-	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") })
+	env := clientEnv()
 	sess, err := relay.Start(append([]string{b.srv.Bin}, append(slices.Clone(b.env.Tmux), "attach-session", "-t", "beta")...), env, relay.Modes{}, 24, 80)
 	if err != nil {
 		t.Fatal(err)
@@ -635,7 +635,7 @@ func TestEndAttach(t *testing.T) {
 	ctx := context.Background()
 	h.beat(proto.LoopBeat{ID: "L"})
 	bravo := a.ref(b, "bravo")
-	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") })
+	env := clientEnv()
 	// client attaches to bravo after delay, as a shim's client does once
 	// it has registered.
 	client := func(delay string) *relay.Session {
@@ -724,7 +724,7 @@ func TestEndClient(t *testing.T) {
 	a := w.node("A", "", "alpha")
 	a.start(false)
 	w.eventually(3*time.Second, "A's control client", func() bool { return a.d.w.control() != nil })
-	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") })
+	env := clientEnv()
 	sess, err := relay.Start(append([]string{a.srv.Bin}, append(slices.Clone(a.env.Tmux), "attach-session", "-t", "alpha")...), env, relay.Modes{}, 24, 80)
 	if err != nil {
 		t.Fatal(err)
@@ -986,4 +986,13 @@ func TestRetryOneHost(t *testing.T) {
 	if err := a.d.home.retryHost("nosuch"); err == nil {
 		t.Fatal("a host not in the list")
 	}
+}
+
+// clientEnv is the environment of a tmux client a test attaches: outside
+// any tmux, with a terminal type tmux accepts (CI sets none).
+func clientEnv() []string {
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool {
+		return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") || strings.HasPrefix(kv, "TERM=")
+	})
+	return append(env, "TERM=xterm-256color")
 }
