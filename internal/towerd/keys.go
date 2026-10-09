@@ -2,7 +2,6 @@ package towerd
 
 import (
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 
@@ -15,18 +14,25 @@ import (
 // alertIndex is the hook array index towerd's alert hooks use.
 const alertIndex = "7193"
 
-var alertHooks = []string{"alert-bell", "alert-activity", "alert-silence"}
+// alertHooks are the hooks towerd sets at alertIndex. pane-bell (tmux
+// 3.8 on) runs on every bell, whatever bell-action says, and takes
+// alert-bell's place where towerd has it.
+var alertHooks = []string{bellHook, "alert-bell", "alert-activity", "alert-silence"}
 
-// bellHook runs on every bell (tmux 3.8 on), whatever bell-action says.
 const bellHook = "pane-bell"
 
 // alertSub is the control client's subscription to the windows that have
 // a bell, activity or silence flag, across every session.
 const alertSub = "tower-alerts::#{S:#{W:#{?#{||:#{window_bell_flag},#{||:#{window_activity_flag},#{window_silence_flag}}},#{session_id}#{window_id}=#{window_bell_flag}#{window_activity_flag}#{window_silence_flag} ,}}}"
 
-// ours reports whether a hook command is one towerd set.
+// ours reports whether a hook command, as show-hooks prints it, is one
+// towerd set: a display-message or run-shell -b that ends in its message.
 func ours(cmd string) bool {
-	return strings.Contains(cmd, "tower-alert") || strings.Contains(cmd, "tower-bell")
+	if !strings.HasPrefix(cmd, "display-message -c ") && !strings.HasPrefix(cmd, "run-shell -b ") {
+		return false
+	}
+	cmd = strings.TrimRight(cmd, `"'`)
+	return strings.HasSuffix(cmd, " tower-alert") || strings.HasSuffix(cmd, "tower-bell #{hook_pane}")
 }
 
 // keyRec is a key towerd bound: what it replaced, and its own binding as
@@ -172,19 +178,25 @@ func (k *keys) install(ctl *tmux.Control) {
 			cmd = "run-shell -b " + tmux.Quote(tmux.Literal(transport.ShellQuote(tmux.Bin()))+
 				" -S #{q:socket_path} rename-window -t ="+towerSession+": tower-alert")
 		}
-		hooks := map[string]string{}
+		bellSet := false
 		for _, hook := range alertHooks {
-			hooks[hook] = cmd
-		}
-		if bellHooks {
-			// An alert hook fires only where the window's *-action
-			// applies: under bell-action other, a bell in the current
-			// window of a detached session sets the flag and runs no
-			// hook. pane-bell runs on every bell, the flag already set;
-			// the pane is kept for whoever acts on the bell.
-			hooks[bellHook] = "display-message -c " + tmux.Quote(ctl.Name()) + " " + tmux.Quote("tower-bell #{hook_pane}")
-		}
-		for _, hook := range slices.Sorted(maps.Keys(hooks)) {
+			c := cmd
+			switch {
+			case hook == bellHook && !bellHooks:
+				continue
+			case hook == bellHook:
+				// An alert hook fires only where the window's *-action
+				// applies: under bell-action other, a bell in the current
+				// window of a detached session sets the flag and runs no
+				// hook. pane-bell runs on every bell, the flag already
+				// set; the pane is kept for whoever acts on the bell.
+				c = "display-message -c " + tmux.Quote(ctl.Name()) + " " + tmux.Quote("tower-bell #{hook_pane}")
+			case hook == "alert-bell" && bellSet:
+				// A second message for the same bell would cost a second
+				// re-read.
+				k.unsetOurs(ctl, hook)
+				continue
+			}
 			r, err := ctl.Do("show-hooks -g " + hook)
 			if err != nil {
 				continue
@@ -194,10 +206,11 @@ func (k *keys) install(ctl *tmux.Control) {
 				d.logf("keys: %s[%s] is the user's: left alone", hook, alertIndex)
 				continue
 			}
-			if r, err := ctl.Do("set-hook -g " + tmux.Quote(hook+"["+alertIndex+"]") + " " + tmux.Quote(hooks[hook])); err != nil || r.Err {
+			if r, err := ctl.Do("set-hook -g " + tmux.Quote(hook+"["+alertIndex+"]") + " " + tmux.Quote(c)); err != nil || r.Err {
 				d.logf("keys: set-hook %s: %s %v", hook, r.Text(), err)
 				continue
 			}
+			bellSet = bellSet || hook == bellHook
 		}
 		// The backstop for a flag no hook told of (activity under the
 		// default activity-action other, a bell before 3.8): tmux checks
@@ -248,14 +261,19 @@ func (k *keys) restore(ctl *tmux.Control) {
 		}
 	}
 	config.WriteJSON(k.path(), keysFile{Keys: keep})
-	for _, hook := range append(slices.Clone(alertHooks), bellHook) {
-		r, err := ctl.Do("show-hooks -g " + hook)
-		if err != nil {
-			continue
-		}
-		if ours(hookAt(r.Lines, hook)) {
-			ctl.Do("set-hook -gu " + tmux.Quote(hook+"["+alertIndex+"]"))
-		}
+	for _, hook := range alertHooks {
+		k.unsetOurs(ctl, hook)
+	}
+}
+
+// unsetOurs removes hook at alertIndex when towerd set it.
+func (k *keys) unsetOurs(ctl *tmux.Control, hook string) {
+	r, err := ctl.Do("show-hooks -g " + hook)
+	if err != nil {
+		return
+	}
+	if ours(hookAt(r.Lines, hook)) {
+		ctl.Do("set-hook -gu " + tmux.Quote(hook+"["+alertIndex+"]"))
 	}
 }
 

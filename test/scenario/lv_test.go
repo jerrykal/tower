@@ -194,6 +194,9 @@ func TestLV01(t *testing.T) {
 				t.Logf("LVRESULT rtt=%d %-28s median %-8v %v", rtt, k, median(res[k]).Round(time.Millisecond), res[k])
 			}
 			for _, what := range []string{"create", "rename", "bell", "switch-client"} {
+				if ds := res[what+" C→home view"]; slices.Contains(ds, -1) {
+					t.Fatalf("%s: timed out on the home: %v", what, ds)
+				}
 				ds := res[what+" C→B view"]
 				if slices.Contains(ds, -1) {
 					t.Fatalf("%s: timed out: %v", what, ds)
@@ -262,19 +265,20 @@ func TestLV05(t *testing.T) {
 	for _, k := range slices.Sorted(maps.Keys(res)) {
 		t.Logf("LVRESULT tmux=%s rtt=%d %-24s median %-8v %v", ver, rtt, k, median(res[k]).Round(time.Millisecond), res[k])
 	}
+	paneBell := c.TmuxAtLeast(3, 8)
 	for _, what := range []string{"bell", "activity"} {
-		ds := res[what+" C→B view"]
-		if slices.Contains(ds, -1) {
-			t.Fatalf("%s: never reached B's view: %v", what, ds)
-		}
 		bound := time.Duration(rtt+1300) * time.Millisecond // the subscription's second
-		var major, minor int
-		fmt.Sscanf(ver, "%d.%d", &major, &minor)
-		if what == "bell" && (major > 3 || major == 3 && minor >= 8) {
+		if what == "bell" && paneBell {
 			bound = time.Duration(rtt+200) * time.Millisecond
 		}
-		if m := median(ds); m >= bound {
-			t.Fatalf("%s C→B on tmux %s: median %v at %dms round trips", what, ver, m, rtt)
+		for _, view := range []string{"home", "B"} {
+			ds := res[what+" C→"+view+" view"]
+			if slices.Contains(ds, -1) {
+				t.Fatalf("%s: never reached %s's view: %v", what, view, ds)
+			}
+			if m := median(ds); m >= bound {
+				t.Fatalf("%s C→%s on tmux %s: median %v at %dms round trips", what, view, ver, m, rtt)
+			}
 		}
 	}
 }

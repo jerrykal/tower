@@ -502,6 +502,25 @@ func TestTmuxBefore(t *testing.T) {
 	}
 }
 
+// ours knows towerd's hook commands as show-hooks prints them, on every
+// version's path, and no user's that merely names tower.
+func TestOursHooks(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		`display-message -c client-123 tower-alert`:                                                    true,
+		`display-message -c client-123 "tower-bell #{hook_pane}"`:                                      true,
+		`run-shell -b "/usr/bin/tmux -S #{q:socket_path} rename-window -t =_tower: tower-alert"`:       true,
+		`run-shell -b '/usr/local/bin/tmux -S #{q:socket_path} rename-window -t =_tower: tower-alert'`: true,
+		`run-shell ~/bin/tower-bell-notify`:                                                            false,
+		`run-shell -b "notify tower-alert-sound"`:                                                      false,
+		`display-message mine`: false,
+		``:                     false,
+	} {
+		if got := ours(cmd); got != want {
+			t.Errorf("ours(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
 // A client that registered a resume command is detached into it, by
 // either form of detach; any other is detached plainly.
 func TestDetachLine(t *testing.T) {

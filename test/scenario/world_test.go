@@ -306,6 +306,13 @@ func (h *Host) tmux(args ...string) (string, error) {
 	return out, nil
 }
 
+// TmuxAtLeast reports whether the host's tmux is major.minor or later.
+func (h *Host) TmuxAtLeast(major, minor int) bool {
+	var ma, mi int
+	fmt.Sscanf(strings.TrimSpace(h.MustTmux("display-message", "-p", "#{version}")), "%d.%d", &ma, &mi)
+	return ma > major || ma == major && mi >= minor
+}
+
 // MustTmux is Tmux failing the test on error.
 func (h *Host) MustTmux(args ...string) string {
 	h.w.T.Helper()

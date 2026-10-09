@@ -616,8 +616,19 @@ without telling control clients. towerd adds global hooks `alert-bell`,
 (LV01). Before tmux 3.4, which shows a control client no message (3.2
 takes `-c` there for a flag) and tells it nothing a hook's own commands
 do, each hook starts a tmux client that renames `_tower`'s window
-instead, and the re-read follows its `%window-renamed`. One the user set at that index is left alone; towerd removes only
-its own on stop; `TOWER_ALERTS=0` turns them off.
+instead, and the re-read follows its `%window-renamed`. An alert hook
+fires only where the window's `*-action` applies, after tmux has set the
+flag (a bell in the current window of a detached session under
+`bell-action other`, or activity under the default `activity-action
+other`, runs none), so from tmux 3.8 a `pane-bell` hook, which runs on
+every bell, takes `alert-bell`'s place: `display-message -c <its control
+client> "tower-bell #{hook_pane}"` (LV05). On every version the control
+client also subscribes (`refresh-client -B tower-alerts::…`) to the
+windows that have a flag, which tmux checks once a second; its
+`%subscription-changed` is the backstop for the flags no hook told of.
+One the user set at that index is left alone (where it is `pane-bell`,
+towerd keeps `alert-bell`); towerd removes only its own on stop;
+`TOWER_ALERTS=0` turns hooks and subscription off.
 
 ## Live dashboards
 
@@ -748,7 +759,7 @@ Kept per loop, by its home:
 | `TOWER_RELAY` | 1 | 0: ssh gets the terminal itself, no standbys |
 | `TOWER_LIVE` | 1 | 0: dashboards do not follow changes |
 | `TOWER_BIND` | 1 | 0: towerd binds no keys |
-| `TOWER_ALERTS` | 1 | 0: no alert hooks |
+| `TOWER_ALERTS` | 1 | 0: no alert hooks or alert subscription |
 | `TOWER_GIT` | 1 | 0: no git state of sessions or directories |
 | `TOWER_DIRS` | 1 | 0: no zoxide directories |
 | `TOWER_DIRS_EVERY` | 60s | the periodic refresh of zoxide and the sessions' repos |

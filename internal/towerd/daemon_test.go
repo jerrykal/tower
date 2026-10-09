@@ -777,7 +777,14 @@ func TestEndClient(t *testing.T) {
 func TestKeysTakenAndPutBack(t *testing.T) {
 	w := newWorld(t)
 	free := w.node("K", "", "k1")
-	user := w.node("U", "bind L display-message 'the users L'\nset-hook -g alert-silence[7193] 'display-message mine'\n", "u1")
+	// From tmux 3.8 pane-bell takes alert-bell's place, unless the
+	// user's is at tower's index.
+	paneBell := !tmuxBefore(strings.TrimSpace(free.tmux("display-message", "-p", "#{version}")), 3, 8)
+	conf := "bind L display-message 'the users L'\nset-hook -g alert-silence[7193] 'display-message mine'\n"
+	if paneBell {
+		conf += "set-hook -g pane-bell[7193] 'display-message my-bell'\n"
+	}
+	user := w.node("U", conf, "u1")
 	free.start(false)
 	user.start(false)
 	w.eventually(3*time.Second, "keys bound", func() bool {
@@ -790,11 +797,25 @@ func TestKeysTakenAndPutBack(t *testing.T) {
 	if _, cmd := binding(strings.Split(user.tmux("list-keys", "-T", "prefix"), "\n"), "prefix", "L"); !strings.Contains(cmd, "the users L") {
 		t.Fatalf("the user's L was taken: %q", cmd)
 	}
-	if !strings.Contains(free.tmux("show-hooks", "-g", "alert-bell"), "tower-alert") {
+	if !strings.Contains(free.tmux("show-hooks", "-g", "alert-activity"), "tower-alert") {
 		t.Fatal("no alert hook")
+	}
+	if h := free.tmux("show-hooks", "-g", "alert-bell"); strings.Contains(h, "tower-alert") == paneBell {
+		t.Fatalf("alert-bell with pane-bell %v: %q", paneBell, h)
+	}
+	if h := free.tmux("show-hooks", "-g", "pane-bell"); paneBell && !strings.Contains(h, "pane-bell[7193]") {
+		t.Fatalf("no pane-bell hook: %q", h)
 	}
 	if !strings.Contains(user.tmux("show-hooks", "-g", "alert-silence"), "mine") {
 		t.Fatal("the user's hook at tower's index was replaced")
+	}
+	if paneBell {
+		if !strings.Contains(user.tmux("show-hooks", "-g", "pane-bell"), "my-bell") {
+			t.Fatal("the user's pane-bell at tower's index was replaced")
+		}
+		if !strings.Contains(user.tmux("show-hooks", "-g", "alert-bell"), "tower-alert") {
+			t.Fatal("no alert-bell where the user has pane-bell")
+		}
 	}
 	free.d.Stop("test")
 	free.d.Wait()
@@ -804,8 +825,13 @@ func TestKeysTakenAndPutBack(t *testing.T) {
 	if _, cmd := binding(strings.Split(free.tmux("list-keys", "-T", "prefix"), "\n"), "prefix", "L"); cmd != "switch-client -l" {
 		t.Fatalf("prefix L after stop: %q", cmd)
 	}
-	if strings.Contains(free.tmux("show-hooks", "-g", "alert-bell"), "tower-alert") {
-		t.Fatal("alert hook left after stop")
+	for _, hook := range alertHooks {
+		if hook == bellHook && !paneBell {
+			continue
+		}
+		if h := free.tmux("show-hooks", "-g", hook); strings.Contains(h, "[7193]") {
+			t.Fatalf("%s left after stop: %q", hook, h)
+		}
 	}
 	if strings.Contains(free.tmux("list-sessions", "-F", "#{session_name}"), "_tower") {
 		t.Fatal("_tower left after stop")

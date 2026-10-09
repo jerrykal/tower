@@ -310,11 +310,26 @@ func TestV08(t *testing.T) {
 	if !strings.Contains(key(u, "prefix", "L"), "the user's L") {
 		t.Fatalf("U's L: %q", key(u, "prefix", "L"))
 	}
-	if !strings.Contains(hook(k, "alert-bell"), "alert-bell[7193]") || !strings.Contains(hook(k, "alert-bell"), "tower-alert") {
-		t.Fatalf("K's alert hook: %q", hook(k, "alert-bell"))
+	// From tmux 3.8 pane-bell, which runs on every bell, takes
+	// alert-bell's place.
+	bell := "alert-bell"
+	if k.TmuxAtLeast(3, 8) {
+		bell = "pane-bell"
+		if h := hook(k, "alert-bell"); strings.Contains(h, "[7193]") {
+			t.Fatalf("K's alert-bell beside pane-bell: %q", h)
+		}
 	}
-	if h := hook(u, "alert-bell"); !strings.Contains(h, "the-users-bell") || !strings.Contains(h, "tower-alert") {
+	if h := hook(k, bell); !strings.Contains(h, bell+"[7193]") || !strings.Contains(h, "tower-") {
+		t.Fatalf("K's %s: %q", bell, h)
+	}
+	if h := hook(k, "alert-activity"); !strings.Contains(h, "tower-alert") {
+		t.Fatalf("K's alert-activity: %q", h)
+	}
+	if h := hook(u, "alert-bell"); !strings.Contains(h, "the-users-bell") {
 		t.Fatalf("U's alert-bell: %q", h)
+	}
+	if h := hook(u, bell); !strings.Contains(h, bell+"[7193]") || !strings.Contains(h, "tower-") {
+		t.Fatalf("U's %s beside the user's alert-bell: %q", bell, h)
 	}
 	if h := hook(u, "alert-silence"); !strings.Contains(h, "alert-silence[7193] display-message the-users-silence") {
 		t.Fatalf("U's alert-silence: %q", h)
@@ -351,7 +366,7 @@ func TestV08(t *testing.T) {
 	w.Eventually(5*time.Second, "K's keys back", func() bool {
 		return key(k, "root", "M-o") == "" && strings.HasSuffix(strings.TrimSpace(key(k, "prefix", "L")), "switch-client -l")
 	})
-	if h := hook(k, "alert-bell") + hook(k, "alert-activity"); strings.Contains(h, "[7193]") {
+	if h := hook(k, bell) + hook(k, "alert-activity"); strings.Contains(h, "[7193]") {
 		t.Fatalf("K's alert hooks after stop: %q", h)
 	}
 }

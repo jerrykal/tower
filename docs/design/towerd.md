@@ -258,8 +258,12 @@ current window of a detached session flags it and runs no hook, and
 - **tmux 3.8 on**: `set-hook -g pane-bell[7193] 'display-message -c
   <control client> "tower-bell #{hook_pane}"'`, which tmux runs on every
   bell before any option is checked, the flag already set; the pane is
-  kept for whatever acts on a bell. Left alone and removed like the alert
-  hooks.
+  kept for whatever acts on a bell. It takes `alert-bell`'s place (towerd
+  removes its own `alert-bell`), as two messages for one bell would cost
+  two re-reads; where the user's `pane-bell` holds the index, towerd keeps
+  `alert-bell`. Left alone and removed like the alert hooks. towerd knows
+  its own hooks by their shape: a `display-message -c` or `run-shell -b`
+  ending in `tower-alert` or `tower-bell #{hook_pane}`.
 - **Every version**: the control client subscribes (`refresh-client -B
   tower-alerts::…`) to the windows that have a bell, activity or silence
   flag, as `$session@window=<bell><activity><silence>` across every
