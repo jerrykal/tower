@@ -109,7 +109,9 @@ type Client struct {
 	Window  string `json:"w,omitempty"`
 	Loop    string `json:"loop"`
 	Gen     int    `json:"gen"`
-	Home    string `json:"home"` // towerd id of the loop's home
+	Home    string `json:"home"`            // towerd id of the loop's home
+	Reuse   bool   `json:"reuse,omitempty"` // a detach makes it a standby again
+	End     bool   `json:"end,omitempty"`   // its home ended its attach: detached once seen
 }
 
 // Host statuses, as the home sees each host.

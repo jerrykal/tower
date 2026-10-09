@@ -86,13 +86,22 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
   control client (`end-client`), so tmux restores the terminal and prints
   nothing; a towerd that cannot leaves it to one tmux run.
 - **Remote**: the host's standby if prepare's key matches and it is ready
-  and made for this terminal; its pty sized, the go line sent, the go
-  marker awaited `300ms + 2 × RTT` (`TOWER_STANDBY_TIMEOUT`), else
+  (one being recycled is waited for, up to the standby's wait) and made
+  for this terminal; its pty sized, a newline and the go line sent, the
+  go marker awaited `300ms + 2 × RTT` (`TOWER_STANDBY_TIMEOUT`), else
   `Kill` and a new session. A new session is `relay.Start` with the
   attach argv, the terminal's original modes and size. The terminal goes
-  raw and the session is relayed. Ending it for a switch: `Terminate` and
-  `Abandon` (the relay stops at once; ssh is reaped in the background), so
-  the next client waits for nothing.
+  raw and the session is relayed.
+- **Reuse**: prepare asks for a nonce (`Again`) whenever the loop has
+  standbys, unless `TOWER_REUSE=0`. A standby whose shim wrote the again marker, given one, is
+  reused: its relay is armed (`Reuse`), ending it for a switch is
+  `Release` (the relay stops at once, ssh runs on), and a released relay
+  hands the session back to the standby set (`recycle`), where it waits
+  for the home to have the client detached back into a standby. A relay
+  that ends otherwise (ssh exited: the client ended by itself) ends the
+  session. Any other session: ending it for a switch is `Terminate` and
+  `Abandon` (the relay stops at once; ssh is reaped in the background),
+  so the next client waits for nothing.
 - **`TOWER_RELAY=0`**: ssh with the terminal itself, ended with SIGTERM.
 - **wait-switch** runs alongside (not with `TOWER_EAGER=0`, so the home
   leaves the old client to the dashboard). On `switch`: `Hold`, `held`; on
@@ -109,8 +118,8 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
   time it came up (ms, past the last its towerd gave), so a later link's
   is greater even after the home restarts or the host's entry changes.
 - **The old client gone**, the frame is held again at once, then a remote
-  client hung up or lost (255) gets the terminal restore its own never
-  wrote (`relay.ClientRestore`).
+  client hung up, released or lost (255) gets the terminal restore its
+  own never wrote (`relay.ClientRestore`), if it drew anything.
 - **Fallback release** of that hold: 150ms after the view shows the home
   saw the new attach's client, or 1.5s, `Release(n)` for that hold only
   (S27). Always released before the picker or an exit.
@@ -134,14 +143,27 @@ picker ──⏎──▶ prepare ──▶ attach ──▶ after ──┬─ 
    environment.
 
 As a standby (`--standby`, no target): ensure the towerd, turn the pty's
-echo and line editing off, write the ready marker (`relay.MarkerReady`,
-`ESC ] 7193 ; tower-standby-ready BEL`) on stdout, where an attach's
-output goes, read one JSON line a byte at a time (the go line: loop, gen,
-home, inst, mkey, session, window, note), restore the modes, write the
+echo, line editing and signal keys off, throwing away input not read yet
+(one `TCSETSF`/`TIOCSETAF`), and write, in one write on stdout (where an
+attach's output goes), the ended marker with `--ended`'s nonce if given
+(`relay.Ended`: `ESC ] 7193 ; tower-standby-ended ; <nonce> BEL`), the
+again marker if it can be detached back into (`relay.MarkerAgain`:
+`ESC ] 7193 ; tower-standby-again BEL`) and the ready marker
+(`relay.MarkerReady`: `ESC ] 7193 ; tower-standby-ready BEL`). Then read
+JSON lines a byte at a time until one is a go line (loop, gen, home,
+inst, mkey, session, window, note, again), restore the modes, write the
 answer marker (`relay.MarkerGo`, `ESC ] 7193 ; tower-standby-go BEL`),
-then continue as above. A standby nobody used exits after 12h, and one
+and continue as above. A standby nobody used exits after 12h, and one
 that hears no heartbeat from its loop (an empty line every 2s) for 30s
 exits at once.
+
+A go line with a nonce (`again`) registers it, with the command that
+makes the client this standby again (`resumeCommand`: `exec <tower>
+attach --standby --ended <nonce> --mkey K --tmux …`, each word
+single-quoted, for whatever `default-shell` the session has; a word with
+a quote or a backslash, or `TOWER_REUSE=0`, means no again marker). tmux runs it in the
+client's process, the pid unchanged, once the home has the client
+detached with `detach-client -E`.
 
 ## Standbys
 
@@ -156,23 +178,52 @@ type standby struct {
     sess  *relay.Session
     env   []string    // the loop's environment, tower's variables left out
     modes relay.Modes // the terminal's original modes
-    ready bool
+    again bool        // its shim wrote the again marker
+    state state       // starting, draining, ready, inUse
 }
 ```
 
+A standby goes forward through its states once: `starting` (a new
+session) or `draining` (an attach's session handed back), then `ready`,
+then `inUse` once an attach takes it. A session handed back is a new
+standby, so nothing that held the old one acts on the new.
+
 - **Refresh** on every change of the view, every 2s, and when one is used
   or dies: ask `standby`; drop those whose key is no longer offered (host
-  gone, down, stalled, reconnected), except the host
-  being prepared; start those missing, once the view names their host,
-  not while backed off. Marks: `standby: start|ready|drop <host>`,
-  `standby: not used <host>: <why>`.
+  gone, down, stalled, reconnected), except the host being prepared and
+  one in use; start those missing, once the view names their host, and
+  not while backed off. Marks: `standby:
+  start|ready|drop|recycle <host>`, `standby: not used <host>: <why>`,
+  `standby: given up <host>: <why>`, `standby: wait for <host>`.
 - **Use** (`take`): ready, prepare's key, the same environment and modes
   (`relay.Modes.Same`) as the terminal's now; one made for another
-  terminal is dropped.
+  terminal is dropped. One being recycled is waited for, up to the
+  standby's wait. A standby taken for an attach with a nonce, whose
+  client can be detached back into one, stays in the set, in use, so no
+  refresh starts another for its host; any other is taken out of it.
+- **Recycle**: the attach's session back in the set under its old key,
+  watched as a new standby is: drained to the ended marker of its
+  client's nonce within `1s + 4 × RTT` (`TOWER_RECYCLE_WAIT`), then
+  ready within 1s. Given up (killed, the host refreshed) when either
+  does not come, ssh exits, or the key is dropped; one whose host has
+  another standby by then is ended. An attach that will not hand its
+  session back (ssh exited, the standby did not answer) lets it go
+  (`release`), and its host gets a new standby.
 - A standby that dies (or is not ready in 20s) before it is ready backs
-  its host off, 1s doubling to a minute; one that dies ready is replaced.
-- The home offers one for the host the loop is attached to as well: the
-  host a hand-off leaves has one ready for a switch straight back.
+  its host off, 1s doubling to a minute; one that dies ready is replaced;
+  a recycled one given up is replaced without a backoff.
+- The home offers one for the host the loop is attached to as well; the
+  loop makes it only when the attach's session will not come back (a
+  session it opened itself, or a shim that cannot go again): the host a
+  hand-off leaves has one ready for a switch straight back either way.
+- **Status**: per host, the standby's state and time in it, and the
+  sessions opened, reused and given up (the last one's reason) in the
+  loop's life, sent with every `standby` call; `tower status` on the home
+  shows them under the loop, with the last detach of a reused attach's
+  client, and a remote's shows which clients are reusable.
+- **Closing**: a standby's watch is the only thing that closes its
+  session until an attach takes it, and the attach after; dropping one
+  kills its ssh, and the watch, its read ended, closes it.
 
 ## Concurrency
 

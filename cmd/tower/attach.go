@@ -10,7 +10,7 @@ import (
 )
 
 // cmdAttach is the attach shim: tower attach --loop L --gen G --home H
-// --inst I --mkey K [--standby] --tmux ARGS $3 [@7].
+// --inst I --mkey K [--standby [--ended NONCE]] --tmux ARGS $3 [@7].
 func cmdAttach(args []string) error {
 	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
 	var s loop.Shim
@@ -20,6 +20,7 @@ func cmdAttach(args []string) error {
 	fs.StringVar(&s.Inst, "inst", "", "the tmux server instance the target was listed on")
 	fs.StringVar(&s.MKey, "mkey", "", "this machine's key, as its towerd told the home")
 	fs.BoolVar(&s.Standby, "standby", false, "wait for the attach's go line first")
+	fs.StringVar(&s.Ended, "ended", "", "a standby detached from an attach: that attach's nonce, for its ended marker")
 	fs.StringVar(&s.Note, "note", "", "a note for the new client's status line")
 	fs.StringVar(&s.Pane, "pane", "", "the pane to select (%id)")
 	var tm tmuxFlag

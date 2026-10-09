@@ -47,8 +47,9 @@ func (h *Host) clientSize() string {
 	return ""
 }
 
-// LS01: hand-offs through standbys; the host entered gets a new one, so
-// the host left has one ready; the terminal's size reaches the client; standbys are neither clients nor
+// LS01: hand-offs through standbys; the host left keeps its session as
+// its standby, ready again once its client is detached into one, and no session is
+// opened for the host left or entered; the terminal's size reaches the client; standbys are neither clients nor
 // registrations; prefix d and a killed loop leave none behind.
 func TestLS01(t *testing.T) {
 	parallel(t)
@@ -86,14 +87,18 @@ func TestLS01(t *testing.T) {
 	term.Keys("Enter")
 	term.Wait(`ls42`, 5*time.Second)
 	w.Eventually(3*time.Second, "one registration on B", func() bool { return len(b.Regs()) == 1 })
-	w.WaitMark("standby: ready B", 5*time.Second)
 	w.ClearMarks()
 	term.DashTo("charlie")
 	w.WaitLoop(a, "^C:charlie", 8*time.Second)
 	w.WaitMark("standby: taken", 3*time.Second)
-	w.WaitMark("standby: ready C", 5*time.Second)
-	if n := w.CountMarks("standby: start B"); n != 0 {
-		t.Fatalf("B, left with a standby ready, started %d more", n)
+	w.WaitMark("standby: recycle B", 3*time.Second)
+	w.WaitMark("standby: ready B", 3*time.Second)
+	w.clientsAre(b, 3*time.Second)
+	time.Sleep(500 * time.Millisecond)
+	for _, h := range []string{"B", "C"} {
+		if n := w.CountMarks("standby: start " + h); n != 0 {
+			t.Fatalf("%s, left or entered, started %d sessions", h, n)
+		}
 	}
 	term.Wait(statusBar("charlie"), 5*time.Second)
 	term.Keys("C-b", "d")
@@ -451,9 +456,14 @@ func TestLS09(t *testing.T) {
 	stdSetup(w, a, b)
 	restore := func() { w.Heal("B") }
 	modes := []struct {
-		name string
-		env  map[string]string
-	}{{"plain", map[string]string{"TOWER_RELAY": "0"}}, {"session", map[string]string{"TOWER_STANDBY": "0"}}, {"standby", map[string]string{"TOWER_STANDBY": "1"}}}
+		name, route string
+		env         map[string]string
+	}{
+		{"plain", "plain", map[string]string{"TOWER_RELAY": "0"}},
+		{"session", "session", map[string]string{"TOWER_STANDBY": "0"}},
+		{"standby", "standby", map[string]string{"TOWER_STANDBY": "1"}},
+		{"no-reuse", "standby", map[string]string{"TOWER_STANDBY": "1", "TOWER_REUSE": "0"}},
+	}
 	var results []string
 	relayed := 0
 	for _, m := range modes {
@@ -461,13 +471,14 @@ func TestLS09(t *testing.T) {
 		term := w.Loop(m.name, a, m.env)
 		var out []string
 		// readyNow waits, in standby mode, for a ready standby to B that
-		// has not been used or dropped since.
+		// has not been used or dropped since (one not used is dropped too:
+		// "not used" alone is one not ready yet, and stays).
 		readyNow := func() {
-			if m.name == "standby" {
+			if m.route == "standby" {
 				w.Eventually(10*time.Second, "a standby to B ready", func() bool {
 					gone := 0
 					for _, t := range w.MarkTexts() {
-						if t == "standby: taken" || t == "standby: drop B" || strings.HasPrefix(t, "standby: not used B") {
+						if t == "standby: taken" || t == "standby: drop B" {
 							gone++
 						}
 					}
@@ -481,11 +492,11 @@ func TestLS09(t *testing.T) {
 			term.Wait(statusBar("bravo"), 5*time.Second)
 			w.clientsAre(b, 5*time.Second, "bravo")
 			route := w.Route()
-			want := m.name
-			if m.name == "standby" && !viaStandby {
+			want := m.route
+			if m.route == "standby" && !viaStandby {
 				want = "session"
 			}
-			if route != want && !(m.name == "standby" && viaStandby && route == "session") {
+			if route != want && !(m.route == "standby" && viaStandby && route == "session") {
 				t.Fatalf("%s %s: the attach went %s, want %s", m.name, step, route, want)
 			}
 			if route != "plain" {
@@ -550,8 +561,10 @@ func TestLS09(t *testing.T) {
 		t.Logf("%s: %s", m.name, results[len(results)-1])
 	}
 	t.Logf("%d attaches relayed", relayed)
-	if results[0] != results[1] || results[1] != results[2] {
-		t.Fatalf("the modes differ:\n%s", strings.Join(results, "\n"))
+	for _, r := range results[1:] {
+		if r != results[0] {
+			t.Fatalf("the modes differ:\n%s", strings.Join(results, "\n"))
+		}
 	}
 }
 
@@ -631,4 +644,231 @@ func TestLS10(t *testing.T) {
 	start := time.Now()
 	w.clientsAre(c, 40*time.Second)
 	t.Logf("the killed loop's client gone %v later", (2*time.Second + time.Since(start)).Round(100*time.Millisecond))
+}
+
+// LS11: a remote attach's session is reused: hand-offs back and forth
+// between the laptop and a host, and between two hosts, open no ssh
+// session once each host has its standby; each host keeps its one shim,
+// which takes every attach there; keys reach each new client, and the
+// host left keeps no client.
+func TestLS11(t *testing.T) {
+	parallel(t)
+	w := NewWorld(t, "ls11")
+	a := w.Host("A", []string{"alpha"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	c := w.Host("C", []string{"charlie"}, SSHHost())
+	stdSetup(w, a, b, c)
+	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
+	w.WaitMark("standby: ready B", 5*time.Second)
+	w.WaitMark("standby: ready C", 5*time.Second)
+	shims := func() []int {
+		p := append(w.StandbyPids(b), w.StandbyPids(c)...)
+		slices.Sort(p)
+		return p
+	}
+	before := shims()
+	if len(before) == 0 {
+		t.Fatal("no shims")
+	}
+	w.ClearMarks()
+	hosts := map[string]*Host{"alpha": a, "bravo": b, "charlie": c}
+	for i, s := range []string{"bravo", "alpha", "charlie", "alpha", "bravo", "charlie", "bravo", "charlie", "alpha"} {
+		h := hosts[s]
+		term.DashTo(s)
+		w.WaitLoop(a, "^"+h.Name+":"+s, 8*time.Second)
+		term.Wait(statusBar(s), 5*time.Second)
+		term.Type(fmt.Sprintf("echo hop$((%d+1))", i))
+		term.Keys("Enter")
+		term.Wait(fmt.Sprintf("hop%d", i+1), 5*time.Second)
+		for _, o := range []*Host{b, c} {
+			if o != h {
+				w.clientsAre(o, 3*time.Second)
+			}
+		}
+	}
+	for _, m := range []string{"attach: session", "standby: start B", "standby: start C"} {
+		if n := w.CountMarks(m); n != 0 {
+			t.Fatalf("%q %d times: %q", m, n, w.MarkTexts())
+		}
+	}
+	if after := shims(); !slices.Equal(before, after) {
+		t.Fatalf("shims %v, before %v", after, before)
+	}
+	// tower status shows it: B's and C's sessions reused, none opened
+	// since the first, and the last detach into a standby done.
+	w.Eventually(5*time.Second, "the reuse in the home's status", func() bool {
+		st := a.Status()
+		if st.Detail == nil || len(st.Detail.Loops) != 1 {
+			return false
+		}
+		l := st.Detail.Loops[0]
+		reused := 0
+		for _, s := range l.Standbys {
+			if s.Opened != 1 || s.GivenUp != 0 {
+				return false
+			}
+			reused += s.Reused
+		}
+		return len(l.Standbys) == 2 && reused == 6 && l.End != nil && l.End.OK
+	})
+	term.Keys("C-b", "d")
+	term.Wait(`LOOP-EXIT=0`, 5*time.Second)
+	w.noStandbys(3*time.Second, b, c)
+}
+
+// LS12: a session whose client does not end in time once the terminal
+// has left its host (the host slow to answer: a 1s round trip, and 300ms
+// to end it) is given up and ended, and a new standby made; the host is
+// left with no client, and only the new standby's processes.
+func TestLS12(t *testing.T) {
+	parallel(t)
+	w := NewWorld(t, "ls12")
+	a := w.Host("A", []string{"alpha"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	stdSetup(w, a, b)
+	term := w.LoopTo("t", a, map[string]string{"TOWER_RECYCLE_WAIT": "300ms"}, "alpha", "^A:alpha")
+	w.WaitMark("standby: ready B", 5*time.Second)
+	term.DashTo("bravo")
+	w.WaitLoop(a, "^B:bravo", 8*time.Second)
+	term.Wait(statusBar("bravo"), 5*time.Second)
+	old := w.StandbyPids(b)
+	if len(old) == 0 {
+		t.Fatal("no shim on B")
+	}
+	w.Shape("B", func(l *Link) { l.DelayMs = 500 })
+	w.ClearMarks()
+	term.Keys("C-b", "L")
+	w.WaitLoop(a, "^A:alpha", 10*time.Second)
+	w.Eventually(5*time.Second, "B's session given up", func() bool {
+		return slices.ContainsFunc(w.MarkTexts(), func(m string) bool { return strings.HasPrefix(m, "standby: given up B: ") })
+	})
+	w.Shape("B", func(l *Link) { l.DelayMs = 0 })
+	w.WaitMark("standby: ready B", 15*time.Second)
+	w.clientsAre(b, 10*time.Second)
+	w.Eventually(5*time.Second, "the given-up session gone from B, a new one there", func() bool {
+		now := w.StandbyPids(b)
+		return len(now) > 0 && !slices.ContainsFunc(old, func(p int) bool { return slices.Contains(now, p) })
+	})
+	term.DashTo("bravo")
+	w.WaitLoop(a, "^B:bravo", 8*time.Second)
+	term.Wait(statusBar("bravo"), 5*time.Second)
+	term.Keys("C-b", "d")
+	term.Wait(`LOOP-EXIT=0`, 5*time.Second)
+	w.noStandbys(3*time.Second, b)
+}
+
+// LS13: reuse with a side from before it, played by TOWER_REUSE=0. (a) A
+// host whose shims write no again marker: no session there is kept, and
+// the host gets a new standby each time one is taken, while another
+// host's session is still reused; the host left keeps no client, and
+// prefix d there ends the loop. (b) A loop that asks for no nonce: no
+// session is kept, the host it is on gets a new standby, and prefix d
+// there ends the loop.
+func TestLS13(t *testing.T) {
+	parallel(t)
+	w := NewWorld(t, "ls13")
+	a := w.Host("A", []string{"alpha"})
+	b := w.Host("B", []string{"bravo"}, SSHHost(), Env("TOWER_REUSE", "0"))
+	c := w.Host("C", []string{"charlie"}, SSHHost())
+	stdSetup(w, a, b, c)
+	hosts := map[string]*Host{"alpha": a, "bravo": b, "charlie": c}
+	hop := func(term *Term, i int, s string) {
+		t.Helper()
+		h := hosts[s]
+		term.DashTo(s)
+		w.WaitLoop(a, "^"+h.Name+":"+s, 8*time.Second)
+		term.Wait(statusBar(s), 5*time.Second)
+		term.Type(fmt.Sprintf("echo hop$((%d+1))", i))
+		term.Keys("Enter")
+		term.Wait(fmt.Sprintf("hop%d", i+1), 5*time.Second)
+		for _, o := range []*Host{b, c} {
+			if o != h {
+				w.clientsAre(o, 3*time.Second)
+			}
+		}
+	}
+
+	// (a) B's shims as from before reuse.
+	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
+	w.WaitMark("standby: ready B", 5*time.Second)
+	w.WaitMark("standby: ready C", 5*time.Second)
+	w.ClearMarks()
+	for i, s := range []string{"bravo", "charlie", "bravo", "alpha", "charlie", "bravo"} {
+		hop(term, i, s)
+	}
+	if n := w.CountMarks("standby: recycle B"); n != 0 {
+		t.Fatalf("B's session kept %d times: %q", n, w.MarkTexts())
+	}
+	if n := w.CountMarks("standby: start B"); n == 0 {
+		t.Fatalf("B got no new standby: %q", w.MarkTexts())
+	}
+	if n := w.CountMarks("standby: recycle C"); n != 2 {
+		t.Fatalf("C's session kept %d times, want 2: %q", n, w.MarkTexts())
+	}
+	if n := w.CountMarks("standby: start C"); n != 0 {
+		t.Fatalf("C's session opened %d times: %q", n, w.MarkTexts())
+	}
+	term.Keys("C-b", "d")
+	term.Wait(`LOOP-EXIT=0`, 6*time.Second)
+	w.noStandbys(3*time.Second, b, c)
+
+	// (b) A loop that asks for no nonce.
+	term = w.LoopTo("u", a, map[string]string{"TOWER_REUSE": "0"}, "alpha", "^A:alpha")
+	w.WaitMark("standby: ready C", 5*time.Second)
+	w.ClearMarks()
+	for i, s := range []string{"charlie", "alpha", "charlie"} {
+		hop(term, i, s)
+	}
+	for _, m := range []string{"standby: recycle B", "standby: recycle C"} {
+		if n := w.CountMarks(m); n != 0 {
+			t.Fatalf("%q %d times: %q", m, n, w.MarkTexts())
+		}
+	}
+	if n := w.CountMarks("standby: start C"); n == 0 {
+		t.Fatalf("C got no new standby: %q", w.MarkTexts())
+	}
+	term.Keys("C-b", "d")
+	term.Wait(`LOOP-EXIT=0`, 6*time.Second)
+	w.noStandbys(3*time.Second, b, c)
+}
+
+// LS14: the host's towerd killed while the terminal is on it through a
+// session it will reuse, then a hand-off away (the dashboard there starts
+// a towerd again): the hand-off lands; the session is detached back into
+// a standby or given up, and either way the host keeps no client, gets a
+// ready standby, and a switch back lands.
+func TestLS14(t *testing.T) {
+	parallel(t)
+	w := NewWorld(t, "ls14")
+	a := w.Host("A", []string{"alpha"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	stdSetup(w, a, b)
+	term := w.LoopTo("t", a, nil, "alpha", "^A:alpha")
+	w.WaitMark("standby: ready B", 5*time.Second)
+	term.DashTo("bravo")
+	w.WaitLoop(a, "^B:bravo", 8*time.Second)
+	term.Wait(statusBar("bravo"), 5*time.Second)
+	if w.Route() != "standby" {
+		t.Fatalf("the attach went %s", w.Route())
+	}
+	attempts := w.Link(a, "B").Attempts
+	Kill9(b.TowerdPid())
+	w.ClearMarks()
+	term.DashTo("alpha")
+	w.WaitLoop(a, "^A:alpha", 15*time.Second)
+	w.Eventually(15*time.Second, "B back on a new link", func() bool {
+		l := w.Link(a, "B")
+		return l.Attempts > attempts && l.Status == "up"
+	})
+	w.clientsAre(b, 15*time.Second)
+	w.Eventually(15*time.Second, "a standby to B ready", func() bool {
+		return w.CountMarks("standby: ready B") > 0
+	})
+	t.Logf("marks: %q", w.MarkTexts())
+	term.DashTo("bravo")
+	w.WaitLoop(a, "^B:bravo", 8*time.Second)
+	term.Wait(statusBar("bravo"), 5*time.Second)
+	term.Keys("C-b", "d")
+	term.Wait(`LOOP-EXIT=0`, 6*time.Second)
+	w.noStandbys(3*time.Second, b)
 }

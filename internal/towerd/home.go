@@ -65,6 +65,20 @@ type loopRec struct {
 	woke      *switchWait     // the current attach's wake, once a switch woke the loop
 	seen      bool            // the home has seen this attach's client
 	beat      time.Time
+	// again is the current attach's ended-marker nonce: its loop reuses
+	// the attach's session once the client is detached back into a
+	// standby ("": it does not).
+	again string
+	// standbys is the loop's standby set as it last reported it, and end
+	// the last detach of a reused attach's client, for tower status.
+	standbys []proto.StandbyStatus
+	end      *proto.EndStatus
+	endAt    time.Time
+	// ending is the generation whose client the home is detaching back
+	// into a standby, since endingAt: the reap leaves it be for a while,
+	// unless that fails.
+	ending   int
+	endingAt time.Time
 }
 
 // pendingSwitch is a stored switch: committed once stored, taken once by
@@ -533,7 +547,7 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	if !l.cur.IsZero() && !l.cur.SameSession(t) {
 		l.prev = l.cur
 	}
-	l.cur, l.sw, l.woke, l.seen = t, nil, nil, false
+	l.cur, l.sw, l.woke, l.seen, l.again = t, nil, nil, false, ""
 	for _, w := range l.waiters {
 		close(w)
 	}
@@ -563,7 +577,11 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 			args = append(args, t.Window)
 		}
 		p.Argv = h.tr.AttachArgv(lk.cfg, h.towerCommand(lk.cfg, args...))
-		goLine, _ := json.Marshal(proto.GoLine{Loop: l.id, Gen: gen, Home: h.d.id, Inst: hs.inst, MKey: hs.mkey, Session: t.Session, Window: t.Window, Pane: t.Pane, Note: a.Note})
+		if a.Again {
+			l.again = config.NewID() + config.NewID()
+			p.Again = l.again
+		}
+		goLine, _ := json.Marshal(proto.GoLine{Loop: l.id, Gen: gen, Home: h.d.id, Inst: hs.inst, MKey: hs.mkey, Session: t.Session, Window: t.Window, Pane: t.Pane, Note: a.Note, Again: l.again})
 		p.Go = string(goLine)
 		p.Key = lk.standbyKey()
 		p.Link = lk.gen
@@ -757,9 +775,18 @@ func (h *homeRole) after(ctx context.Context, a proto.AfterArgs) *proto.Next {
 	}
 	sw := l.sw
 	l.sw = nil // read once
-	gen, cur := l.gen, l.cur
+	gen, cur, nonce := l.gen, l.cur, l.again
+	reuse := a.Ended && a.Gen == gen && nonce != "" && cur.Host != h.d.id
+	if reuse {
+		l.ending, l.endingAt = a.Gen, time.Now()
+	}
 	h.d.bump()
 	h.d.mu.Unlock()
+	if reuse {
+		// The loop stopped relaying the attach and keeps its session for
+		// the next: the client there is detached back into a standby.
+		go h.endAttach(cur, a.Loop, a.Gen, nonce)
+	}
 	next := h.decide(ctx, a, gen, cur, sw)
 	config.Mark("after " + next.Do)
 	h.d.logf("home: loop %s gen %d exited %d (ended %v): %s %s %s", a.Loop, a.Gen, a.Code, a.Ended, next.Do, next.Target.String(), next.Note)
@@ -881,9 +908,12 @@ func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 // standby offers a loop one standby session per host, the one it is
 // attached to included: the host a hand-off leaves then has one ready for
 // a switch straight back, not one that starts only once it is left.
-func (h *homeRole) standby() []proto.Offer {
+func (h *homeRole) standby(a proto.LoopArgs) []proto.Offer {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
+	if l := h.loops[a.ID]; l != nil {
+		l.standbys = a.Standbys
+	}
 	out := []proto.Offer{}
 	for _, name := range h.order {
 		l := h.links[name]
@@ -1083,7 +1113,13 @@ func (h *homeRole) detail(det *proto.Detail) {
 	slices.Sort(ids)
 	for _, id := range ids {
 		l := h.loops[id]
-		det.Loops = append(det.Loops, proto.LoopStatus{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Host: l.cur.Host, Seen: l.seen})
+		ls := proto.LoopStatus{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Host: l.cur.Host, Seen: l.seen, Standbys: l.standbys}
+		if l.end != nil {
+			end := *l.end
+			end.Ago = time.Since(l.endAt).Milliseconds()
+			ls.End = &end
+		}
+		det.Loops = append(det.Loops, ls)
 		if l.sw != nil {
 			det.Pending = append(det.Pending, proto.PendingSwitch{Loop: l.id, Gen: l.sw.gen, Target: l.sw.target, Nonce: l.sw.nonce, Age: time.Since(l.sw.at).Milliseconds()})
 		}

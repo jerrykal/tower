@@ -590,7 +590,11 @@ func (d *Daemon) dispatch(ctx context.Context, call *proto.Call) (any, error) {
 		}
 		return h.held(a), nil
 	case proto.CallStandby:
-		return h.standby(), nil
+		var a proto.LoopArgs
+		if err := decode(call, &a); err != nil {
+			return nil, err
+		}
+		return h.standby(a), nil
 	case proto.CallEndClient:
 		var a proto.EndClientArgs
 		if err := decode(call, &a); err != nil {

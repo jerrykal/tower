@@ -11,15 +11,21 @@ import (
 const maxDrain = 4 << 20
 
 // input copies the terminal's input to the pty. It reads only once poll
-// says a byte is there, and stops without reading when quit, the
-// session's stop or its exit is signalled, or the terminal hangs up.
-func (s *Session) input(t *Terminal, quit int) {
+// says a byte is there, and stops without reading when quit, rel (the
+// relay's release; -1: none), the session's stop or its exit is
+// signalled, or the terminal hangs up.
+func (s *Session) input(t *Terminal, quit, rel int) {
 	buf := make([]byte, bufSize)
 	fds := []unix.PollFd{
 		{Fd: int32(t.in), Events: unix.POLLIN},
 		{Fd: int32(quit), Events: unix.POLLIN},
 		{Fd: int32(s.stopR), Events: unix.POLLIN},
 		{Fd: int32(s.exitR), Events: unix.POLLIN},
+		{Fd: int32(rel), Events: unix.POLLIN},
+	}
+	stops := []int{quit, s.stopR, s.exitR}
+	if rel >= 0 {
+		stops = append(stops, rel)
 	}
 	for {
 		for i := range fds {
@@ -28,7 +34,7 @@ func (s *Session) input(t *Terminal, quit int) {
 		if _, err := poll(fds, -1); err != nil {
 			return
 		}
-		if fds[1].Revents|fds[2].Revents|fds[3].Revents != 0 {
+		if fds[1].Revents|fds[2].Revents|fds[3].Revents|fds[4].Revents != 0 {
 			return
 		}
 		if fds[0].Revents&unix.POLLIN == 0 {
@@ -41,7 +47,7 @@ func (s *Session) input(t *Terminal, quit int) {
 		if err != nil {
 			return
 		}
-		if writeAll(s.master, buf[:n], quit, s.stopR, s.exitR) != nil {
+		if writeAll(s.master, buf[:n], stops...) != nil {
 			return
 		}
 	}
@@ -49,8 +55,8 @@ func (s *Session) input(t *Terminal, quit int) {
 
 // output copies the stdout pipe's and the pty's output to the terminal
 // until the command exits, putting the loop's queued writes in at
-// boundaries.
-func (s *Session) output(t *Terminal, wakeR int) error {
+// boundaries; with rel (-1: none), until rel is signalled (ErrReleased).
+func (s *Session) output(t *Terminal, wakeR, rel int) error {
 	buf := make([]byte, bufSize)
 	if p := s.pending; len(p) > 0 {
 		s.pending = nil
@@ -64,6 +70,7 @@ func (s *Session) output(t *Terminal, wakeR int) error {
 		{Fd: int32(wakeR), Events: unix.POLLIN},
 		{Fd: int32(s.exitR), Events: unix.POLLIN},
 		{Fd: int32(s.quitR), Events: unix.POLLIN},
+		{Fd: int32(rel), Events: unix.POLLIN},
 	}
 	for {
 		// Queued writes go now if they can; else poll until they must.
@@ -83,6 +90,9 @@ func (s *Session) output(t *Terminal, wakeR int) error {
 		}
 		if fds[4].Revents != 0 {
 			return ErrAbandoned
+		}
+		if fds[5].Revents != 0 {
+			return ErrReleased
 		}
 		if fds[2].Revents != 0 {
 			for {

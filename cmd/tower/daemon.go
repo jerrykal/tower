@@ -168,11 +168,47 @@ func formatStatus(st *proto.Status) string {
 		}
 		fmt.Fprintf(&b, "home %s (%s) as %q: %s\n", h.Name, h.ID, h.As, state)
 	}
+	names := map[string]string{}
+	for _, l := range st.Detail.Links {
+		names[l.ID] = l.Name
+	}
 	for _, l := range st.Detail.Loops {
 		fmt.Fprintf(&b, "loop %s gen %d: at %s, before %s\n", l.ID, l.Gen, l.Cur.String(), l.Prev.String())
+		for _, s := range l.Standbys {
+			name := names[s.Host]
+			if name == "" {
+				name = s.Host
+			}
+			state := "none"
+			if s.State != "" {
+				state = fmt.Sprintf("%s %s", s.State, (time.Duration(s.Ms) * time.Millisecond).Round(time.Second))
+				if s.Again {
+					state += ", reusable"
+				}
+			}
+			fmt.Fprintf(&b, "  standby %s: %s; sessions opened %d, reused %d, given up %d", name, state, s.Opened, s.Reused, s.GivenUp)
+			if s.Why != "" {
+				fmt.Fprintf(&b, " (last: %s)", s.Why)
+			}
+			b.WriteByte('\n')
+		}
+		if e := l.End; e != nil {
+			fmt.Fprintf(&b, "  last detach into a standby: gen %d ok=%v in %dms, %s ago", e.Gen, e.OK, e.Ms, (time.Duration(e.Ago) * time.Millisecond).Round(time.Second))
+			if e.Note != "" {
+				fmt.Fprintf(&b, " (%s)", e.Note)
+			}
+			b.WriteByte('\n')
+		}
 	}
 	for _, c := range st.Detail.Clients {
-		fmt.Fprintf(&b, "client %s (pid %d) of loop %s at home %s\n", c.Name, c.Pid, c.Loop, c.Home)
+		fmt.Fprintf(&b, "client %s (pid %d) of loop %s at home %s", c.Name, c.Pid, c.Loop, c.Home)
+		if c.Reuse {
+			b.WriteString(", reusable")
+		}
+		if c.End {
+			b.WriteString(", to be detached once seen")
+		}
+		b.WriteByte('\n')
 	}
 	return b.String()
 }

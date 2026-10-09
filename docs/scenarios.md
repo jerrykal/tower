@@ -110,6 +110,7 @@ See [design/install.md](design/install.md).
 | LC06 | A switch to a host half-open 1s ago lands in seconds | towerd, loop | pass |
 | LC07 | Spawn cost: tower runs tmux past version-manager shims, and passes the machine key down | tmux, config | pass |
 | LC08 | A switch's critical path at 0/50/150/400ms round trips: the loop ends the old client itself; with standbys laptop → remote 0.5r, remote → remote 1r | loop, towerd | pass |
+| LC09 | `prefix L` back to a host 50, 100 or 200ms after leaving it is as fast as 2s after once the host has had a round trip and 50ms, and opens no session | loop, towerd | pass |
 
 ## Freshness and dashboards
 
@@ -152,7 +153,7 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 
 | ID | What must hold | Package | Status |
 | --- | --- | --- | --- |
-| LS01 | Hand-offs through standbys; the host entered gets a new one, so the host left has one ready; resize reaches the client; standbys are no clients; nothing outlives the loop (a killed loop's standbys once they miss their heartbeats) | loop | pass |
+| LS01 | Hand-offs through standbys; the host left keeps its session as its standby, ready again once its client is detached back into a standby, and no session is opened for the host left or entered; resize reaches the client; standbys are no clients; nothing outlives the loop (a killed loop's standbys once they miss their heartbeats) | loop | pass |
 | LS02 | A stuck standby is given up after its wait and a new session lands, the frame held throughout | loop | pass |
 | LS03 | Wake, network change, towerd killed, stall: each replaces the standby; one made for an earlier link is never used | loop, towerd | pass |
 | LS04 | `TOWER_STANDBY=0`, `standby = false`, a remote upgrade, a reload: standbys follow | loop, towerd | pass |
@@ -160,8 +161,12 @@ it makes besides kill, rename and new (towerd's side; `a_atlas_test.go`).
 | LS06 | The relay is byte-exact both ways; frame writes land between sequences | relay | pass |
 | LS07 | The relay adds microseconds to a keystroke's echo | relay | pass |
 | LS08 | The relay under load: throughput, keys into a flood, backpressure, flat memory | relay | pass |
-| LS09 | Every remote attach relayed: exits 255, 43, 42, hand-offs, a stall, `prefix d` the same as with ssh given the terminal | loop, relay | pass |
+| LS09 | Every remote attach relayed: exits 255, 43, 42, hand-offs, a stall, `prefix d` the same as with ssh given the terminal, through standbys with and without reuse (`TOWER_REUSE=0`) | loop, relay | pass |
 | LS10 | A remote attach over a shared master leaves no client behind, even where its session outlives its ssh: hand-offs back and forth leave each host only the terminal's client; a killed loop's client, its host never told its ssh ended (the network changed), goes once the home calls the loop gone | towerd, loop | pass |
+| LS11 | Sessions are reused: hand-offs back and forth between the laptop and a host and between two hosts open no ssh session once each host has its standby, each host keeps its one shim, keys reach every new client, and the host left keeps no client | loop, relay, towerd | pass |
+| LS12 | A session whose client does not end in time once the terminal has left its host (a 1s round trip, 300ms to end it) is given up and ended, a new standby made, and the host left with no client | loop, towerd | pass |
+| LS13 | Reuse with a side from before it (`TOWER_REUSE=0`): a host whose shims write no again marker keeps no session and gets a new standby each time one is taken, while another host's session is still reused; a loop that asks for no nonce keeps none; neither leaves a client, and `prefix d` ends the loop | loop, towerd | pass |
+| LS14 | The host's towerd killed while the terminal is on it through a session it will reuse, then a hand-off away: it lands; the session is detached back into a standby or given up, the host keeps no client, gets a ready standby, and a switch back lands | loop, towerd | pass |
 
 LS06 and LS07 are tests of `internal/relay` (`go test ./internal/relay`):
 they need no host. LS08 is there too against a command given the terminal

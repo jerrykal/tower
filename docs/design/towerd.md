@@ -157,7 +157,7 @@ gone. Then on the control client:
 | panes | `list-panes -s -t $id` (every pane of a session's windows), or `list-panes -t @id` for a window (`Kind`, or a target with a window and no `Kind`) |
 | has | `has-session -t $id`; no control client: `tmux -N has-session`; no server means gone |
 | dup | `new-session -d -t $id -s <name>` (grouped) |
-| detach | from a home's `exec` only: `detach-client -t <name>` for the client (`pid::name`) registered with that home (the stream's, not the request's), loop and gen, and still the client the registration was bound to; otherwise, or gone meanwhile, "already gone". No re-read before the answer: tmux drops the client only once it has gone, and the watch sees that |
+| detach | from a home's `exec` only: `detach-client -t <name>` for the client (`pid::name`) registered with that home (the stream's, not the request's), loop and gen, if tmux lists that name with that pid now (a reused session's clients share their tty's name, so a snapshot's could be a newer client's); otherwise "already gone". Without a client, the attach's, by its nonce (`Nonce`) from that home: bound, detached so; registered but not bound yet, marked and detached once bound; not registered yet, the nonce remembered for 10s and its registration marked as it comes ("detached once its client is there"). A registration that carries a resume command is detached with `-E <command>`, by either form, so its client becomes a standby and its session lives on. No signal to a pid. No re-read before the answer: tmux drops the client only once it has gone, and the watch sees that |
 
 **A pane** is `pane_id`, `window_id`, left, top, width, height, active,
 `pane_current_command` and `pane_current_path`, the path with `~` for
@@ -215,7 +215,9 @@ ignores it.
 ## Registrations (clients.go)
 
 `register{pid, loop, gen, home, inst}` stores an unbound registration
-(one per pid) and schedules re-reads at 150ms, 600ms and 1.5s. A snapshot
+(one per pid) and schedules re-reads at 150ms, 600ms and 1.5s; an attach
+its home asked to end before it registered has its client ended there
+and then (SIGTERM to the pid). A snapshot
 binds an unbound registration to the tmux client with that pid (name and
 `client_created`) and follows a bound one to its client's session and
 window; one whose client is gone, whose server instance changed, or that
@@ -425,6 +427,11 @@ type loopRec struct {
 - `standby`: offers for up, unstalled hosts up for 1s, standby allowed,
   the loop's current host included; key `link gen | towerd id | version | tmux
   args | tower path`.
+- `prepare` with `Again` gives a remote attach a fresh nonce
+  (`Prepared.Again`, also in the go line), and `after` with `Ended` for
+  that attach sends `exec detach` naming the attach (loop, gen, no
+  client) at once, off the hand-off's path: the loop keeps the session
+  for its next attach there, and its shim waits for the client to end.
 - Loops expire 15s after their last beat; the last target is saved in
   `last.json`.
 
@@ -445,7 +452,9 @@ and sends `exec detach` off the hand-off path, again after 5s while the
 client is still listed (after an hour from a towerd that does not know
 `detach`), logging a client's first try and its success. Clients on this
 machine are left alone: the loop detaches them itself, and one whose
-loop died still has the terminal.
+loop died still has the terminal. A reused attach's client, which `after`
+has asked its host to detach back into a standby (`endAttach`, by the
+attach's nonce), is left to that for 5s, or until it fails.
 
 **Routing** (`route`): a request for this machine runs here; otherwise
 `exec` on the target's link (refused at once if it is not up, or
