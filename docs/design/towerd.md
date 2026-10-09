@@ -297,6 +297,8 @@ this towerd holds it (the home's record, or a remote's view) is the
 client's own attach and its previous target is on this server; a client
 that moved on this server since (`list-clients` says where it is now)
 came from that record's current target, which is then the previous one.
+A previous session this server no longer has (the one tmux moved the
+client from when it ended) is left to the home, which passes it over.
 Anything else is a `last` request through the switch path, which the
 home answers from its own record of the loop (`storeLast`), not from the
 view a remote holds: pushes to a remote are paced, so right after a
@@ -307,7 +309,10 @@ attach's client, answers a previous target on the asker's own server
 passing on the ack's `Ended`: without it the CLI ends the client as a
 dashboard does (hold, `detach-client -E 'exit 42'`). With the home not
 connected, or a home that does not know the request, the towerd answers
-from its own view as before.
+from its own view as before. The CLI says a switch that fails, or a
+fallback `switch-client -l` with no last session, on the client
+(`display-message`), never as an exit status: `run-shell` would put the
+pane in view mode with "returned 1".
 
 ## Home role (home.go, link.go)
 
@@ -379,25 +384,39 @@ a link that just came up; numbered per home.
 
 ```go
 type loopRec struct {
-    id        string
-    gen       int
-    cur, prev proto.Ref
-    sw        *pendingSwitch // target, nonce, gen, at, wait, aborted
-    waiters   []chan struct{} // wait-switch calls of the current attach
-    woke      *switchWait     // the attach's one wake: held, until, waiting, ended
-    seen      bool            // the home has seen this attach's client
-    beat      time.Time
+    id      string
+    gen     int
+    cur     proto.Ref
+    hist    []proto.Ref     // the sessions it was on, the most recent first
+    sw      *pendingSwitch  // target, nonce, gen, at, wait, aborted
+    waiters []chan struct{} // wait-switch calls of the current attach
+    woke    *switchWait     // the attach's one wake: held, until, waiting, ended
+    seen    bool            // the home has seen this attach's client
+    beat    time.Time
 }
 ```
 
+- **History**: every new target of a loop (a prepare, a move its client
+  made) goes first in its `hist` and in the home's own `recent`, once per
+  session, 16 at most; a session known gone (its host up, its server
+  another instance or without it) leaves both then. `recent` is saved in
+  `last.json`. A loop the home learns begins its `hist` with `recent`,
+  so `tower last` still has a target after `prefix d` and `tower` again,
+  or a home restart. The previous target (`prevLocked`, in the view's
+  `prev`) is the most recent entry other than `cur` that a switch can take
+  now: its host up, the same server instance, the session still there
+  (a window gone is dropped, the session kept). Entries that are not
+  are passed over, not removed, so a host that comes back offers its
+  sessions again.
+
 - `loop` (beat): a loop the home does not know is learned from the beat
-  (cur, prev, gen), and every host's last client list is replayed so moves
-  made while the home was gone apply (V07); a new loop with no target
-  gets `last.json`'s.
+  (cur, prev, gen), its history begun with `recent`, and every host's
+  last client list is replayed so moves made while the home was gone
+  apply (V07); a new loop with no target gets `recent`'s first.
 - `prepare`: wait for the host (8s; stalled, failed, dup or off refused at
   once), check the instance and the session (and window) — "restarted
   since it was listed: … is gone", "session … no longer exists" — then
-  `gen++`, `prev = cur` (a new session), `cur = target`, drop a pending
+  `gen++`, `cur = target` (first in the history), drop a pending
   switch, wake the old attach's waiters, and build the argv (local: the
   shim; remote: `ssh -t` and the shim), the go line and the standby key.
   An unknown loop is created.
@@ -419,9 +438,9 @@ type loopRec struct {
   aborted by a stall hands back to `cur` with the reason. 43: the picker.
   255 on a remote: reconnect. Otherwise `has` is asked of the session's
   host: still there → exit (a pending switch discarded, said so); gone →
-  the previous session if nobody is on it, else the most recently used
-  session nobody is on, on any reachable host ("tower: X ended; now on
-  Y"), else exit. A client of this home's whose attach is over (an older
+  the most recent session of the loop's history that a switch can take
+  and nobody is on, else the most recently used session nobody is on, on
+  any reachable host ("tower: X ended; now on Y"), else exit. A client of this home's whose attach is over (an older
   generation than its loop's, not yet reaped) is nobody, unless its
   host's towerd told the reap it cannot detach (it then stays).
 - `standby`: offers for up, unstalled hosts up for 1s, standby allowed,

@@ -589,7 +589,7 @@ func TestLastPickedByTheHome(t *testing.T) {
 		return real != "" && g != nil && g.bound()
 	})
 	a.d.mu.Lock()
-	h.loops["N"].prev = alpha
+	h.loops["N"].hist = []proto.Ref{beta, alpha}
 	a.d.mu.Unlock()
 	view := func(cur, prev proto.Ref) {
 		b.d.mu.Lock()
@@ -611,10 +611,25 @@ func TestLastPickedByTheHome(t *testing.T) {
 		t.Fatalf("last right after a move on B: %+v, want a local switch back to beta", r)
 	}
 
-	// A loop with no previous session: tmux's own switch-client -l.
+	// A new loop begins with the home's history: tower last after tower
+	// restarts goes where the terminal was before.
 	h.beat(proto.LoopBeat{ID: "M"})
 	p, _ = h.prepare(ctx, proto.PrepareArgs{Loop: "M", Target: bravo})
 	b.d.register(proto.RegisterArgs{Pid: 999_997, Loop: "M", Gen: p.Gen, Home: a.d.id})
+	if r := b.d.last(ctx, "999997:1:/dev/fake"); !r.Local || r.Target.Session != beta.Session {
+		t.Fatalf("last in a new loop: %+v, want a local switch to beta, the home's last before", r)
+	}
+	// A session gone is passed over for the one before it.
+	b.tmux("kill-session", "-t", "beta")
+	w.eventually(3*time.Second, "beta gone at the home", func() bool { return !viewHas(a.d.view(proto.ViewArgs{}).View, "B", "beta") })
+	if r := b.d.last(ctx, "999997:1:/dev/fake"); !r.Stored || r.Target.Session != alpha.Session || r.Target.Host != a.d.id {
+		t.Fatalf("last with the previous session gone: %+v, want a switch stored to A:alpha", r)
+	}
+	// With every session before gone: none, and tmux's own switch-client -l.
+	a.d.mu.Lock()
+	h.loops["M"].hist = []proto.Ref{bravo, beta}
+	h.loops["M"].sw = nil
+	a.d.mu.Unlock()
 	if r := b.d.last(ctx, "999997:1:/dev/fake"); r.Stored || r.Local || !r.Target.IsZero() {
 		t.Fatalf("last with no previous session: %+v", r)
 	}

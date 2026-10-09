@@ -381,8 +381,8 @@ func TestLastFollowsTheClientThatMoved(t *testing.T) {
 		{Loop: "LB", Gen: 1, Home: "home0001", Session: "$1"}, // stayed, listed after
 	})
 	d.mu.Unlock()
-	if h.last.Session != "$2" {
-		t.Fatalf("last is %+v, want the client that moved, on $2", h.last)
+	if len(h.recent) == 0 || h.recent[0].Session != "$2" {
+		t.Fatalf("recent is %+v, want the client that moved, on $2, first", h.recent)
 	}
 }
 
@@ -399,7 +399,7 @@ func TestMoveOnPassesOverTheLoopsOwnOldClient(t *testing.T) {
 		{ID: "$2", Name: "other", Ago: 9000},
 	}}
 	ended := proto.Ref{Host: "home0001", Session: "$3"}
-	h.loops["L"] = &loopRec{id: "L", gen: 3, cur: ended, prev: proto.Ref{Host: "home0001", Session: "$1"}, seen: true}
+	h.loops["L"] = &loopRec{id: "L", gen: 3, cur: ended, hist: []proto.Ref{ended, {Host: "home0001", Session: "$1"}}, seen: true}
 	for _, tc := range []struct {
 		name   string
 		client proto.Client

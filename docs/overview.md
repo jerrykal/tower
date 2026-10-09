@@ -173,7 +173,10 @@ the first attach, so a second terminal window can choose its own target
 instead of joining the last one; `Esc` there attaches to the last target,
 or exits when there is none.
 
-`tower last` is tmux's `switch-client -l` across hosts.
+`tower last` is tmux's `switch-client -l` across hosts. It remembers the
+sessions the terminal was on, across `prefix d` and `tower` again, and
+passes over one that has ended, or whose host is not up, for the one
+before it.
 
 ## Feeling like local tmux
 

@@ -24,14 +24,15 @@ const (
 	heldWait       = 100 * time.Millisecond
 	standbyUpFor   = time.Second // a link must be up this long before standbys are offered
 	hostsSaveEvery = 5 * time.Second
+	histMax        = 16 // sessions a loop's history, and the home's, keep
 )
 
 // handoffTTL is how long a stored switch stays valid (TOWER_HANDOFF_TTL).
 func handoffTTL() time.Duration { return config.Duration("TOWER_HANDOFF_TTL", 30*time.Second) }
 
 // homeRole links to every host in hosts.toml, merges their states with
-// the local one into the view, and owns its loops' current, previous and
-// pending switch. Its fields are guarded by Daemon.mu.
+// the local one into the view, and owns its loops' current target,
+// history and pending switch. Its fields are guarded by Daemon.mu.
 type homeRole struct {
 	d    *Daemon
 	tr   Transport
@@ -46,7 +47,7 @@ type homeRole struct {
 	netGen   uint64
 	hostsMod time.Time
 	cache    map[string]cachedHost
-	last     proto.Ref
+	recent   []proto.Ref // every loop's targets, the most recent first (last.json)
 	savedAt  time.Time
 	reaping  map[string]*reapState // stale clients being detached, by reapKey
 	orphans  map[string]time.Time  // clients of a loop the home does not know: since when
@@ -57,14 +58,15 @@ type homeRole struct {
 
 // loopRec is one attach loop of this home.
 type loopRec struct {
-	id        string
-	gen       int
-	cur, prev proto.Ref
-	sw        *pendingSwitch
-	waiters   []chan struct{} // wait-switch calls of the current attach
-	woke      *switchWait     // the current attach's wake, once a switch woke the loop
-	seen      bool            // the home has seen this attach's client
-	beat      time.Time
+	id      string
+	gen     int
+	cur     proto.Ref
+	hist    []proto.Ref // the sessions it was on, the most recent first: tower last's choices
+	sw      *pendingSwitch
+	waiters []chan struct{} // wait-switch calls of the current attach
+	woke    *switchWait     // the current attach's wake, once a switch woke the loop
+	seen    bool            // the home has seen this attach's client
+	beat    time.Time
 	// again is the current attach's ended-marker nonce: its loop reuses
 	// the attach's session once the client is detached back into a
 	// standby ("": it does not).
@@ -115,7 +117,8 @@ type cachedHost struct {
 }
 
 type lastFile struct {
-	Target proto.Ref `json:"target"`
+	Target proto.Ref   `json:"target"`
+	Recent []proto.Ref `json:"recent,omitempty"`
 }
 
 func newHome(d *Daemon) *homeRole {
@@ -128,7 +131,10 @@ func newHome(d *Daemon) *homeRole {
 	config.ReadJSON(d.env.State("hosts.json"), &h.cache)
 	var lf lastFile
 	config.ReadJSON(d.env.State("last.json"), &lf)
-	h.last = lf.Target
+	h.recent = lf.Recent
+	if len(h.recent) == 0 && !lf.Target.IsZero() {
+		h.recent = []proto.Ref{lf.Target}
+	}
 	return h
 }
 
@@ -277,7 +283,7 @@ func (h *homeRole) buildView(now time.Time) proto.View {
 	slices.Sort(ids)
 	for _, id := range ids {
 		l := h.loops[id]
-		v.Loops = append(v.Loops, proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Seen: l.seen})
+		v.Loops = append(v.Loops, proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: h.prevLocked(l), Seen: l.seen})
 	}
 	return v
 }
@@ -323,7 +329,6 @@ func (h *homeRole) applyClients(hostID, hostName, inst string, sessions []proto.
 		}
 		switch {
 		case c.Session != l.cur.Session:
-			l.prev = l.cur
 			l.cur = proto.Ref{Host: hostID, Name: hostName, Inst: inst, Session: c.Session, Window: c.Window, Label: label}
 			moved = true
 		case c.Window != l.cur.Window || label != l.cur.Label:
@@ -331,7 +336,7 @@ func (h *homeRole) applyClients(hostID, hostName, inst string, sessions []proto.
 			moved = true
 		}
 		if moved {
-			h.last = l.cur
+			h.rememberLocked(l, l.cur)
 			changed = true
 		}
 	}
@@ -359,6 +364,75 @@ func (h *homeRole) replayClients() {
 	}
 }
 
+// remember puts r first in a history, once per session, keeping histMax.
+func remember(hist []proto.Ref, r proto.Ref) []proto.Ref {
+	out := append(make([]proto.Ref, 0, min(len(hist)+1, histMax)), r)
+	for _, o := range hist {
+		if len(out) == histMax {
+			break
+		}
+		if !o.SameSession(r) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// rememberLocked makes r the loop's most recent target, and the home's:
+// a loop that starts later begins its history with the home's. Sessions
+// known to be gone leave both. Call with mu held.
+func (h *homeRole) rememberLocked(l *loopRec, r proto.Ref) {
+	l.hist = slices.DeleteFunc(remember(l.hist, r), h.goneLocked)
+	h.recent = slices.DeleteFunc(remember(h.recent, r), h.goneLocked)
+}
+
+// goneLocked reports whether r's session is known to be gone: its host
+// is reachable and its server is another instance, or has no such
+// session. A host that cannot be asked keeps its sessions. Call with mu
+// held.
+func (h *homeRole) goneLocked(r proto.Ref) bool {
+	hs := h.hostOf(r.Host)
+	if hs == nil || hs.unreachable() != "" || hs.inst == "" {
+		return false
+	}
+	return r.Inst != "" && r.Inst != hs.inst || !slices.ContainsFunc(hs.sessions, func(s proto.Session) bool { return s.ID == r.Session })
+}
+
+// liveLocked is r as a switch can take it now: on a host that is up, its
+// server the same instance, the session still there (its window too, or
+// none named). Call with mu held.
+func (h *homeRole) liveLocked(r proto.Ref) (proto.Ref, bool) {
+	hs := h.hostOf(r.Host)
+	if hs == nil || hs.unreachable() != "" || r.Inst != "" && hs.inst != "" && r.Inst != hs.inst {
+		return r, false
+	}
+	i := slices.IndexFunc(hs.sessions, func(s proto.Session) bool { return s.ID == r.Session })
+	if i < 0 {
+		return r, false
+	}
+	s := hs.sessions[i]
+	if r.Window != "" && !slices.ContainsFunc(s.Windows, func(w proto.Window) bool { return w.ID == r.Window }) {
+		r.Window = ""
+	}
+	r.Name, r.Label = hs.name, s.Name
+	return r, true
+}
+
+// prevLocked is the loop's previous target, where tower last takes it:
+// the most recent session of its history, other than the current one,
+// that a switch can take now. Call with mu held.
+func (h *homeRole) prevLocked(l *loopRec) proto.Ref {
+	for _, r := range l.hist {
+		if r.SameSession(l.cur) {
+			continue
+		}
+		if r, ok := h.liveLocked(r); ok {
+			return r
+		}
+	}
+	return proto.Ref{}
+}
+
 // save writes hosts.json and last.json, at most every few seconds unless
 // now.
 func (h *homeRole) save(now bool) {
@@ -377,10 +451,13 @@ func (h *homeRole) save(now bool) {
 	for k, v := range h.cache {
 		cache[k] = v
 	}
-	last := h.last
+	lf := lastFile{Recent: slices.Clone(h.recent)}
+	if len(lf.Recent) > 0 {
+		lf.Target = lf.Recent[0]
+	}
 	h.d.mu.Unlock()
 	config.WriteJSON(h.d.env.State("hosts.json"), cache)
-	config.WriteJSON(h.d.env.State("last.json"), lastFile{Target: last})
+	config.WriteJSON(h.d.env.State("last.json"), lf)
 }
 
 // beat is a loop's heartbeat (and its first call). A loop the home does
@@ -391,10 +468,17 @@ func (h *homeRole) beat(a proto.LoopBeat) *proto.LoopAck {
 	ack := &proto.LoopAck{}
 	l := h.loops[a.ID]
 	if l == nil {
-		l = &loopRec{id: a.ID, gen: a.Gen, cur: a.Cur, prev: a.Prev}
+		// Its history begins with the home's: tower last works across a
+		// restart of tower or of the home.
+		l = &loopRec{id: a.ID, gen: a.Gen, cur: a.Cur, hist: slices.Clone(h.recent)}
+		for _, r := range []proto.Ref{a.Prev, a.Cur} {
+			if !r.IsZero() {
+				l.hist = remember(l.hist, r)
+			}
+		}
 		h.loops[a.ID] = l
-		if a.Cur.IsZero() {
-			ack.Last = h.last
+		if a.Cur.IsZero() && len(h.recent) > 0 {
+			ack.Last = h.recent[0]
 		}
 		h.replayClients()
 		h.d.bump()
@@ -540,19 +624,16 @@ func (h *homeRole) prepare(ctx context.Context, a proto.PrepareArgs) (*proto.Pre
 	h.d.mu.Lock()
 	l := h.loops[a.Loop]
 	if l == nil {
-		l = &loopRec{id: a.Loop, beat: time.Now()}
+		l = &loopRec{id: a.Loop, beat: time.Now(), hist: slices.Clone(h.recent)}
 		h.loops[a.Loop] = l
 	}
 	l.gen++
-	if !l.cur.IsZero() && !l.cur.SameSession(t) {
-		l.prev = l.cur
-	}
 	l.cur, l.sw, l.woke, l.seen, l.again = t, nil, nil, false, ""
 	for _, w := range l.waiters {
 		close(w)
 	}
 	l.waiters = nil
-	h.last = t
+	h.rememberLocked(l, t)
 	// The previous attach has ended: its client goes now, not when its
 	// host next sends a state.
 	h.reapStaleLocked()
@@ -674,17 +755,21 @@ func (h *homeRole) storeSwitch(ctx context.Context, req *proto.Request) *proto.A
 // storeLast is tower last, here or relayed: the loop's previous target,
 // read where the loop's attaches are decided, so a press right after a
 // hand-off goes back where the terminal was, whatever view the asker's
-// towerd holds. A target on the asker's own server is answered Local, for
-// its switch-client; any other is stored as a switch to it. Every answer
-// that has a target names it (Ref).
+// towerd holds. A session gone, or on a host not up, is passed over for
+// the one before it. A target on the asker's own server is answered
+// Local, for its switch-client; any other is stored as a switch to it.
+// Every answer that has a target names it (Ref).
 func (h *homeRole) storeLast(ctx context.Context, req *proto.Request) *proto.Ack {
 	h.d.mu.Lock()
 	l := h.loops[req.Loop]
-	if l == nil || l.prev.IsZero() {
+	var prev proto.Ref
+	if l != nil {
+		prev = h.prevLocked(l)
+	}
+	if prev.IsZero() {
 		h.d.mu.Unlock()
 		return &proto.Ack{ID: req.ID, Err: "no previous session"}
 	}
-	prev := l.prev
 	if req.Gen != l.gen {
 		h.d.mu.Unlock()
 		return &proto.Ack{ID: req.ID, Err: fmt.Sprintf("request from an earlier attach (gen %d, now %d)", req.Gen, l.gen), Ref: &prev}
@@ -846,46 +931,19 @@ func (h *homeRole) sessionGone(ctx context.Context, r proto.Ref) (bool, error) {
 	return ack.Gone, nil
 }
 
-// moveOn picks where a loop goes when its session ended: its previous
-// session if nobody is on it, else the most recently used session nobody
-// is on, on any reachable host. A client of this home's whose attach is
-// over (an older generation than its loop's) is nobody: the session
-// counts it attached only until the reap detaches it (decision 112), and
-// the previous session is where the loop's own last attach was.
+// moveOn picks where a loop goes when its session ended: the most recent
+// session of its history nobody is on, else the most recently used
+// session nobody is on, on any reachable host.
 func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 	h.d.mu.Lock()
 	defer h.d.mu.Unlock()
-	now := time.Now()
-	v := h.buildView(now)
-	over := map[[2]string]int{}
-	for hostID, cs := range h.clientsB {
-		for _, c := range cs {
-			l := h.loops[c.Loop]
-			if c.Home != h.d.id || l == nil || c.Gen == l.gen {
-				continue
-			}
-			// The reap detaches it, unless its host's towerd answered
-			// that it cannot (asked again only after reapOldPeer).
-			if r := h.reaping[reapKey(hostID, c)]; r != nil && r.next.Sub(now) > reapRetry {
-				continue
-			}
-			over[[2]string{hostID, c.Session}]++
+	if l := h.loops[loop]; l != nil {
+		if r, ok := h.fromHistLocked(l, ended); ok {
+			return r, true
 		}
 	}
-	taken := func(hostID string, s proto.Session) bool { return s.Attached > over[[2]string{hostID, s.ID}] }
-	free := func(r proto.Ref) bool {
-		host := v.HostByID(r.Host)
-		if host == nil || !host.Reachable() || host.Inst != r.Inst && r.Inst != "" {
-			return false
-		}
-		i := slices.IndexFunc(host.Sessions, func(s proto.Session) bool { return s.ID == r.Session })
-		return i >= 0 && !taken(host.ID, host.Sessions[i])
-	}
-	if l := h.loops[loop]; l != nil && !l.prev.IsZero() && !l.prev.SameSession(ended) && free(l.prev) {
-		p := l.prev
-		p.Window = ""
-		return p, true
-	}
+	v := h.buildView(time.Now())
+	taken := h.takenLocked()
 	var best proto.Ref
 	bestAgo := int64(-1)
 	for _, host := range v.Hosts {
@@ -903,6 +961,57 @@ func (h *homeRole) moveOn(loop string, ended proto.Ref) (proto.Ref, bool) {
 		}
 	}
 	return best, bestAgo >= 0
+}
+
+// fromHistLocked is where a loop whose session ended goes back to: the
+// most recent session of its history, other than the ended one, that a
+// switch can take and nobody is on. Call with mu held.
+func (h *homeRole) fromHistLocked(l *loopRec, ended proto.Ref) (proto.Ref, bool) {
+	var taken func(string, proto.Session) bool
+	for _, r := range l.hist {
+		if r.SameSession(ended) {
+			continue
+		}
+		r, ok := h.liveLocked(r)
+		if !ok {
+			continue
+		}
+		if taken == nil {
+			taken = h.takenLocked()
+		}
+		hs := h.hostOf(r.Host)
+		i := slices.IndexFunc(hs.sessions, func(s proto.Session) bool { return s.ID == r.Session })
+		if !taken(r.Host, hs.sessions[i]) {
+			r.Window = ""
+			return r, true
+		}
+	}
+	return proto.Ref{}, false
+}
+
+// takenLocked reports whether somebody is on a session of a host. A
+// client of this home's whose attach is over (an older generation than
+// its loop's) is nobody: the session counts it attached only until the
+// reap detaches it (decision 112), and a loop's history holds where its
+// own last attach was. Call with mu held.
+func (h *homeRole) takenLocked() func(hostID string, s proto.Session) bool {
+	now := time.Now()
+	over := map[[2]string]int{}
+	for hostID, cs := range h.clientsB {
+		for _, c := range cs {
+			l := h.loops[c.Loop]
+			if c.Home != h.d.id || l == nil || c.Gen == l.gen {
+				continue
+			}
+			// The reap detaches it, unless its host's towerd answered
+			// that it cannot (asked again only after reapOldPeer).
+			if r := h.reaping[reapKey(hostID, c)]; r != nil && r.next.Sub(now) > reapRetry {
+				continue
+			}
+			over[[2]string{hostID, c.Session}]++
+		}
+	}
+	return func(hostID string, s proto.Session) bool { return s.Attached > over[[2]string{hostID, s.ID}] }
 }
 
 // standby offers a loop one standby session per host, the one it is
@@ -1113,7 +1222,7 @@ func (h *homeRole) detail(det *proto.Detail) {
 	slices.Sort(ids)
 	for _, id := range ids {
 		l := h.loops[id]
-		ls := proto.LoopStatus{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev, Host: l.cur.Host, Seen: l.seen, Standbys: l.standbys}
+		ls := proto.LoopStatus{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: h.prevLocked(l), Host: l.cur.Host, Seen: l.seen, Standbys: l.standbys}
 		if l.end != nil {
 			end := *l.end
 			end.Ago = time.Since(l.endAt).Milliseconds()

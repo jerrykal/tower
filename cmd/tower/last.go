@@ -16,8 +16,9 @@ import (
 // cmdLast is tower last, tmux's switch-client -l across hosts, run by
 // prefix L for the client that pressed it (TOWER_CLIENT). It falls back to
 // tmux's own switch-client -l when the terminal has no loop, the loop has
-// no previous session, or towerd cannot be reached. A hand-off refused
-// says why on the client, as tmux's own errors do.
+// no previous session, or towerd cannot be reached. A hand-off refused,
+// or a switch that fails, says why on the client, as tmux's own errors
+// do: an exit status would put the pane in view mode with "returned 1".
 func cmdLast(args []string) error {
 	cl := os.Getenv("TOWER_CLIENT")
 	id, _ := proto.ParseClient(cl)
@@ -41,6 +42,26 @@ func cmdLast(args []string) error {
 		}
 		return err
 	}
+	// say puts note on the client, as tmux says its own errors.
+	say := func(ctx context.Context, note string) {
+		if _, err := srv.Run(ctx, refusal(name, note)...); err != nil && strings.Contains(err.Error(), "usage: display-message") {
+			// tmux 3.2 takes -c for a flag: say it on the client tmux
+			// finds for the pane prefix L was pressed in, most likely the
+			// one that pressed it.
+			srv.Run(ctx, refusal("", note)...)
+		}
+	}
+	// switched says a switch-client that failed (a session gone since
+	// it was chosen, tmux's own last session gone) and returns nil.
+	switched := func(ctx context.Context, err error, note string) error {
+		if err = settle(err); err != nil {
+			if note == "" {
+				note = err.Error()
+			}
+			say(ctx, note)
+		}
+		return nil
+	}
 	fallback := func() error {
 		args := []string{"switch-client", "-l"}
 		if name != "" {
@@ -49,7 +70,7 @@ func cmdLast(args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, err := srv.Run(ctx, args...)
-		return settle(err)
+		return switched(ctx, err, "no previous session")
 	}
 	if err != nil || cl == "" {
 		return fallback()
@@ -79,17 +100,12 @@ func cmdLast(args []string) error {
 			a = append(a, ";", "select-window", "-t", res.Target.Window)
 		}
 		_, err := srv.Run(ctx, a...)
-		return settle(err)
+		return switched(ctx, err, "")
 	case !res.Target.IsZero():
 		// Refused: an earlier attach's client (its loop moved on since
 		// the key), or a host not up.
 		tmux.UseBin(srv.Bin)
-		if _, err := srv.Run(ctx, refusal(name, res.Note)...); err != nil && strings.Contains(err.Error(), "usage: display-message") {
-			// tmux 3.2 takes -c for a flag: say it on the client tmux
-			// finds for the pane prefix L was pressed in, most likely the
-			// one that pressed it.
-			srv.Run(ctx, refusal("", res.Note)...)
-		}
+		say(ctx, res.Note)
 		return nil
 	}
 	return fallback()

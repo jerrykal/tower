@@ -58,7 +58,7 @@ closed.
 | Path | Holds |
 | --- | --- |
 | `~/.config/tower/hosts.toml` | the host list |
-| `~/.local/state/tower/towerd/<machine>-<tag>/` | `id`, `towerd.log`, `towerd.pid`, `ctl.pid` (the control client), `clients.json` (registered clients, survives restarts), `hosts.json` (home: what it learned per host, with the last known sessions), `last.json` (the loops' last target), `keys.json` (bindings towerd replaced) |
+| `~/.local/state/tower/towerd/<machine>-<tag>/` | `id`, `towerd.log`, `towerd.pid`, `ctl.pid` (the control client), `clients.json` (registered clients, survives restarts), `hosts.json` (home: what it learned per host, with the last known sessions), `last.json` (the loops' recent targets, the most recent first), `keys.json` (bindings towerd replaced) |
 | `<run>/<tag>.sock`, `<run>/<tag>.lock` | the towerd socket and its lock |
 | `<run>/cm/%C` | ssh control sockets |
 
@@ -375,7 +375,7 @@ and the exit code. The home takes the stored switch (read once):
 | 43 | – | picker: "<host> restarted since it was listed; pick again" |
 | 255 | remote | reconnect to the current target at once (prepare waits for the link), then with backoff 1s → 30s while it keeps failing; a failed prepare pauses at most 4s; more than 10s attached starts the backoff afresh; a new link to that host ends the pause; `ctrl-c` gives the picker (S13, LC01, LC02, LC04) |
 | other | the session still exists (`prefix d`, the client closed) | exit, as tmux does; a pending switch is discarded and said so (S07, S10) |
-| other | the session is gone, and tmux could not move the client on that server | the loop's previous session if nobody is on it, else the most recently used session nobody is on, on any reachable host, with a status-line note (S25) |
+| other | the session is gone, and tmux could not move the client on that server | the most recent session of the loop's history nobody is on, else the most recently used session nobody is on, on any reachable host, with a status-line note (S25) |
 | other | the session is gone and no such session exists anywhere | exit (S25) |
 
 Whether the session still exists is asked of its host directly
@@ -604,7 +604,9 @@ own:
   up) it says on the client, as tmux says its own errors (on tmux 3.2,
   which cannot name a client to `display-message`, on the one tmux finds
   for the pane); an error once
-  its client is gone it drops.
+  its client is gone it drops. A switch that fails, the fallback's
+  included ("no previous session"), it says on the client too, never as
+  an exit status, which `run-shell` shows as "returned 1" in view mode.
 - `TOWER_BIND=0` turns the bindings off (V08).
 
 **Alert hooks.** tmux sets a window's bell, activity and silence flags
@@ -709,14 +711,22 @@ says "starting tmux on <host>…" (S17).
 
 Kept per loop, by its home:
 
-- An attach anywhere new sets `prev = cur`; so does a move the loop's client
-  makes on its server (reported in that server's `state`).
-- A window change updates `cur` only.
+- An attach anywhere new puts its target first in the loop's history; so
+  does a move the loop's client makes on its server (reported in that
+  server's `state`). The history keeps 16 sessions, once each.
+- A window change updates `cur` and its history entry.
+- `prev` is the most recent entry other than `cur` that a switch can take
+  now: a session gone, or on a host not up, is passed over for the one
+  before it (S25).
+- The home keeps every loop's targets the same way (`last.json`), and a
+  loop it learns begins its history with them: after `prefix d` and
+  `tower` again, `tower last` goes where the terminal was before (S25).
 - The pair travels in the home's view, so a remote dashboard's `-` and `.`
   need no one else.
 - The loop keeps a copy and sends `{cur, prev, gen, host}` in its heartbeat
-  (every 5s). A restarted home relearns them, replays every host's last
-  client list, and hand-off keeps working (S24, V07).
+  (every 5s). A restarted home relearns them on top of `last.json`'s
+  history, replays every host's last client list, and hand-off keeps
+  working (S24, V07).
 
 ## Environment
 

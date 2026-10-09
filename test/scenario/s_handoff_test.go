@@ -272,10 +272,11 @@ func TestS24(t *testing.T) {
 	t1 := w.LoopTo("1", a, nil, "alpha", "^A:alpha")
 	t1.DashTo("bravo")
 	w.WaitLoop(a, "^B:bravo", 8*time.Second)
+	id1 := w.WaitLoop(a, "^B:bravo", time.Second).ID
 	w.LoopTo("2", a, nil, "apple", "^A:apple")
 	loops := func() (l1, l2 proto.LoopStatus) {
 		for _, l := range w.Loops(a) {
-			if strings.HasPrefix(FormatRef(l.Cur), "B:bravo") || l.Prev.Session != "" && strings.HasPrefix(FormatRef(l.Prev), "B:bravo") {
+			if l.ID == id1 {
 				l1 = l
 			} else {
 				l2 = l
@@ -283,8 +284,10 @@ func TestS24(t *testing.T) {
 		}
 		return
 	}
+	// A new loop begins with the home's history: l2's previous is where
+	// the home's last target was before it.
 	l1, l2 := loops()
-	if !strings.HasPrefix(FormatRef(l1.Prev), "A:alpha") || !l2.Prev.IsZero() {
+	if !strings.HasPrefix(FormatRef(l1.Prev), "A:alpha") || !strings.HasPrefix(FormatRef(l2.Prev), "B:bravo") {
 		t.Fatalf("previous: l1 %s, l2 %s", FormatRef(l1.Prev), FormatRef(l2.Prev))
 	}
 	prevKey := func() {
@@ -328,7 +331,8 @@ func TestS24(t *testing.T) {
 }
 
 // S25: everyday habits: the last pane closing, tower last, nothing left on
-// a host, nothing left anywhere, prefix d.
+// a host, tower last past a session that ended, nothing left anywhere,
+// prefix d, tower last after tower restarts.
 func TestS25(t *testing.T) {
 	parallel(t)
 	w := NewWorld(t, "s25")
@@ -368,14 +372,34 @@ func TestS25(t *testing.T) {
 		t.Fatal("C's server is still running")
 	}
 
-	// (d) Nothing anywhere.
+	// (d) A session ends and tmux moves the client to another on its
+	// server: tower last passes over the session that ended, for the one
+	// before it, on another host.
+	term.DashTo("alpha")
+	w.WaitLoop(a, "^A:alpha", 6*time.Second)
+	b.MustTmux("new-session", "-d", "-s", "pear")
+	w.Eventually(5*time.Second, "B:pear in the home's view", func() bool { return HasSession(&a.View("").View, "B", "pear") })
+	term.DashTo("pear")
+	w.WaitLoop(a, "^B:pear", 6*time.Second)
+	time.Sleep(400 * time.Millisecond)
+	term.Type("exit")
+	term.Keys("Enter")
+	w.WaitLoop(a, "^B:spare", 6*time.Second)
+	time.Sleep(400 * time.Millisecond)
+	term.Keys("M-l")
+	w.WaitLoop(a, "^A:alpha", 6*time.Second)
+	time.Sleep(400 * time.Millisecond)
+	term.Keys("M-l")
+	w.WaitLoop(a, "^B:spare", 6*time.Second)
+
+	// (e) Nothing anywhere.
 	a.MustTmux("kill-session", "-t", "alpha")
 	time.Sleep(500 * time.Millisecond)
 	term.Type("exit")
 	term.Keys("Enter")
 	term.Wait(`LOOP-EXIT=0`, 6*time.Second)
 
-	// (e) prefix d.
+	// (f) prefix d.
 	w.RestartServer(b, "fresh")
 	w.Eventually(5*time.Second, "B:fresh in the home's view", func() bool { return HasSession(&a.View("").View, "B", "fresh") })
 	t2 := w.LoopTo("2", a, nil, "fresh", "^B:fresh")
@@ -385,6 +409,19 @@ func TestS25(t *testing.T) {
 	if b.SessionID("fresh") == "" {
 		t.Fatal("fresh is gone")
 	}
+
+	// (g) tower again after prefix d: it attaches where the terminal last
+	// was, and tower last goes where it was before that.
+	b.MustTmux("new-session", "-d", "-s", "fig")
+	w.Eventually(5*time.Second, "B:fig in the home's view", func() bool { return HasSession(&a.View("").View, "B", "fig") })
+	t3 := w.LoopTo("3", a, nil, "fig", "^B:fig")
+	t3.Keys("C-b", "d")
+	t3.Wait(`LOOP-EXIT=0`, 5*time.Second)
+	t4 := w.Loop("4", a, map[string]string{"TOWER_TEST_PICKER": "0"})
+	w.WaitLoop(a, "^B:fig", 6*time.Second)
+	time.Sleep(400 * time.Millisecond)
+	t4.Keys("M-l")
+	w.WaitLoop(a, "^B:fresh", 6*time.Second)
 }
 
 // syncHosts turns synchronized output on in the hosts' tmux servers, so

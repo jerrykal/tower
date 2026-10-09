@@ -446,16 +446,17 @@ func (d *Daemon) lastHere(client string, g *reg) *proto.LastResult {
 	var lp *proto.Loop
 	if g.Home == d.id && d.home != nil {
 		if l := d.home.loops[g.Loop]; l != nil {
-			lp = &proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev}
+			lp = &proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: d.home.prevLocked(l)}
 		}
 	} else if r := d.keptHome(g.Home); r != nil && r.view != nil {
 		lp = r.view.LoopByID(g.Loop)
 	}
-	inst := ""
-	if d.snap != nil {
-		inst = d.snap.Inst
-	}
+	snap := d.snap
 	d.mu.Unlock()
+	inst := ""
+	if snap != nil {
+		inst = snap.Inst
+	}
 	if lp == nil || lp.Gen != g.Gen || lp.Cur.Host != d.id {
 		return nil
 	}
@@ -485,6 +486,15 @@ func (d *Daemon) lastHere(client string, g *reg) *proto.LastResult {
 	if prev.IsZero() || prev.Host != d.id || prev.Inst != "" && prev.Inst != inst || prev.Session == now {
 		return nil
 	}
+	// A session gone (the one tmux moved the client from, when it ended)
+	// is the home's to pass over.
+	s := snap.session(prev.Session)
+	if s == nil {
+		return nil
+	}
+	if prev.Window != "" && !slices.ContainsFunc(s.Windows, func(w proto.Window) bool { return w.ID == prev.Window }) {
+		prev.Window = ""
+	}
 	return &proto.LastResult{Local: true, Target: prev}
 }
 
@@ -496,7 +506,7 @@ func (d *Daemon) lastFromView(ctx context.Context, client string, g *reg) *proto
 	var lp *proto.Loop
 	if g.Home == d.id && d.home != nil {
 		if l := d.home.loops[g.Loop]; l != nil {
-			lp = &proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: l.prev}
+			lp = &proto.Loop{ID: l.id, Gen: l.gen, Cur: l.cur, Prev: d.home.prevLocked(l)}
 		}
 	} else if r := d.keptHome(g.Home); r != nil && r.view != nil {
 		lp = r.view.LoopByID(g.Loop)
