@@ -124,7 +124,7 @@ func containerSetup() error {
 	ctrs = b
 	tmuxVersion := os.Getenv("TT_TMUX_VERSION")
 	if tmuxVersion == "" {
-		tmuxVersion = "3.7c"
+		tmuxVersion = "3.8"
 	}
 	// The run's own tag, which compose starts: another run building at
 	// once, from other sources or another tmux, tags its own.

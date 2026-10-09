@@ -4,7 +4,7 @@
 # so the run's directories bind-mounted at their own paths are shared.
 
 FROM ubuntu:24.04 AS tmux
-ARG TMUX_VERSION=3.7c
+ARG TMUX_VERSION=3.8
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates curl build-essential pkg-config bison libevent-dev libncurses-dev \
  && curl -fsSL https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz | tar xz \

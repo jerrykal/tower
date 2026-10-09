@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       set:
-        description: "full: containers at every tmux from 3.2a to 3.7c, and macOS sshd; push: what a push runs (containers at 3.2a and 3.7c, macOS sshd); macos-sshd: macOS sshd alone"
+        description: "full: containers at every tmux from 3.2a to 3.8, and macOS sshd; push: what a push runs (containers at 3.2a and 3.8, macOS sshd); macos-sshd: macOS sshd alone"
         type: choice
         options: [full, push, macos-sshd]
         default: full
@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tmux: ${{ fromJSON(inputs.set == 'full' && '["3.2a","3.3a","3.4","3.5a","3.6b","3.7c"]' || '["3.2a","3.7c"]') }}
+        tmux: ${{ fromJSON(inputs.set == 'full' && '["3.2a","3.3a","3.4","3.5a","3.6b","3.7c","3.8"]' || '["3.2a","3.8"]') }}
         shard: [lc, rest]
     name: linux ${{ matrix.tmux }} ${{ matrix.shard }}
     runs-on: ubuntu-24.04

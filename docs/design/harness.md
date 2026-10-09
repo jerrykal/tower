@@ -222,7 +222,7 @@ container running sshd and tmux, reached over real ssh. Every
 scenario's remote hosts are `SSHHost()`; homes stay on this machine.
 
 - `hosts/` holds the image (Ubuntu 24.04, OpenSSH, tmux built from
-  source at `TMUX_VERSION`, 3.7c by default, `iproute2`, `iptables`) and a
+  source at `TMUX_VERSION`, 3.8 by default, `iproute2`, `iptables`) and a
   compose file: a pool of `TT_HOSTS` hosts (by default 4 for each world
   that runs at once, the most a world takes: S18), `tt-<run>-host-<n>`.
   The image has git, for the dashboard's repo data. `TestMain` builds the
@@ -366,10 +366,10 @@ run's directories, which a failed job uploads (`worlds.tgz`, three
 days). A scenario that failed is run again alone and its result made a
 warning; the job stays red. A push that changes code, to any branch but
 `chore/…`, runs the sshd shards on `macos-15`, and the container shards
-at tmux 3.2a and 3.7c on `ubuntu-24.04` after loading the kernel modules
+at tmux 3.2a and 3.8 on `ubuntu-24.04` after loading the kernel modules
 the containers shape with (`ifb`, `sch_netem`, `sch_ingress`,
 `cls_matchall`, `act_mirred`); the home's tmux is the runner's. By hand
-(`workflow_dispatch`), `full` adds 3.3a, 3.4, 3.5a and 3.6b;
+(`workflow_dispatch`), `full` adds 3.3a, 3.4, 3.5a, 3.6b and 3.7c;
 `macos-sshd` runs macOS alone. A pull request from a branch here has its
 push's run; one from a fork runs its own.
 
