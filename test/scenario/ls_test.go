@@ -858,7 +858,12 @@ func TestLS14(t *testing.T) {
 	attempts := w.Link(a, "B").Attempts
 	Kill9(b.TowerdPid())
 	w.ClearMarks()
-	term.DashTo("alpha")
+	// B's new towerd shows the home's hosts once the home is back on its
+	// link: pick alpha once its row is there.
+	term.Keys("M-o")
+	term.Wait(Prompt, 6*time.Second)
+	term.Wait(rowRe("A", "alpha"), 15*time.Second)
+	term.Pick("alpha")
 	w.WaitLoop(a, "^A:alpha", 15*time.Second)
 	w.Eventually(15*time.Second, "B back on a new link", func() bool {
 		l := w.Link(a, "B")

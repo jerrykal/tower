@@ -509,8 +509,11 @@ func TestLastPickedByTheHome(t *testing.T) {
 	h := a.d.homeRole()
 	ctx := context.Background()
 	h.beat(proto.LoopBeat{ID: "L"})
+	w.eventually(3*time.Second, "A's and B's sessions at the home", func() bool {
+		v := a.d.view(proto.ViewArgs{}).View
+		return viewHas(v, "A", "alpha") && viewHas(v, "B", "bravo") && viewHas(v, "B", "beta")
+	})
 	alpha, bravo, beta := a.ref(a, "alpha"), a.ref(b, "bravo"), a.ref(b, "beta")
-	w.eventually(3*time.Second, "B's sessions at the home", func() bool { return viewHas(a.d.view(proto.ViewArgs{}).View, "B", "beta") })
 
 	// stale makes B's held view show the loop as it was at gen.
 	stale := func(gen int, cur, prev proto.Ref) {
@@ -736,11 +739,17 @@ func TestEndClient(t *testing.T) {
 	if err := a.d.endClient(sess.PtyName()); err != nil {
 		t.Fatal(err)
 	}
+	w.eventually(3*time.Second, "the client gone from tmux", func() bool {
+		return !strings.Contains(a.tmux("list-clients", "-F", "#{client_name}"), sess.PtyName())
+	})
+	// Its process runs exit 42. Exiting closes its terminal, which on macOS
+	// waits for the terminal's output to be read, and nothing reads it
+	// here: Close closes the pty first (its kill finds the process
+	// exiting already, which a signal does not change).
 	select {
 	case <-sess.Done():
-	case <-time.After(3 * time.Second):
-		sess.Kill()
-		t.Fatal("the client outlived end-client")
+	case <-time.After(time.Second):
+		sess.Close()
 	}
 	if c := sess.ExitCode(); c != 42 {
 		t.Fatalf("the client exited %d, not 42", c)
