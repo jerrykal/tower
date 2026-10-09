@@ -113,7 +113,8 @@ type snapshot struct {
   hooks; re-read.
 - **Re-reads**: every notification but pane output (`%message
   tower-alert` from the alert hooks included, or before tmux 3.4 their
-  `%window-renamed`) kicks the pacer (two at
+  `%window-renamed`; `%message tower-bell` from `pane-bell`; the alert
+  subscription's `%subscription-changed`) kicks the pacer (two at
   once, then one per 50ms in a burst); a re-read takes every kick that
   arrived before it started. A re-read is one `DoMany` batch: `display -p
   '#{pid}:#{start_time}'`, `list-sessions`, `list-windows -a`,
@@ -248,6 +249,26 @@ commands do: there the hook is
 `run-shell -b "<tmux> -S #{q:socket_path} rename-window -t =_tower:
 tower-alert"`, a client of its own whose rename of `_tower`'s window the
 control client, attached there, hears of.
+
+An alert hook fires only where the window's `*-action` applies, though
+tmux sets the flag first: under `bell-action other`, a bell in the
+current window of a detached session flags it and runs no hook, and
+`activity-action` is `other` by default. So, with the alert hooks:
+
+- **tmux 3.8 on**: `set-hook -g pane-bell[7193] 'display-message -c
+  <control client> "tower-bell #{hook_pane}"'`, which tmux runs on every
+  bell before any option is checked, the flag already set; the pane is
+  kept for whatever acts on a bell. Left alone and removed like the alert
+  hooks.
+- **Every version**: the control client subscribes (`refresh-client -B
+  tower-alerts::…`) to the windows that have a bell, activity or silence
+  flag, as `$session@window=<bell><activity><silence>` across every
+  session. tmux checks it once a second and sends
+  `%subscription-changed` when it changes; a window with no flag is not
+  in it, so output alone never changes it. It is the backstop for
+  activity, silence, and bells before 3.8 (about a second, LV05), and
+  ends with the control client. It is always set: cheap, and the
+  `*-action` options can change per session at any time.
 
 ## Keeper (keeper.go)
 

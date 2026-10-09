@@ -2,6 +2,7 @@ package towerd
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -15,6 +16,18 @@ import (
 const alertIndex = "7193"
 
 var alertHooks = []string{"alert-bell", "alert-activity", "alert-silence"}
+
+// bellHook runs on every bell (tmux 3.8 on), whatever bell-action says.
+const bellHook = "pane-bell"
+
+// alertSub is the control client's subscription to the windows that have
+// a bell, activity or silence flag, across every session.
+const alertSub = "tower-alerts::#{S:#{W:#{?#{||:#{window_bell_flag},#{||:#{window_activity_flag},#{window_silence_flag}}},#{session_id}#{window_id}=#{window_bell_flag}#{window_activity_flag}#{window_silence_flag} ,}}}"
+
+// ours reports whether a hook command is one towerd set.
+func ours(cmd string) bool {
+	return strings.Contains(cmd, "tower-alert") || strings.Contains(cmd, "tower-bell")
+}
 
 // keyRec is a key towerd bound: what it replaced, and its own binding as
 // list-keys prints it, so stop puts back only a key that still has it.
@@ -148,6 +161,7 @@ func (k *keys) install(ctl *tmux.Control) {
 		cmd := "display-message -c " + tmux.Quote(ctl.Name()) + " tower-alert"
 		d.mu.Lock()
 		old := tmuxBefore(d.tmuxVer, 3, 4)
+		bellHooks := !tmuxBefore(d.tmuxVer, 3, 8)
 		d.mu.Unlock()
 		if old {
 			// tmux 3.3 shows a control client no message (3.2 takes
@@ -158,20 +172,40 @@ func (k *keys) install(ctl *tmux.Control) {
 			cmd = "run-shell -b " + tmux.Quote(tmux.Literal(transport.ShellQuote(tmux.Bin()))+
 				" -S #{q:socket_path} rename-window -t ="+towerSession+": tower-alert")
 		}
+		hooks := map[string]string{}
 		for _, hook := range alertHooks {
+			hooks[hook] = cmd
+		}
+		if bellHooks {
+			// An alert hook fires only where the window's *-action
+			// applies: under bell-action other, a bell in the current
+			// window of a detached session sets the flag and runs no
+			// hook. pane-bell runs on every bell, the flag already set;
+			// the pane is kept for whoever acts on the bell.
+			hooks[bellHook] = "display-message -c " + tmux.Quote(ctl.Name()) + " " + tmux.Quote("tower-bell #{hook_pane}")
+		}
+		for _, hook := range slices.Sorted(maps.Keys(hooks)) {
 			r, err := ctl.Do("show-hooks -g " + hook)
 			if err != nil {
 				continue
 			}
 			cur := hookAt(r.Lines, hook)
-			if cur != "" && !strings.Contains(cur, "tower-alert") {
+			if cur != "" && !ours(cur) {
 				d.logf("keys: %s[%s] is the user's: left alone", hook, alertIndex)
 				continue
 			}
-			if r, err := ctl.Do("set-hook -g " + tmux.Quote(hook+"["+alertIndex+"]") + " " + tmux.Quote(cmd)); err != nil || r.Err {
+			if r, err := ctl.Do("set-hook -g " + tmux.Quote(hook+"["+alertIndex+"]") + " " + tmux.Quote(hooks[hook])); err != nil || r.Err {
 				d.logf("keys: set-hook %s: %s %v", hook, r.Text(), err)
 				continue
 			}
+		}
+		// The backstop for a flag no hook told of (activity under the
+		// default activity-action other, a bell before 3.8): tmux checks
+		// a subscription once a second and tells the control client when
+		// it changes. Only windows with a flag are in it, so output alone
+		// does not change it. It ends with the control client.
+		if r, err := ctl.Do("refresh-client -B " + tmux.Quote(alertSub)); err != nil || r.Err {
+			d.logf("keys: refresh-client -B: %s %v", r.Text(), err)
 		}
 		state = append(state, "alerts")
 	}
@@ -192,7 +226,8 @@ func hookAt(lines []string, hook string) string {
 }
 
 // restore puts back every key that still has towerd's binding, and
-// removes towerd's alert hooks.
+// removes towerd's alert hooks. The subscription ends with the control
+// client.
 func (k *keys) restore(ctl *tmux.Control) {
 	d := k.w.d
 	var kf keysFile
@@ -213,12 +248,12 @@ func (k *keys) restore(ctl *tmux.Control) {
 		}
 	}
 	config.WriteJSON(k.path(), keysFile{Keys: keep})
-	for _, hook := range alertHooks {
+	for _, hook := range append(slices.Clone(alertHooks), bellHook) {
 		r, err := ctl.Do("show-hooks -g " + hook)
 		if err != nil {
 			continue
 		}
-		if strings.Contains(hookAt(r.Lines, hook), "tower-alert") {
+		if ours(hookAt(r.Lines, hook)) {
 			ctl.Do("set-hook -gu " + tmux.Quote(hook+"["+alertIndex+"]"))
 		}
 	}

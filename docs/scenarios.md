@@ -119,6 +119,7 @@ See [design/install.md](design/install.md).
 | LV01 | A change on one remote reaches another's view in about one round trip; a bell in one round trip (alert hooks) | towerd | pass |
 | LV02 | A burst of 40 switches and 40 new windows costs the home about 17 states | towerd | pass |
 | LV04 | An open dashboard follows the view within a round trip plus its redraw | ui, towerd | pass |
+| LV05 | Under `bell-action other`, a bell in the current window of a detached session on a remote reaches the home's view and another remote's: one round trip on tmux 3.8 (`pane-bell`), about a second before it (the alert subscription); activity under the default `activity-action other` in about a second on every version | towerd | pass |
 | LD01 | Dashboard requests at 150 and 400ms: rows right after every answer; a kill's row gone before the answer; a preview's windows before the capture | ui, towerd | pass |
 | LD02 | Deadlines at 400ms round trips: a request that failed never ran | towerd, stream | pass |
 | LD03 | `^x y` three times fast kills three sessions | ui | pass |

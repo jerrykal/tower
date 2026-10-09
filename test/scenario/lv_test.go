@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -202,6 +203,79 @@ func TestLV01(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// LV05: under bell-action other, a bell in the current window of a
+// detached session on a remote, which sets the flag and runs no alert
+// hook, reaches the home's view and another remote's: in one round trip
+// on tmux 3.8 (pane-bell), within the subscription's second before it.
+// Activity under the default activity-action other takes the
+// subscription on every version.
+func TestLV05(t *testing.T) {
+	reps := 3
+	if n, err := strconv.Atoi(os.Getenv("LV_REPS")); err == nil && n > 0 {
+		reps = n
+	}
+	rtt := rttList("LV_RTTS", 150)[0]
+	x := newLV(t, "lv05", rtt)
+	c := x.c
+	ver := strings.TrimSpace(c.MustTmux("display-message", "-p", "#{version}"))
+	c.MustTmux("set-option", "-g", "bell-action", "other")
+	res := map[string][]time.Duration{}
+	for i := range reps {
+		for _, what := range []string{"bell", "activity"} {
+			name := fmt.Sprintf("lv5%s%d", what[:1], i)
+			out := `printf '\a'`
+			if what == "activity" {
+				out = "echo x"
+			}
+			// No exec and no rename: a window renamed when the bell
+			// comes would have towerd re-read anyway.
+			c.MustTmux("new-session", "-d", "-s", name, "sleep 2; "+out+"; sleep 100",
+				";", "set-option", "-w", "-t", "="+name+":", "automatic-rename", "off")
+			if what == "activity" {
+				c.MustTmux("set-option", "-w", "-t", "="+name+":", "monitor-activity", "on")
+			}
+			x.w.Eventually(5*time.Second, name+" on B", func() bool { return HasSession(&x.b.View("").View, "C", name) })
+			x.w.Eventually(5*time.Second, "the "+what+" flag", func() bool {
+				out, _ := c.Tmux("display-message", "-p", "-t", "="+name+":", "#{window_bell_flag}#{window_activity_flag}")
+				return strings.TrimSpace(out) != "00"
+			})
+			r := x.race(func() {}, func(v *proto.View) bool {
+				h := HostIn(v, "C")
+				if h == nil {
+					return false
+				}
+				for _, s := range h.Sessions {
+					if s.Name == name && len(s.Windows) > 0 {
+						w := s.Windows[0]
+						return what == "bell" && w.Bell || what == "activity" && w.Activity
+					}
+				}
+				return false
+			})
+			res[what+" C→home view"] = append(res[what+" C→home view"], r[0])
+			res[what+" C→B view"] = append(res[what+" C→B view"], r[1])
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(res)) {
+		t.Logf("LVRESULT tmux=%s rtt=%d %-24s median %-8v %v", ver, rtt, k, median(res[k]).Round(time.Millisecond), res[k])
+	}
+	for _, what := range []string{"bell", "activity"} {
+		ds := res[what+" C→B view"]
+		if slices.Contains(ds, -1) {
+			t.Fatalf("%s: never reached B's view: %v", what, ds)
+		}
+		bound := time.Duration(rtt+1300) * time.Millisecond // the subscription's second
+		var major, minor int
+		fmt.Sscanf(ver, "%d.%d", &major, &minor)
+		if what == "bell" && (major > 3 || major == 3 && minor >= 8) {
+			bound = time.Duration(rtt+200) * time.Millisecond
+		}
+		if m := median(ds); m >= bound {
+			t.Fatalf("%s C→B on tmux %s: median %v at %dms round trips", what, ver, m, rtt)
+		}
 	}
 }
 
