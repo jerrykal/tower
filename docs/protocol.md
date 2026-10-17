@@ -58,7 +58,7 @@ closed.
 | Path | Holds |
 | --- | --- |
 | `~/.config/tower/hosts.toml` | the host list |
-| `~/.local/state/tower/towerd/<machine>-<tag>/` | `id`, `towerd.log`, `towerd.pid`, `ctl.pid` (the control client), `clients.json` (registered clients, survives restarts), `hosts.json` (home: what it learned per host, with the last known sessions), `last.json` (the loops' recent targets, the most recent first), `keys.json` (bindings towerd replaced) |
+| `~/.local/state/tower/towerd/<machine>-<tag>/` | `id`, `towerd.log`, `towerd.pid`, `ctl.pid` (the control client), `clients.json` (registered clients, survives restarts), `hosts.json` (home: what it learned per host, with the last known sessions), `last.json` (the loops' recent targets, the most recent first), `keys.json` (bindings towerd replaced, and the directory it appended to tmux's PATH) |
 | `<run>/<tag>.sock`, `<run>/<tag>.lock` | the towerd socket and its lock |
 | `<run>/cm/%C` | ssh control sockets |
 
@@ -99,7 +99,10 @@ demos): `$TOWER_HOME/config` and `$TOWER_HOME/state`.
 - **Upgrade.** Every call carries the caller's version. A newer binary, or
   another build of the same version (a rebuilt development binary), asks
   the running towerd to exit and starts itself; an older binary uses a
-  newer towerd and never downgrades it (V09). A restart loses nothing: loops re-send
+  newer towerd and never downgrades it (V09). Except on a remote-only
+  towerd a home of its build is connected to: only a bridge replaces it,
+  and tower typed there runs as the towerd's build (I06, see Inside
+  versus outside tmux). A restart loses nothing: loops re-send
   their state in their heartbeat and remotes keep their clients file (V02).
   A remote is upgraded by its next ssh: the new bridge replaces the older
   towerd, which restores its clients from disk (V03).
@@ -571,6 +574,14 @@ leads a session of its own.
   to another host says it needs the attach loop (S11).
 - tower is launched as the terminal's command, so the attach loop always
   owns the terminal.
+- On a remote (a remote-only towerd, a home of its build connected),
+  tower typed in a shell runs as the towerd's build, the home's,
+  whichever tower PATH finds first (I06).
+- Every towerd appends its own directory to tmux's global PATH, so new
+  windows and panes have it: on a remote that is the home's build. A
+  shell's login profile that sets PATH outright (Debian's and Alpine's
+  `/etc/profile`) drops it, and `tmux new-window` typed outside tmux
+  gives the window that shell's PATH.
 
 ## Keys
 
@@ -760,6 +771,9 @@ Kept per loop, by its home:
 | `TOWER_LIVE` | 1 | 0: dashboards do not follow changes |
 | `TOWER_BIND` | 1 | 0: towerd binds no keys |
 | `TOWER_ALERTS` | 1 | 0: no alert hooks or alert subscription |
+| `TOWER_PATH` | 1 | 0: towerd leaves tmux's global PATH alone (else it appends its own directory) |
+| `TOWER_FOLLOW` | 1 | 0: tower typed on a remote runs as itself, not as the towerd's build (and is refused where it would replace that towerd) |
+| `TOWER_FOLLOWED` | – | set by a tower that followed the towerd's build, for the one it execs |
 | `TOWER_GIT` | 1 | 0: no git state of sessions or directories |
 | `TOWER_DIRS` | 1 | 0: no zoxide directories |
 | `TOWER_DIRS_EVERY` | 60s | the periodic refresh of zoxide and the sessions' repos |

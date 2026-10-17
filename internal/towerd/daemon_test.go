@@ -263,6 +263,9 @@ func TestHomeAndRemote(t *testing.T) {
 	if b.d.status(false).Home {
 		t.Fatal("a towerd started by a bridge plays home")
 	}
+	if !b.d.status(false).Served || a.d.status(false).Served {
+		t.Fatal("served: B, connected to by a home, should be; the home should not")
+	}
 	w.eventually(2*time.Second, "B holds the home's view", func() bool {
 		return viewHas(b.d.view(proto.ViewArgs{}).View, "A", "alpha")
 	})
@@ -1045,4 +1048,24 @@ func clientEnv() []string {
 		return strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") || strings.HasPrefix(kv, "TERM=")
 	})
 	return append(env, "TERM=xterm-256color")
+}
+
+func TestPathAppendedAndTakenBack(t *testing.T) {
+	w := newWorld(t)
+	n := w.node("P", "", "p1")
+	globalPath := func() string {
+		return strings.TrimPrefix(strings.TrimSpace(n.tmux("show-environment", "-g", "PATH")), "PATH=")
+	}
+	before := globalPath()
+	d := n.start(false)
+	want := before + string(filepath.ListSeparator) + filepath.Dir(w.keep)
+	w.eventually(3*time.Second, "towerd's directory at the end of PATH", func() bool { return globalPath() == want })
+	if st := d.status(false); st.Exe != w.keep || st.Served {
+		t.Fatalf("status: exe %q, served %v", st.Exe, st.Served)
+	}
+	d.Stop("test")
+	d.Wait()
+	if got := globalPath(); got != before {
+		t.Fatalf("PATH after stop: %q, want %q", got, before)
+	}
 }

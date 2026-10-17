@@ -179,6 +179,33 @@ func TestUploadIsAtomicAndSwapsCurrent(t *testing.T) {
 	}
 }
 
+// Development builds go by their commit time, then commit count (one
+// rebase's commits share a second), then a dirty build's newest change,
+// whatever their hashes, and after the older -dev+<commit> builds.
+func TestCurrentOrdersDevelopmentBuilds(t *testing.T) {
+	home := t.TempDir()
+	r := localRunner{home: home}
+	p := plat(t)
+	for _, step := range []struct{ install, current string }{
+		{"0.2.0-dev+eee", "0.2.0-dev+eee"},
+		{"0.2.0-dev.20261009120000.10+ddd", "0.2.0-dev.20261009120000.10+ddd"},
+		{"0.2.0-dev.20261010080000.11+fff", "0.2.0-dev.20261010080000.11+fff"},
+		{"0.2.0-dev.20261010080000.12+0aa", "0.2.0-dev.20261010080000.12+0aa"},
+		{"0.2.0-dev.20261009230000.11+fff", "0.2.0-dev.20261010080000.12+0aa"},
+		{"0.2.0-dev+fff", "0.2.0-dev.20261010080000.12+0aa"},
+		{"0.2.0-dev.20261010080000.12.20261010090000+0aa.dirty.9a1b2c3d", "0.2.0-dev.20261010080000.12.20261010090000+0aa.dirty.9a1b2c3d"},
+		{"0.2.0-dev.20261010080000.12.20261010091500+0aa.dirty.1a2b3c4d", "0.2.0-dev.20261010080000.12.20261010091500+0aa.dirty.1a2b3c4d"},
+		{"0.2.0-dev.20261010080000.13+1bb", "0.2.0-dev.20261010080000.13+1bb"},
+	} {
+		if err := upload(r, "~/t", step.install, fakeTower(step.install, 100)); err != nil {
+			t.Fatal(err)
+		}
+		if l, _ := os.Readlink(filepath.Join(home, "t", "current")); l != step.current+"/"+p {
+			t.Fatalf("after %s, current → %q, want %s", step.install, l, step.current)
+		}
+	}
+}
+
 // An upload cut short, or a binary that is not the version it is
 // installed as, is refused: nothing goes in place.
 func TestUploadRefusesABadBuild(t *testing.T) {

@@ -62,7 +62,9 @@ type Status struct {
 	MKey    string `json:"mkey"`
 	Tag     string `json:"tag"`
 	TmuxBin string `json:"tmux_bin"`
-	Home    bool   `json:"home,omitempty"` // plays the home role
+	Home    bool   `json:"home,omitempty"`   // plays the home role
+	Exe     string `json:"exe,omitempty"`    // the binary towerd runs
+	Served  bool   `json:"served,omitempty"` // the stream of a home of this build (version) is connected
 	// Full status only.
 	Detail *Detail `json:"detail,omitempty"`
 }
@@ -163,6 +165,9 @@ type WatchStatus struct {
 // same base).
 type StopArgs struct {
 	IfOlderThan string `json:"if_older_than,omitempty"`
+	// Bridge: a home's bridge asks. Only a bridge replaces a remote-only
+	// towerd a home of its build is connected to.
+	Bridge bool `json:"bridge,omitempty"`
 }
 
 // RegisterArgs is the attach shim's registration of the tmux client it is

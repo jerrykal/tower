@@ -157,6 +157,64 @@ func TestI02(t *testing.T) {
 	w.WaitLoop(a, "^B:bravo", 8*time.Second)
 }
 
+// I06: on a remote, tower typed in a shell is the home's build: B's tmux
+// gives new panes the home's install directory at the end of PATH, and a
+// tower of B's own, another version earlier in PATH, follows the towerd
+// the home started there, without replacing it.
+func TestI06(t *testing.T) {
+	parallel(t)
+	w := NewWorld(t, "i06")
+	a := w.Host("A", []string{"alpha"})
+	b := w.Host("B", []string{"bravo"}, SSHHost())
+	w.Home(a, b.Unpinned())
+	w.WaitLink(a, "B", "up", 15*time.Second)
+	dir := filepath.Join(b.InstallDir(), Version, b.PlatformDir())
+	w.Eventually(3*time.Second, "B's PATH ends with the home's build", func() bool {
+		out, _ := b.Tmux("show-environment", "-g", "PATH")
+		return strings.HasSuffix(strings.TrimSpace(out), ":"+dir)
+	})
+	pid := b.TowerdPid()
+	out, err := b.TowerBin(tower2, "status")
+	t.Logf("tower %s status on B:\n%s", Version2, out)
+	if err != nil || !strings.Contains(out, "towerd "+Version+" ") || !strings.Contains(out, "tower "+Version2+" on PATH followed towerd's build "+filepath.Join(dir, "tower")) {
+		t.Fatalf("tower %s on B did not follow the home's build: %v", Version2, err)
+	}
+	out, err = b.Run(map[string]string{"TOWER_FOLLOW": "0"}, 20*time.Second, tower2, "status")
+	if err != nil || strings.Contains(out, "followed") || !strings.Contains(out, "towerd "+Version+" ") {
+		t.Fatalf("TOWER_FOLLOW=0 status: %v\n%s", err, out)
+	}
+	// Not followed, the other build's dashboard would replace B's towerd:
+	// it is refused, and the towerd stays.
+	out, err = b.Run(map[string]string{"TOWER_FOLLOW": "0", "TMUX": "/elsewhere,1,0"}, 20*time.Second, tower2, "dash")
+	t.Logf("tower %s dash on B, not followed: %v\n%s", Version2, err, out)
+	if err == nil || !strings.Contains(out, "runs a home's build") {
+		t.Fatalf("tower %s dash on B was not refused: %v", Version2, err)
+	}
+	if got := b.TowerdPid(); got != pid {
+		t.Fatalf("B's towerd %d → %d", pid, got)
+	}
+	// A window made from the dashboard starts its shell with the home's
+	// build on PATH. (One made by `tmux new-window` from a shell outside
+	// tmux takes that shell's PATH instead: tmux gives a client that is
+	// not attached its own.)
+	ack, _ := a.Act("", proto.Request{Op: proto.OpNew, Kind: proto.KindWindow, Target: w.Ref(a, "B", "bravo"), Name: "pathcheck"}, 0)
+	if !ack.OK || ack.Ref == nil {
+		t.Fatalf("new window on B: %+v", ack)
+	}
+	win := ack.Ref.Window
+	b.Tmux("send-keys", "-t", win, "printenv PATH", "Enter")
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		shown, _ := b.Tmux("capture-pane", "-p", "-J", "-t", win)
+		if strings.Contains(shown, ":"+dir+"\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a new window's PATH on B:\n%s", strings.TrimSpace(shown))
+		}
+	}
+	b.Tmux("kill-window", "-t", win)
+}
+
 // I03: a pinned host is never installed to; a missing pinned binary is
 // failed: tower is not installed.
 func TestI03(t *testing.T) {

@@ -16,6 +16,7 @@ and the home role once an attach loop starts on its machine.
 | `dirs.go` | git state of sessions and zoxide directories: the refresher (`internal/dirs`) in towerd, and looks |
 | `clients.go` | registrations: made by `register`, bound to tmux clients, persisted |
 | `keys.go` | `M-o`, `prefix L` and the alert hooks: take, record, restore |
+| `path.go` | towerd's directory on tmux's global PATH: append, record, remove |
 | `keeper.go` | `tower _keep`: ends a dead towerd's control client and `_tower` |
 | `remote.go` | the remote role: one record per connected home; the dashboard's `view`; `last` |
 | `home.go` | the home role: merged view, loops, switches, prepare and after, standby offers, routing |
@@ -76,7 +77,7 @@ type Daemon struct {
   registration, no call in flight, and no call but `status` for
   `TOWER_IDLE` (10m; 0 never). `status` does not count: ensure and `tower
   status` must not keep an idle towerd alive.
-- **Exit** (stop, SIGTERM, socket or state dir gone, idle): restore keys and
+- **Exit** (stop, SIGTERM, socket or state dir gone, idle): restore keys, PATH and
   hooks, close the control client by name, kill `_tower`, close the
   listener and remove the socket, then close links and streams; save the
   registrations, `hosts.json` and `last.json`.
@@ -273,6 +274,40 @@ current window of a detached session flags it and runs no hook, and
   activity, silence, and bells before 3.8 (about a second, LV05), and
   ends with the control client. It is always set: cheap, and the
   `*-action` options can change per session at any time.
+
+## PATH (path.go)
+
+On attach (unless `TOWER_PATH=0`), towerd appends the directory of its
+own binary to the server's global PATH (`show-environment -g PATH`, then
+`set-environment -g PATH …`), which new windows and panes and
+`run-shell` start with. On a remote that is the home's build, so a shell
+there finds `tower` on a host with none of its own; a tower of its own,
+earlier in PATH, follows towerd's build
+([client.md](client.md#following-a-homes-build)). Appended rather than
+prepended, so shell startup files that put their own directories first
+(mise, `fish_add_path`) leave it in place.
+
+- **Only a private directory.** Absolute, no `:` in it, owned by this
+  user and not writable by group or others: every pane gets it, so a
+  build run from `/tmp` puts nothing on PATH.
+- **The user's stays.** A directory already in PATH is left alone and not
+  recorded, so never taken out.
+- **One record.** `keys.json` records the directory towerd appended
+  (`path`). The next towerd removes one of another build first, even
+  when it appends nothing itself (its own already there, or none fit);
+  one of the same build finds it there and keeps the record. A failed
+  write keeps the record as it was, for the next towerd.
+- **On stop** it is removed from PATH; the record is dropped only once it
+  is gone. Panes started meanwhile keep it.
+- **A server towerd starts** (`new` where none runs) gets the directory
+  in the environment it starts with, so its first pane has it too; the
+  attach then takes it as towerd's.
+- **Where it does not reach.** A pane's shell sees the PATH it started
+  with, and a login profile that sets PATH outright (Debian's and
+  Alpine's `/etc/profile`) drops it. `tmux new-window` typed outside
+  tmux gives the window that shell's PATH (tmux hands a client that is
+  not attached its own); a window made from an attached client or the
+  dashboard has the global one.
 
 ## Keeper (keeper.go)
 

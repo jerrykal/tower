@@ -38,8 +38,10 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
+		follow("", args)
 		return towerCmd(false)
 	}
+	follow(args[0], args)
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "dash":

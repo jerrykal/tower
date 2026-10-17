@@ -72,6 +72,7 @@ See [design/install.md](design/install.md).
 | I03 | A pinned `tower =` host is never installed to; a missing pinned binary is `failed: tower is not installed` | towerd | pass |
 | I04 | Another platform: the build from the dist cache; else downloaded from the release with its checksum verified; a bad checksum refused; a dev build with no cache fails with the `mise run dist` fix | install | pass |
 | I05 | Two homes installing on one host at once leave one whole binary and a valid `current` | install | pass |
+| I06 | On a remote, a tower of another version follows the towerd the home started and says so in `tower status`; with `TOWER_FOLLOW=0` it runs as itself, and its dashboard is refused rather than replacing that towerd; a window made from the dashboard there has the home's build at the end of its shell's PATH | towerd, client, cmd | pass |
 
 ## towerd
 

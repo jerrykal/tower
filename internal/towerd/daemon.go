@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -85,21 +86,22 @@ type Daemon struct {
 	answers *answers
 	dirs    *dirs.Refresher // git state of sessions, zoxide directories
 
-	mu        sync.Mutex // guards everything below; never held across I/O
-	gen       uint64
-	changed   chan struct{}
-	snap      *snapshot
-	looked    bool
-	lookedC   chan struct{}
-	regs      *registry
-	homes     map[string]*homeRec // remote role, by home id|as
-	home      *homeRole           // nil until active
-	lastCall  time.Time
-	calls     int
-	tmuxVer   string
-	linkGen   int // the last generation given a link (nextLinkGen)
-	bindState string
-	lookAt    time.Time // the last look (dirs.go)
+	mu         sync.Mutex // guards everything below; never held across I/O
+	gen        uint64
+	changed    chan struct{}
+	snap       *snapshot
+	looked     bool
+	lookedC    chan struct{}
+	regs       *registry
+	homes      map[string]*homeRec // remote role, by home id|as
+	home       *homeRole           // nil until active
+	lastCall   time.Time
+	calls      int
+	tmuxVer    string
+	linkGen    int // the last generation given a link (nextLinkGen)
+	bindState  string
+	seededPath string    // the directory a server towerd started has on its PATH (path.go)
+	lookAt     time.Time // the last look (dirs.go)
 }
 
 // Start takes the lock, listens and starts the watch. The daemon runs
@@ -135,6 +137,11 @@ func Start(o Options) (*Daemon, error) {
 	d.self = o.Self
 	if d.self == "" {
 		d.self, _ = os.Executable()
+		// The build's own path, not a link such as current that may
+		// move to another build (macOS does not resolve it).
+		if p, err := filepath.EvalSymlinks(d.self); err == nil {
+			d.self = p
+		}
 	}
 	d.osName = unameS()
 	d.takeEnv()
@@ -480,6 +487,18 @@ func (d *Daemon) dispatch(ctx context.Context, call *proto.Call) (any, error) {
 		if a.IfOlderThan != "" && !proto.Replaces(a.IfOlderThan, d.version) {
 			return nil, fmt.Errorf("towerd %s is not replaced by %s", d.version, a.IfOlderThan)
 		}
+		if a.IfOlderThan != "" && !a.Bridge {
+			// A remote-only towerd runs its home's build: another build
+			// typed here would only be replaced again by the home's next
+			// bridge. tower stop (no IfOlderThan) still stops it.
+			d.mu.Lock()
+			home, served := d.servedLocked()
+			remoteOnly := d.home == nil
+			d.mu.Unlock()
+			if served && remoteOnly {
+				return nil, fmt.Errorf("towerd %s here runs the build of home %s (%s); tower %s does not replace it", d.version, home, d.self, a.IfOlderThan)
+			}
+		}
 		d.Stop("asked by tower " + call.Version)
 		return struct{}{}, nil
 	case proto.CallRegister:
@@ -665,11 +684,23 @@ func cpuTime() time.Duration {
 	return tv(self.Utime) + tv(self.Stime) + tv(kids.Utime) + tv(kids.Stime)
 }
 
+// servedLocked reports whether a home whose build this towerd runs (its
+// version) has its stream connected, and that home's name.
+func (d *Daemon) servedLocked() (string, bool) {
+	for _, r := range d.homes {
+		if r.conn != nil && r.version == d.version {
+			return r.name, true
+		}
+	}
+	return "", false
+}
+
 // status is the answer to status; full adds what towerd knows.
 func (d *Daemon) status(full bool) *proto.Status {
-	st := &proto.Status{ID: d.id, Version: d.version, Pid: os.Getpid(), MKey: d.env.MKey, Tag: d.env.Tag, TmuxBin: d.tm.Bin}
+	st := &proto.Status{ID: d.id, Version: d.version, Pid: os.Getpid(), MKey: d.env.MKey, Tag: d.env.Tag, TmuxBin: d.tm.Bin, Exe: d.self}
 	d.mu.Lock()
 	st.Home = d.home != nil
+	_, st.Served = d.servedLocked()
 	d.mu.Unlock()
 	if !full {
 		return st

@@ -26,7 +26,17 @@ architectures sharing one home directory (NFS) each get their own build.
   install of a newer version than it points to (`sort -V`), so the user's
   `tower` there is the newest one installed and a home of an older version
   never downgrades it; a dashboard opened on that host reaches the towerd
-  the home started.
+  the home started. A development build's version carries its commit
+  time and commit count (`0.0.1-dev.20261009132629.260+4f44ca9`,
+  `scripts/version.sh`), and a dirty one the time of its newest changed
+  file (`…260.20261009140210+4f44ca9.dirty.<hash>`), so `sort -V` orders
+  them as they were made; by hash alone it kept `current` on whichever
+  hash sorted last.
+- **`tower` on the host's PATH is the home's build** while a home is
+  connected, whatever is installed there: towerd appends its own
+  directory to tmux's global PATH, and a tower of the host's own follows
+  the towerd's build (see [towerd.md](towerd.md#path-pathgo) and
+  [client.md](client.md#following-a-homes-build)).
 - `tower = "<path>"` on a host in `hosts.toml` pins a binary the user
   manages: no check, no install.
 - **The root** is set by the remote line itself: `r=${TOWER_INSTALL_DIR:-};
@@ -118,7 +128,8 @@ home can install on other platforms.
 
 `install_test.go`: platforms, the root word through a real shell (odd
 characters, a host's own `TOWER_INSTALL_DIR`), four concurrent uploads
-leaving one whole binary and `current` swapped, the source from this
+leaving one whole binary and `current` swapped, `current` ordering
+development builds by commit time, the source from this
 binary, the cache (and a tampered cache refused), a verified download
 from an httptest release server (a bad checksum refused and not kept, the
 archive kept for the next install), a development build with no cache,
@@ -133,6 +144,7 @@ and an install end to end through a local runner.
 | I03 | A pinned `tower =` host is never installed to; a missing pinned binary is `failed: tower is not installed` |
 | I04 | Another platform: the build comes from the dist cache; missing there, it is downloaded from the release server with its checksum verified; a bad checksum is refused; a dev build with no cache fails with the `mise run dist` fix |
 | I05 | Two homes installing on one host at once leave one whole binary and a valid `current` |
+| I06 | On a remote, a tower of another version follows the towerd the home started; with `TOWER_FOLLOW=0` it runs as itself, and its dashboard is refused rather than replacing that towerd; a window made from the dashboard has the home's build at the end of PATH |
 | R03 | `alpha` and `bravo`: install into `~/.cache/tower-test/harness/install` over real ssh, stream, and clean up |
 
 The suite simulates another platform with a `uname` shim first on that

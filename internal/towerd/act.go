@@ -457,7 +457,7 @@ func (d *Daemon) newLocal(req *proto.Request, ctl *tmux.Control, left time.Durat
 	}
 	args = append(args, "-c", tmux.Literal(dir))
 	d.logf("act: starting tmux for a new session")
-	out, err := d.tm.Run(ctx, args...)
+	out, err := d.tm.RunEnv(ctx, d.seedPath(config.Flag("TOWER_PATH", true)), args...)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("tmux on %s did not start in time", d.name)

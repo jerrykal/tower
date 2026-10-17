@@ -46,6 +46,7 @@ type keyRec struct {
 
 type keysFile struct {
 	Keys []keyRec `json:"keys"`
+	Path string   `json:"path,omitempty"` // the directory towerd appended to the global PATH
 }
 
 // keys binds M-o (the dashboard) and prefix L (tower last) where the
@@ -162,6 +163,9 @@ func (k *keys) install(ctl *tmux.Control) {
 		last := "run-shell -b " + tmux.Quote(k.shellLine(2, "last"))
 		take("prefix", "L", "run-shell -C "+tmux.Quote(last), func(cur string) bool { return cur == "switch-client -l" })
 	}
+	if config.Flag("TOWER_PATH", true) && k.addPath(ctl, &kf) {
+		state = append(state, "path")
+	}
 	config.WriteJSON(k.path(), kf)
 	if config.Flag("TOWER_ALERTS", true) {
 		cmd := "display-message -c " + tmux.Quote(ctl.Name()) + " tower-alert"
@@ -260,7 +264,7 @@ func (k *keys) restore(ctl *tmux.Control) {
 			keep = append(keep, rec)
 		}
 	}
-	config.WriteJSON(k.path(), keysFile{Keys: keep})
+	config.WriteJSON(k.path(), keysFile{Keys: keep, Path: k.removePath(ctl, kf.Path)})
 	for _, hook := range alertHooks {
 		k.unsetOurs(ctl, hook)
 	}

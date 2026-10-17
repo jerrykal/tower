@@ -122,9 +122,10 @@ type Ack struct {
 }
 
 // Newer reports whether tower version a is newer than b. Versions are
-// "X.Y.Z" or "X.Y.Z-dev+commit"; a development build sorts after its base
-// release. Two different builds of one base are not ordered: Newer is
-// false both ways, and Same tells them apart.
+// "X.Y.Z" or "X.Y.Z-dev.<time>.<count>+<commit>" (scripts/version.sh); a
+// development build sorts after its base release. Two different builds of
+// one base are not ordered: Newer is false both ways, and Same tells them
+// apart.
 func Newer(a, b string) bool {
 	an, ad := splitVersion(a)
 	bn, bd := splitVersion(b)

@@ -128,6 +128,9 @@ func formatStatus(st *proto.Status) string {
 		role = "home"
 	}
 	fmt.Fprintf(&b, "towerd %s  id %s  pid %d  %s  (%s)\n", st.Version, st.ID, st.Pid, st.Tag, role)
+	if followedFrom != "" {
+		fmt.Fprintf(&b, "tower %s on PATH followed towerd's build %s\n", followedFrom, st.Exe)
+	}
 	if st.Detail == nil {
 		return b.String()
 	}

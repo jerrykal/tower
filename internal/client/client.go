@@ -125,11 +125,15 @@ func (c *Client) Ensure(ctx context.Context) (*proto.Status, error) {
 	for {
 		st, err := c.status(ctx, time.Second)
 		switch {
+		case err == nil && proto.Replaces(c.Version, st.Version) && st.Served && !st.Home && !c.Bridged:
+			// A remote-only towerd runs its home's build, which that
+			// home's next bridge would only put back (towerd refuses too).
+			return nil, fmt.Errorf("towerd %s here runs a home's build (%s), not tower %s: run that build, or tower stop first", st.Version, st.Exe, c.Version)
 		case err == nil && proto.Replaces(c.Version, st.Version):
 			// An older towerd, or another build of the same version (a
 			// rebuilt development binary), makes way; an older caller
 			// never downgrades a newer one (the other branch).
-			c.Call(ctx, proto.CallStop, proto.StopArgs{IfOlderThan: c.Version}, nil)
+			c.Call(ctx, proto.CallStop, proto.StopArgs{IfOlderThan: c.Version, Bridge: c.Bridged}, nil)
 			c.waitGone(ctx)
 			stuckSince = time.Time{}
 			continue

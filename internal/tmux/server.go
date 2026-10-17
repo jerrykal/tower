@@ -23,7 +23,14 @@ func (s Server) Command(args ...string) *exec.Cmd {
 // Run runs one tmux command and returns its stdout. An error carries
 // tmux's stderr.
 func (s Server) Run(ctx context.Context, args ...string) (string, error) {
+	return s.RunEnv(ctx, nil, args...)
+}
+
+// RunEnv is Run with the environment env (nil: this process's), which a
+// command that starts the server gives it.
+func (s Server) RunEnv(ctx context.Context, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, s.bin(), append(append([]string{}, s.Args...), args...)...)
+	cmd.Env = env
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {

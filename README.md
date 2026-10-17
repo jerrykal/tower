@@ -27,7 +27,8 @@ and pins it in `~/.config/mise/config.local.toml`, which is per machine.
 After that `mise run build` updates the tower on your PATH in place.
 
 Versions come from git tags: a build at a clean `v*` tag is that version;
-anything else is the last tag with `-dev+<commit>`.
+anything else is the last tag with `-dev.<commit time>.<commit count>+<commit>`
+(see `scripts/version.sh`).
 
 ## License
 

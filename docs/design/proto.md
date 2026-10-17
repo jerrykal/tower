@@ -11,7 +11,7 @@ no goroutines, no dependencies on other tower packages.
   `Negotiate(a, b Range) (int, error)` picks the highest common version or
   fails with both ranges in the message.
 - `proto.Newer(a, b string) bool` compares tower versions (`0.0.1`,
-  `0.0.1-dev+abc`): a dev build sorts after its base tag; two different dev
+  `0.0.1-dev.20261009132629.260+abc`): a dev build sorts after its base tag; two different dev
   builds of one base compare unequal by commit, and either replaces the
   other (a towerd of another build is replaced, never trusted to match).
 
@@ -209,8 +209,8 @@ type Reply struct {
 
 | Op | Args → Result | Who calls |
 | --- | --- | --- |
-| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles; with `Full` the links, homes (id, name, as, live), loops (with each loop's standbys as it last reported them and the last detach of a reused attach's client), pending switches, clients (reusable, to be detached once seen), the watch, the dirs refresher (binaries, counts, the last refreshes' cost) and towerd's CPU time, its finished children included) | ensure, `tower status` |
-| `stop` | `{IfOlderThan}` → `{}` | `tower stop`, an upgrading caller |
+| `status` | `{Full}` → `Status` (id, version, pid, mkey, tag, tmux binary, roles, the binary towerd runs (`exe`), `served` (a home of this build connected); with `Full` the links, homes (id, name, as, live), loops (with each loop's standbys as it last reported them and the last detach of a reused attach's client), pending switches, clients (reusable, to be detached once seen), the watch, the dirs refresher (binaries, counts, the last refreshes' cost) and towerd's CPU time, its finished children included) | ensure, `tower status` |
+| `stop` | `{IfOlderThan, Bridge}` → `{}`; a remote-only towerd served refuses an `IfOlderThan` not from a bridge | `tower stop`, an upgrading caller |
 | `stream` | – → the connection becomes a stream | the bridge |
 | `register` | `{Pid, Loop, Gen, Home, Inst, Again, Resume}` → `{MKey, TmuxBin}`; `Again` the go line's nonce, `Resume` the command a detach for a switch runs in the client's place | the attach shim |
 | `view` | `{Client}` → `Dash` (the view to show, the host it runs on, the client's loop and its home, notes) | dashboards |
